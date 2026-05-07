@@ -238,6 +238,81 @@ def test_dashboard_reports_candidate_average_by_legal_specialty() -> None:
     }
 
 
+def test_dashboard_keeps_j1_legal_specialty_from_existing_metadata() -> None:
+    rows = [
+        {
+            **_row(evaluation_id=1, answer_id=1, dataset="J1", candidate_answer="texto", reference_answer="rubrica", score=5),
+            "metadata": {"category": "39_direito_administrativo", "tipo_questao": "CIVIL"},
+        },
+    ]
+
+    payload = build_dashboard_payload(rows, expected_answers=1, filters=DashboardFilters(dataset="J1"))
+
+    assert payload["charts"]["legal_specialty_performance"]["rows"] == [
+        {"label": "Direito Administrativo", "values": [5.0], "count": 1, "average": 5.0},
+    ]
+
+
+def test_dashboard_maps_j2_question_type_to_existing_legal_specialties() -> None:
+    rows = [
+        {
+            **_row(evaluation_id=1, answer_id=1, dataset="J2", candidate_answer="A", reference_answer="A", score=5, candidate_model="modelo-a"),
+            "metadata": {"tipo_questao": "CIVIL-PROCEDURE"},
+        },
+        {
+            **_row(evaluation_id=2, answer_id=2, dataset="J2", candidate_answer="B", reference_answer="B", score=3, candidate_model="modelo-a"),
+            "metadata": {"tipo_questao": "LABOUR"},
+        },
+        {
+            **_row(evaluation_id=3, answer_id=3, dataset="J2", candidate_answer="C", reference_answer="C", score=4, candidate_model="modelo-a"),
+            "metadata": {"tipo_questao": "BUSINESS"},
+        },
+        {
+            **_row(evaluation_id=4, answer_id=4, dataset="J2", candidate_answer="D", reference_answer="D", score=2, candidate_model="modelo-a"),
+            "metadata": {"tipo_questao": "CRIMINAL-PROCEDURE"},
+        },
+        {
+            **_row(evaluation_id=5, answer_id=5, dataset="J2", candidate_answer="A", reference_answer="A", score=1, candidate_model="modelo-a"),
+            "metadata": {"tipo_questao": "TAXES"},
+        },
+        {
+            **_row(evaluation_id=6, answer_id=6, dataset="J2", candidate_answer="B", reference_answer="B", score=5, candidate_model="modelo-a"),
+            "metadata": {"tipo_questao": "CONSTITUTIONAL"},
+        },
+        {
+            **_row(evaluation_id=7, answer_id=7, dataset="J2", candidate_answer="C", reference_answer="C", score=3, candidate_model="modelo-a"),
+            "metadata": {"tipo_questao": "ENVIRONMENTAL"},
+        },
+    ]
+
+    payload = build_dashboard_payload(rows, expected_answers=7, filters=DashboardFilters(dataset="J2"))
+
+    assert payload["charts"]["legal_specialty_performance"]["rows"] == [
+        {"label": "Direito Civil", "values": [5.0], "count": 1, "average": 5.0},
+        {"label": "Direito Constitucional", "values": [5.0], "count": 1, "average": 5.0},
+        {"label": "Direito Empresarial", "values": [4.0], "count": 1, "average": 4.0},
+        {"label": "Direito Administrativo", "values": [3.0], "count": 1, "average": 3.0},
+        {"label": "Direito Do Trabalho", "values": [3.0], "count": 1, "average": 3.0},
+        {"label": "Direito Penal", "values": [2.0], "count": 1, "average": 2.0},
+        {"label": "Direito Tributario", "values": [1.0], "count": 1, "average": 1.0},
+    ]
+
+
+def test_dashboard_maps_j2_missing_question_type_from_question_number() -> None:
+    rows = [
+        {
+            **_row(evaluation_id=1, answer_id=1, dataset="J2", candidate_answer="A", reference_answer="A", score=5),
+            "metadata": {"tipo_questao": None, "question_number": 79},
+        },
+    ]
+
+    payload = build_dashboard_payload(rows, expected_answers=1, filters=DashboardFilters(dataset="J2"))
+
+    assert payload["charts"]["legal_specialty_performance"]["rows"] == [
+        {"label": "Direito Do Trabalho", "values": [5.0], "count": 1, "average": 5.0},
+    ]
+
+
 def test_dashboard_reports_candidate_average_by_difficulty_ordered_by_complexity() -> None:
     rows = [
         {

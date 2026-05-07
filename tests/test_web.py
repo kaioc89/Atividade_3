@@ -865,31 +865,27 @@ def test_web_index_contains_progress_element() -> None:
     assert 'data-carousel-index="2"' in response.text
     assert 'data-carousel-index="3"' in response.text
     assert 'data-carousel-index="4"' in response.text
-    assert 'data-carousel-index="5"' in response.text
-    assert 'data-carousel-index="6"' in response.text
-    assert 'data-carousel-index="7"' in response.text
     assert "Concordancia entre Juizes" in response.text
     assert 'id="dashboard-judge-agreement-cards"' in response.text
     assert 'id="dashboard-judge-agreement-body"' in response.text
-    assert "Correlacao juiz x referencia humana/gabarito" in response.text
-    assert 'id="dashboard-reference-scatter"' in response.text
-    assert "Matriz de concordancia / divergencia" in response.text
-    assert 'id="dashboard-ordinal-confusion"' in response.text
-    assert "Heatmap modelo x dimensao da rubrica" in response.text
-    assert 'id="dashboard-rubric-heatmap"' in response.text
+    assert ">Juiz x referencia</button>" not in response.text
+    assert "<h3>Correlacao juiz x referencia humana/gabarito</h3>" not in response.text
+    assert ">Matriz concordancia</button>" not in response.text
+    assert "<h3>Matriz de concordancia / divergencia</h3>" not in response.text
+    assert ">Heatmap rubrica</button>" not in response.text
+    assert "<h3>Heatmap modelo x dimensao da rubrica</h3>" not in response.text
     assert "Desempenho por especialidade juridica" in response.text
     assert 'id="dashboard-legal-specialty-performance"' in response.text
+    assert ">Desempenho por dificuldade</button>" not in response.text
+    assert "<h3>Desempenho por dificuldade</h3>" not in response.text
     assert "Analise de erros criticos" in response.text
     assert "Categorias de erro" in response.text
     assert 'id="dashboard-critical-error-chart"' in response.text
     assert 'id="dashboard-critical-error-body"' in response.text
     assert "Link para log" in response.text
     assert "function renderModelDistributionChart" in response.text
-    assert "function renderReferenceScatter" in response.text
-    assert "function renderOrdinalConfusion" in response.text
     assert "rho Spearman" in response.text
     assert "p-value" in response.text
-    assert "function renderRubricHeatmap" in response.text
     assert "function renderLegalSpecialtyPerformance" in response.text
     assert "function renderCriticalErrorAnalysis" in response.text
     assert "function moveCarousel" in response.text
@@ -909,12 +905,7 @@ def test_web_index_contains_progress_element() -> None:
     assert "(dashboardCarouselIndex + delta + cards.length) % cards.length" in response.text
     assert "track.style.transform" in response.text
     assert "score_distribution_by_model" in response.text
-    assert "reference_alignment" in response.text
-    assert "ordinal_confusion" in response.text
-    assert "rubric_heatmap" in response.text
     assert "legal_specialty_performance" in response.text
-    assert "difficulty_performance" in response.text
-    assert "Desempenho por dificuldade" in response.text
     assert "critical_error_categories" in response.text
     assert "critical_error_analysis" in response.text
     assert "function buildPostRunStats" in response.text
