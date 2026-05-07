@@ -745,6 +745,9 @@ def _normalize_difficulty(value: Any) -> str | None:
 
 
 def _legal_specialty(row: dict[str, Any]) -> str:
+    if row.get("dataset") == "J2" or row.get("dataset_name") == "OAB_Exames":
+        return _j2_legal_specialty(row)
+
     metadata = row.get("metadata") if isinstance(row.get("metadata"), dict) else {}
     for key in ("legal_specialty", "especialidade", "disciplina", "area", "subject"):
         value = metadata.get(key)
@@ -754,6 +757,67 @@ def _legal_specialty(row: dict[str, Any]) -> str:
     if category:
         return _format_specialty(_strip_exam_prefix(str(category)))
     return "Sem especialidade"
+
+
+def _j2_legal_specialty(row: dict[str, Any]) -> str:
+    metadata = row.get("metadata") if isinstance(row.get("metadata"), dict) else {}
+    question_type = metadata.get("tipo_questao") or metadata.get("category")
+    specialty = _j2_specialty_from_question_type(question_type)
+    if specialty is not None:
+        return specialty
+
+    specialty = _j2_specialty_from_question_number(metadata.get("question_number"))
+    return specialty or "Sem especialidade"
+
+
+def _j2_specialty_from_question_type(value: Any) -> str | None:
+    if value is None:
+        return None
+    normalized = str(value).strip().upper().replace("_", "-")
+    if not normalized or normalized == "QUESTAO OBJETIVA":
+        return None
+    return {
+        "ADMINISTRATIVE": "Direito Administrativo",
+        "ENVIRONMENTAL": "Direito Administrativo",
+        "BUSINESS": "Direito Empresarial",
+        "CHILDREN": "Direito Civil",
+        "CIVIL": "Direito Civil",
+        "CIVIL-PROCEDURE": "Direito Civil",
+        "CONSUMER": "Direito Civil",
+        "CONSTITUTIONAL": "Direito Constitucional",
+        "ETHICS": "Direito Constitucional",
+        "HUMAN-RIGHTS": "Direito Constitucional",
+        "INTERNATIONAL": "Direito Constitucional",
+        "PHILOSOPHY": "Direito Constitucional",
+        "CRIMINAL": "Direito Penal",
+        "CRIMINAL-PROCEDURE": "Direito Penal",
+        "LABOUR": "Direito Do Trabalho",
+        "LABOUR-PROCEDURE": "Direito Do Trabalho",
+        "TAXES": "Direito Tributario",
+    }.get(normalized)
+
+
+def _j2_specialty_from_question_number(value: Any) -> str | None:
+    try:
+        question_number = int(value)
+    except (TypeError, ValueError):
+        return None
+
+    ranges = (
+        (1, 12, "Direito Constitucional"),
+        (13, 24, "Direito Constitucional"),
+        (25, 29, "Direito Tributario"),
+        (30, 36, "Direito Administrativo"),
+        (37, 47, "Direito Civil"),
+        (48, 52, "Direito Empresarial"),
+        (53, 59, "Direito Civil"),
+        (60, 70, "Direito Penal"),
+        (71, 80, "Direito Do Trabalho"),
+    )
+    for start, end, specialty in ranges:
+        if start <= question_number <= end:
+            return specialty
+    return None
 
 
 def _strip_exam_prefix(value: str) -> str:

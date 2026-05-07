@@ -1127,13 +1127,9 @@ _INDEX_HTML = """
           <div id="dashboard-model-carousel-dots" class="carousel-tabs" role="tablist" aria-label="Paginas do dashboard">
             <button class="carousel-tab active" type="button" data-carousel-index="0" role="tab" aria-selected="true">Indicadores gerais</button>
             <button class="carousel-tab" type="button" data-carousel-index="1" role="tab" aria-selected="false">Distribuicao das notas por modelo</button>
-            <button class="carousel-tab" type="button" data-carousel-index="2" role="tab" aria-selected="false">Juiz x referencia</button>
-            <button class="carousel-tab" type="button" data-carousel-index="3" role="tab" aria-selected="false">Matriz concordancia</button>
-            <button class="carousel-tab" type="button" data-carousel-index="4" role="tab" aria-selected="false">Heatmap rubrica</button>
-            <button class="carousel-tab" type="button" data-carousel-index="5" role="tab" aria-selected="false">Especialidades juridicas</button>
-            <button class="carousel-tab" type="button" data-carousel-index="6" role="tab" aria-selected="false">Desempenho por dificuldade</button>
-            <button class="carousel-tab" type="button" data-carousel-index="7" role="tab" aria-selected="false">Erros criticos</button>
-            <button class="carousel-tab" type="button" data-carousel-index="8" role="tab" aria-selected="false">Concordancia entre Juizes</button>
+            <button class="carousel-tab" type="button" data-carousel-index="2" role="tab" aria-selected="false">Especialidades juridicas</button>
+            <button class="carousel-tab" type="button" data-carousel-index="3" role="tab" aria-selected="false">Erros criticos</button>
+            <button class="carousel-tab" type="button" data-carousel-index="4" role="tab" aria-selected="false">Concordancia entre Juizes</button>
           </div>
           <div class="carousel-controls" aria-label="Navegacao do carousel">
             <button id="dashboard-model-carousel-prev" class="carousel-button" type="button" aria-label="Pagina anterior">&lsaquo;</button>
@@ -1195,25 +1191,8 @@ _INDEX_HTML = """
               <div id="dashboard-model-distribution-chart" class="model-distribution-list"></div>
             </div>
             <div class="dashboard-carousel-slide">
-              <h3>Correlacao juiz x referencia humana/gabarito</h3>
-              <div id="dashboard-reference-scatter" class="scatter-wrap"></div>
-            </div>
-            <div class="dashboard-carousel-slide">
-              <h3>Matriz de concordancia / divergencia</h3>
-              <div id="dashboard-ordinal-confusion" class="confusion-layout"></div>
-            </div>
-            <div class="dashboard-carousel-slide">
-              <h3>Heatmap modelo x dimensao da rubrica</h3>
-              <div id="dashboard-rubric-heatmap" class="heatmap-wrap"></div>
-            </div>
-            <div class="dashboard-carousel-slide">
               <h3>Desempenho por especialidade juridica</h3>
               <div id="dashboard-legal-specialty-performance" class="heatmap-wrap"></div>
-            </div>
-            <div class="dashboard-carousel-slide">
-              <h3>Desempenho por dificuldade</h3>
-              <div id="dashboard-difficulty-performance" class="line-chart-wrap"></div>
-              <p class="dashboard-note">Mostra a media da nota por modelo candidato conforme a complexidade aumenta.</p>
             </div>
             <div class="dashboard-carousel-slide">
               <h3>Analise de erros criticos</h3>
@@ -1790,13 +1769,9 @@ _INDEX_HTML = """
       populateSelect("dashboard_judge_model", data.options?.judge_models || [], selectedValues("dashboard_judge_model"));
       renderDashboardCards(data.cards || {});
       renderModelDistributionChart(data.charts?.score_distribution_by_model || []);
-      renderReferenceScatter(data.charts?.reference_alignment || {}, data.cards?.spearman_reference || {});
-      renderOrdinalConfusion(data.charts?.ordinal_confusion || {});
-      renderRubricHeatmap(data.charts?.rubric_heatmap || {});
       renderJudgeCandidateHeatmap(data.charts?.judge_candidate_heatmap || {});
       renderJudgeDisagreementBoxplot(data.charts?.judge_disagreement_boxplot || {});
       renderLegalSpecialtyPerformance(data.charts?.legal_specialty_performance || {});
-      renderDifficultyPerformance(data.charts?.difficulty_performance || {});
       renderCriticalErrorAnalysis(data.charts?.critical_error_categories || [], data.tables?.critical_error_analysis || []);
       renderJudgeAgreement(data.cards?.judge_agreement || {}, data.tables?.judge_agreement_arbitrations || []);
       renderBarChart("dashboard-candidate-ranking", data.charts?.candidate_ranking || [], {scaleMax: 5});
