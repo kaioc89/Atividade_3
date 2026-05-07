@@ -238,6 +238,43 @@ def test_dashboard_reports_candidate_average_by_legal_specialty() -> None:
     }
 
 
+def test_dashboard_reports_candidate_average_by_difficulty_ordered_by_complexity() -> None:
+    rows = [
+        {
+            **_row(evaluation_id=1, answer_id=1, dataset="J1", candidate_answer="texto", reference_answer="rubrica", score=5, candidate_model="modelo-a"),
+            "metadata": {"difficulty": "easy"},
+        },
+        {
+            **_row(evaluation_id=2, answer_id=2, dataset="J1", candidate_answer="texto", reference_answer="rubrica", score=4, candidate_model="modelo-a"),
+            "metadata": {"dificuldade": "Médio"},
+        },
+        {
+            **_row(evaluation_id=3, answer_id=3, dataset="J1", candidate_answer="texto", reference_answer="rubrica", score=2, candidate_model="modelo-a"),
+            "metadata": {"complexidade": "muito_dificil"},
+        },
+        {
+            **_row(evaluation_id=4, answer_id=4, dataset="J1", candidate_answer="texto", reference_answer="rubrica", score=3, candidate_model="modelo-b"),
+            "metadata": {"difficulty": "hard"},
+        },
+        {
+            **_row(evaluation_id=5, answer_id=5, dataset="J1", candidate_answer="texto", reference_answer="rubrica", score=1, candidate_model="modelo-b"),
+            "metadata": {},
+        },
+    ]
+
+    payload = build_dashboard_payload(rows, expected_answers=5, filters=DashboardFilters(dataset="J1"))
+
+    assert payload["charts"]["difficulty_performance"] == {
+        "x_label": "dificuldade",
+        "y_label": "média da nota",
+        "difficulties": ["Fácil", "Médio", "Difícil", "Muito difícil"],
+        "series": [
+            {"label": "modelo-a", "values": [5.0, 4.0, None, 2.0]},
+            {"label": "modelo-b", "values": [None, None, 3.0, None]},
+        ],
+    }
+
+
 def test_dashboard_reports_ordinal_confusion_matrix_and_error_highlights() -> None:
     rows = [
         _row(evaluation_id=1, answer_id=1, dataset="J2", candidate_answer="B", reference_answer="B", score=5),
@@ -370,3 +407,82 @@ def test_dashboard_reports_minor_disagreements_as_separate_telemetry() -> None:
     assert payload["cards"]["audit_divergences"] == 0
     assert payload["tables"]["minor_disagreement_cases"][0]["answer_id"] == 1
     assert payload["tables"]["minor_disagreement_cases"][0]["reason"] == "delta 1 (leve)"
+
+
+def test_dashboard_reports_judge_agreement_by_answer_and_arbitration_table() -> None:
+    rows = [
+        _row(evaluation_id=1, answer_id=1, dataset="J1", candidate_answer="texto", reference_answer="rubrica", score=4, role="principal", judge_model="juiz-1"),
+        _row(evaluation_id=2, answer_id=1, dataset="J1", candidate_answer="texto", reference_answer="rubrica", score=4, role="controle", judge_model="juiz-2"),
+        _row(evaluation_id=3, answer_id=2, dataset="J1", candidate_answer="texto", reference_answer="rubrica", score=5, role="principal", judge_model="juiz-1"),
+        _row(evaluation_id=4, answer_id=2, dataset="J1", candidate_answer="texto", reference_answer="rubrica", score=4, role="controle", judge_model="juiz-2"),
+        _row(evaluation_id=5, answer_id=3, dataset="J1", candidate_answer="texto", reference_answer="rubrica", score=5, role="principal", judge_model="juiz-1"),
+        _row(evaluation_id=6, answer_id=3, dataset="J1", candidate_answer="texto", reference_answer="rubrica", score=2, role="controle", judge_model="juiz-2"),
+        _row(
+            evaluation_id=7,
+            answer_id=3,
+            dataset="J1",
+            candidate_answer="texto",
+            reference_answer="rubrica",
+            score=4,
+            role="arbitro",
+            judge_model="arbitro",
+        ),
+        _row(evaluation_id=8, answer_id=4, dataset="J1", candidate_answer="texto", reference_answer="rubrica", score=1, role="principal", judge_model="juiz-1"),
+        _row(evaluation_id=9, answer_id=4, dataset="J1", candidate_answer="texto", reference_answer="rubrica", score=5, role="controle", judge_model="juiz-2", status="failed"),
+    ]
+
+    payload = build_dashboard_payload(rows, expected_answers=4, filters=DashboardFilters(dataset="J1"))
+
+    assert payload["cards"]["judge_agreement"] == {
+        "total_compared": 3,
+        "delta_0": 1,
+        "delta_1": 1,
+        "delta_2": 0,
+        "delta_3": 1,
+        "delta_4": 0,
+        "arbiter_triggered": 1,
+    }
+    assert payload["tables"]["judge_agreement_arbitrations"] == [
+        {
+            "answer_id": 3,
+            "question_id": 103,
+            "candidate_model": "modelo-a",
+            "judge_1_score": 5,
+            "judge_2_score": 2,
+            "delta": 3,
+            "arbiter_score": 4,
+            "arbitration_reason": "primary_panel",
+        }
+    ]
+
+
+def test_dashboard_reports_judge_candidate_heatmap_and_disagreement_boxplot() -> None:
+    rows = [
+        _row(evaluation_id=1, answer_id=1, dataset="J1", candidate_answer="texto", reference_answer="rubrica", score=5, role="principal", judge_model="juiz-1", candidate_model="modelo-a"),
+        _row(evaluation_id=2, answer_id=1, dataset="J1", candidate_answer="texto", reference_answer="rubrica", score=3, role="controle", judge_model="juiz-2", candidate_model="modelo-a"),
+        _row(evaluation_id=3, answer_id=1, dataset="J1", candidate_answer="texto", reference_answer="rubrica", score=4, role="arbitro", judge_model="arbitro", candidate_model="modelo-a"),
+        _row(evaluation_id=4, answer_id=2, dataset="J1", candidate_answer="texto", reference_answer="rubrica", score=4, role="principal", judge_model="juiz-1", candidate_model="modelo-a"),
+        _row(evaluation_id=5, answer_id=2, dataset="J1", candidate_answer="texto", reference_answer="rubrica", score=4, role="controle", judge_model="juiz-2", candidate_model="modelo-a"),
+        _row(evaluation_id=6, answer_id=3, dataset="J1", candidate_answer="texto", reference_answer="rubrica", score=2, role="principal", judge_model="juiz-1", candidate_model="modelo-b"),
+        _row(evaluation_id=7, answer_id=3, dataset="J1", candidate_answer="texto", reference_answer="rubrica", score=5, role="controle", judge_model="juiz-2", candidate_model="modelo-b"),
+        _row(evaluation_id=8, answer_id=4, dataset="J1", candidate_answer="texto", reference_answer="rubrica", score=None, role="controle", judge_model="juiz-2", candidate_model="modelo-b", status="failed"),
+    ]
+
+    payload = build_dashboard_payload(rows, expected_answers=4, filters=DashboardFilters(dataset="J1"))
+
+    assert payload["charts"]["judge_candidate_heatmap"] == {
+        "columns": ["modelo-a", "modelo-b"],
+        "rows": [
+            {"label": "arbitro", "values": [4.0, None], "count": 1},
+            {"label": "juiz-1", "values": [4.5, 2.0], "count": 3},
+            {"label": "juiz-2", "values": [3.5, 5.0], "count": 3},
+        ],
+    }
+    assert payload["charts"]["judge_disagreement_boxplot"] == {
+        "metric": "judge_disagreement",
+        "audit_threshold": 2,
+        "rows": [
+            {"label": "modelo-a", "count": 2, "audit_count": 1, "min": 0, "q1": 0.5, "median": 1.0, "q3": 1.5, "max": 2},
+            {"label": "modelo-b", "count": 1, "audit_count": 1, "min": 3, "q1": 3.0, "median": 3.0, "q3": 3.0, "max": 3},
+        ],
+    }
