@@ -95,6 +95,7 @@ def build_dashboard_payload(
     critical_cases = _critical_cases(rows)
     minor_disagreement_cases = _minor_disagreement_cases(successful_rows)
     divergence_cases = _divergence_cases(successful_rows)
+    judge_agreement = _judge_agreement(successful_rows)
     ordinal_confusion = _ordinal_confusion_matrix(scored_rows, filters.dataset)
     critical_error_analysis = _critical_error_analysis(rows, divergence_cases, filters.dataset)
 
@@ -112,6 +113,7 @@ def build_dashboard_payload(
         "critical_failures": len(critical_cases),
         "minor_disagreements": len(minor_disagreement_cases),
         "audit_divergences": len(divergence_cases),
+        "judge_agreement": judge_agreement["cards"],
     }
     return {
         "filters": _serialize_filters(filters),
@@ -128,12 +130,16 @@ def build_dashboard_payload(
             "critical_cases": _critical_chart(critical_cases),
             "critical_error_categories": critical_error_analysis["categories"],
             "rubric_heatmap": _rubric_heatmap(scored_rows),
+            "judge_candidate_heatmap": _judge_candidate_heatmap(scored_rows),
+            "judge_disagreement_boxplot": _judge_disagreement_boxplot(successful_rows),
             "legal_specialty_performance": _legal_specialty_performance(scored_rows),
+            "difficulty_performance": _difficulty_performance(scored_rows),
         },
         "tables": {
             "critical_cases": critical_cases[:25],
             "minor_disagreement_cases": minor_disagreement_cases[:25],
             "divergence_cases": divergence_cases[:25],
+            "judge_agreement_arbitrations": judge_agreement["arbitrations"][:40],
             "critical_error_analysis": critical_error_analysis["cases"][:40],
         },
         "methodology": {
@@ -566,6 +572,73 @@ def _rubric_heatmap(rows: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def _judge_candidate_heatmap(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    grouped: dict[str, dict[str, list[int]]] = defaultdict(lambda: defaultdict(list))
+    candidates: set[str] = set()
+    for row in rows:
+        judge = str(row.get("judge_model") or "sem juiz")
+        candidate = str(row.get("candidate_model") or "sem modelo")
+        score = row.get("score")
+        if score is None:
+            continue
+        grouped[judge][candidate].append(int(score))
+        candidates.add(candidate)
+
+    sorted_candidates = sorted(candidates)
+    heatmap_rows = []
+    for judge, scores_by_candidate in grouped.items():
+        values = [
+            round(statistics.mean(scores_by_candidate[candidate]), 2) if scores_by_candidate.get(candidate) else None
+            for candidate in sorted_candidates
+        ]
+        heatmap_rows.append(
+            {
+                "label": judge,
+                "values": values,
+                "count": sum(len(scores) for scores in scores_by_candidate.values()),
+            }
+        )
+    return {
+        "columns": sorted_candidates,
+        "rows": sorted(heatmap_rows, key=lambda row: row["label"]),
+    }
+
+
+def _judge_disagreement_boxplot(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    grouped: dict[str, list[int]] = defaultdict(list)
+    for answer_rows in _grouped_answer_rows(rows).values():
+        scored = [
+            int(row["score"])
+            for row in answer_rows
+            if row.get("status") == "success" and row.get("score") is not None
+        ]
+        if len(scored) < 2:
+            continue
+        candidate_model = str(answer_rows[0].get("candidate_model") or "sem modelo")
+        grouped[candidate_model].append(max(scored) - min(scored))
+
+    boxplot_rows = []
+    for candidate_model, deltas in grouped.items():
+        sorted_deltas = sorted(deltas)
+        boxplot_rows.append(
+            {
+                "label": candidate_model,
+                "count": len(sorted_deltas),
+                "audit_count": sum(1 for delta in sorted_deltas if delta >= 2),
+                "min": sorted_deltas[0],
+                "q1": round(_percentile(sorted_deltas, 25), 2),
+                "median": round(_percentile(sorted_deltas, 50), 2),
+                "q3": round(_percentile(sorted_deltas, 75), 2),
+                "max": sorted_deltas[-1],
+            }
+        )
+    return {
+        "metric": "judge_disagreement",
+        "audit_threshold": 2,
+        "rows": sorted(boxplot_rows, key=lambda row: row["label"]),
+    }
+
+
 def _legal_specialty_performance(rows: list[dict[str, Any]]) -> dict[str, Any]:
     grouped: dict[str, dict[str, list[int]]] = defaultdict(lambda: defaultdict(list))
     models: set[str] = set()
@@ -599,6 +672,76 @@ def _legal_specialty_performance(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "columns": sorted_models,
         "rows": sorted(specialty_rows, key=lambda row: (-(row["average"] or 0), row["label"])),
     }
+
+
+def _difficulty_performance(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    difficulties = ("Fácil", "Médio", "Difícil", "Muito difícil")
+    grouped: dict[str, dict[str, list[int]]] = defaultdict(lambda: defaultdict(list))
+    models: set[str] = set()
+    for row in rows:
+        difficulty = _difficulty(row)
+        if difficulty is None:
+            continue
+        model = str(row.get("candidate_model") or "sem modelo")
+        score = row.get("score")
+        if score is None:
+            continue
+        grouped[difficulty][model].append(score)
+        models.add(model)
+
+    sorted_models = sorted(models)
+    return {
+        "x_label": "dificuldade",
+        "y_label": "média da nota",
+        "difficulties": list(difficulties),
+        "series": [
+            {
+                "label": model,
+                "values": [
+                    round(statistics.mean(grouped[difficulty][model]), 2) if grouped[difficulty].get(model) else None
+                    for difficulty in difficulties
+                ],
+            }
+            for model in sorted_models
+        ],
+    }
+
+
+def _difficulty(row: dict[str, Any]) -> str | None:
+    metadata = row.get("metadata") if isinstance(row.get("metadata"), dict) else {}
+    for key in ("difficulty", "dificuldade", "nivel_dificuldade", "complexidade"):
+        value = metadata.get(key) or row.get(key)
+        label = _normalize_difficulty(value)
+        if label is not None:
+            return label
+    return None
+
+
+def _normalize_difficulty(value: Any) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip().lower()
+    if not text:
+        return None
+    normalized = (
+        text.replace("á", "a")
+        .replace("é", "e")
+        .replace("í", "i")
+        .replace("ó", "o")
+        .replace("ú", "u")
+        .replace("-", " ")
+        .replace("_", " ")
+    )
+    normalized = " ".join(normalized.split())
+    if normalized in {"facil", "easy"}:
+        return "Fácil"
+    if normalized in {"medio", "media", "moderado", "moderada", "medium"}:
+        return "Médio"
+    if normalized in {"dificil", "hard"}:
+        return "Difícil"
+    if normalized in {"muito dificil", "very hard", "muitodificil"}:
+        return "Muito difícil"
+    return None
 
 
 def _legal_specialty(row: dict[str, Any]) -> str:
@@ -692,6 +835,48 @@ def _minor_disagreement_cases(rows: list[dict[str, Any]]) -> list[dict[str, Any]
     return sorted(cases, key=lambda row: (row["answer_id"], row["evaluation_id"]))
 
 
+def _judge_agreement(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    cards = {
+        "total_compared": 0,
+        "delta_0": 0,
+        "delta_1": 0,
+        "delta_2": 0,
+        "delta_3": 0,
+        "delta_4": 0,
+        "arbiter_triggered": 0,
+    }
+    arbitrations: list[dict[str, Any]] = []
+    for answer_rows in _grouped_answer_rows(rows).values():
+        disagreement = _primary_disagreement(answer_rows)
+        if disagreement is None:
+            continue
+        delta = int(disagreement["primary_delta"])
+        if not 0 <= delta <= 4:
+            continue
+        cards["total_compared"] += 1
+        cards[f"delta_{delta}"] += 1
+        if not disagreement["arbitration_triggered"]:
+            continue
+        cards["arbiter_triggered"] += 1
+        base = disagreement["base_row"]
+        arbitrations.append(
+            {
+                "answer_id": base.get("answer_id"),
+                "question_id": base.get("question_id"),
+                "candidate_model": base.get("candidate_model"),
+                "judge_1_score": disagreement["judge_1_score"],
+                "judge_2_score": disagreement["judge_2_score"],
+                "delta": delta,
+                "arbiter_score": disagreement["arbiter_score"],
+                "arbitration_reason": disagreement["arbitration_reason"],
+            }
+        )
+    return {
+        "cards": cards,
+        "arbitrations": sorted(arbitrations, key=lambda row: (-row["delta"], row["answer_id"] or 0)),
+    }
+
+
 def _grouped_answer_rows(rows: list[dict[str, Any]]) -> dict[int, list[dict[str, Any]]]:
     grouped: dict[int, list[dict[str, Any]]] = defaultdict(list)
     for row in rows:
@@ -721,6 +906,7 @@ def _primary_disagreement(answer_rows: list[dict[str, Any]]) -> dict[str, Any] |
     primary_delta = abs(int(principal_row["score"]) - int(controle_row["score"]))
     arbitration_triggered = False
     arbitration_reason = None
+    arbiter_score = None
     for row in answer_rows:
         if row.get("status") != "success":
             continue
@@ -728,6 +914,7 @@ def _primary_disagreement(answer_rows: list[dict[str, Any]]) -> dict[str, Any] |
             continue
         arbitration_triggered = True
         arbitration_reason = _trigger_suffix(row.get("trigger_reason"))
+        arbiter_score = int(row["score"])
         break
 
     base_row = principal_row
@@ -749,6 +936,9 @@ def _primary_disagreement(answer_rows: list[dict[str, Any]]) -> dict[str, Any] |
     return {
         "base_row": base_row,
         "primary_delta": primary_delta,
+        "judge_1_score": int(principal_row["score"]),
+        "judge_2_score": int(controle_row["score"]),
+        "arbiter_score": arbiter_score,
         "scores": ", ".join(scores),
         "arbitration_triggered": arbitration_triggered,
         "arbitration_reason": arbitration_reason,
@@ -981,6 +1171,20 @@ def _is_success(row: dict[str, Any]) -> bool:
 def _average(values: Any) -> float | None:
     collected = [value for value in values if value is not None]
     return round(statistics.mean(collected), 2) if collected else None
+
+
+def _percentile(values: list[int], percentile: int) -> float:
+    if not values:
+        raise ValueError("Percentile requires at least one value.")
+    if len(values) == 1:
+        return float(values[0])
+    position = (len(values) - 1) * percentile / 100
+    lower = math.floor(position)
+    upper = math.ceil(position)
+    if lower == upper:
+        return float(values[lower])
+    weight = position - lower
+    return values[lower] * (1 - weight) + values[upper] * weight
 
 
 def _percent(numerator: int, denominator: int) -> float | None:

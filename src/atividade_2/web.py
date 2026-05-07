@@ -929,6 +929,7 @@ _INDEX_HTML = """
     .dashboard-filter-actions button { flex:1; }
     .dashboard-note { color:var(--muted); font-size:12px; line-height:1.45; margin-top:10px; }
     .dashboard-table table { min-width:960px; }
+    .judge-agreement-table table { min-width:1160px; }
     .post-run-panel { margin-top:18px; border-top:1px solid var(--line); padding-top:16px; }
     .metric-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(150px,1fr)); gap:10px; margin:10px 0 16px; }
     .metric-card { border:1px solid var(--line); border-radius:8px; padding:10px; background:#fbfcfe; min-width:0; }
@@ -967,11 +968,27 @@ _INDEX_HTML = """
     .score-chip strong { color:var(--ink); font-variant-numeric:tabular-nums; }
     .carousel-empty { width:100%; }
     .heatmap-wrap { width:100%; overflow:auto; border:1px solid var(--line); border-radius:8px; }
+    .dashboard-compact-viz { max-height:280px; overflow:auto; }
     .heatmap-grid { display:grid; min-width:620px; font-size:12px; }
     .heatmap-cell { min-height:42px; display:flex; align-items:center; justify-content:center; padding:8px; border-right:1px solid rgba(255,255,255,.42); border-bottom:1px solid rgba(255,255,255,.42); font-variant-numeric:tabular-nums; }
     .heatmap-head { background:#eef3f8; color:var(--ink); font-weight:750; border-color:var(--line); }
     .heatmap-model { justify-content:flex-start; background:#f8fafc; color:var(--ink); font-weight:750; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .heatmap-value { color:#111827; font-weight:750; }
+    .judge-agreement-layout { display:grid; grid-template-columns:minmax(0,1fr); gap:14px; }
+    .boxplot-wrap { width:100%; max-height:280px; overflow:auto; border:1px solid var(--line); border-radius:8px; background:#fbfcfe; padding:10px; }
+    .boxplot-list { display:grid; gap:8px; min-width:560px; }
+    .boxplot-scale { display:grid; grid-template-columns:96px minmax(240px,1fr) 116px; gap:10px; align-items:center; color:var(--muted); font-size:11px; }
+    .boxplot-ticks { position:relative; height:16px; border-bottom:1px solid #d9e1ea; }
+    .boxplot-tick { position:absolute; bottom:-15px; transform:translateX(-50%); font-size:10px; color:var(--muted); }
+    .boxplot-row { display:grid; grid-template-columns:96px minmax(240px,1fr) 116px; gap:10px; align-items:center; min-height:30px; }
+    .boxplot-name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:#475569; font-size:12px; text-align:right; }
+    .boxplot-track { position:relative; height:24px; border-radius:6px; background:linear-gradient(to right, transparent calc(50% - .5px), #cfd8e3 calc(50% - .5px), #cfd8e3 calc(50% + .5px), transparent calc(50% + .5px)), #eef3f8; }
+    .boxplot-whisker { position:absolute; top:11px; height:2px; background:#1769aa; border-radius:2px; }
+    .boxplot-box { position:absolute; top:5px; height:14px; border:1px solid #1769aa; border-radius:4px; background:#d7ecfb; }
+    .boxplot-median { position:absolute; top:2px; width:2px; height:20px; background:#b42318; border-radius:2px; }
+    .boxplot-threshold { position:absolute; top:0; bottom:0; width:2px; background:#b42318; opacity:.8; border-radius:2px; }
+    .boxplot-meta { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--ink); font-size:11px; font-weight:700; }
+    .judge-agreement-copy { margin:0 0 8px; color:var(--muted); font-size:12px; line-height:1.45; max-width:920px; }
     .confusion-layout { display:grid; grid-template-columns:minmax(0,1.45fr) minmax(240px,.8fr); gap:14px; align-items:start; }
     .confusion-summary { display:grid; gap:8px; }
     .confusion-card { border:1px solid var(--line); border-radius:8px; padding:10px; background:#fbfcfe; }
@@ -986,6 +1003,13 @@ _INDEX_HTML = """
     .scatter-point { fill:#1769aa; fill-opacity:.72; stroke:#fff; stroke-width:1.5; }
     .scatter-label { fill:var(--muted); font-size:12px; }
     .scatter-stat { fill:var(--ink); font-size:13px; font-weight:750; }
+    .line-chart-wrap { width:100%; overflow:auto; border:1px solid var(--line); border-radius:8px; background:#fbfcfe; }
+    .line-chart-svg { display:block; width:100%; min-width:720px; height:auto; }
+    .line-series { fill:none; stroke-width:2.5; stroke-linecap:round; stroke-linejoin:round; }
+    .line-point { stroke:#fff; stroke-width:1.5; }
+    .line-legend { display:flex; flex-wrap:wrap; gap:8px 14px; margin-top:10px; color:var(--muted); font-size:12px; }
+    .line-legend-item { display:flex; align-items:center; gap:6px; min-width:0; }
+    .line-legend-swatch { width:10px; height:10px; border-radius:999px; flex:0 0 auto; }
     .bar-row { display:grid; grid-template-columns:minmax(82px,132px) minmax(88px,1fr) 104px; gap:8px; align-items:center; margin:7px 0; font-size:12px; }
     .bar-label { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--muted); }
     .bar-track { height:14px; border-radius:999px; background:#e5e9f0; overflow:hidden; box-shadow:inset 0 0 0 1px rgba(24,33,47,.03); }
@@ -1107,7 +1131,9 @@ _INDEX_HTML = """
             <button class="carousel-tab" type="button" data-carousel-index="3" role="tab" aria-selected="false">Matriz concordancia</button>
             <button class="carousel-tab" type="button" data-carousel-index="4" role="tab" aria-selected="false">Heatmap rubrica</button>
             <button class="carousel-tab" type="button" data-carousel-index="5" role="tab" aria-selected="false">Especialidades juridicas</button>
-            <button class="carousel-tab" type="button" data-carousel-index="6" role="tab" aria-selected="false">Erros criticos</button>
+            <button class="carousel-tab" type="button" data-carousel-index="6" role="tab" aria-selected="false">Desempenho por dificuldade</button>
+            <button class="carousel-tab" type="button" data-carousel-index="7" role="tab" aria-selected="false">Erros criticos</button>
+            <button class="carousel-tab" type="button" data-carousel-index="8" role="tab" aria-selected="false">Concordancia entre Juizes</button>
           </div>
           <div class="carousel-controls" aria-label="Navegacao do carousel">
             <button id="dashboard-model-carousel-prev" class="carousel-button" type="button" aria-label="Pagina anterior">&lsaquo;</button>
@@ -1185,6 +1211,11 @@ _INDEX_HTML = """
               <div id="dashboard-legal-specialty-performance" class="heatmap-wrap"></div>
             </div>
             <div class="dashboard-carousel-slide">
+              <h3>Desempenho por dificuldade</h3>
+              <div id="dashboard-difficulty-performance" class="line-chart-wrap"></div>
+              <p class="dashboard-note">Mostra a media da nota por modelo candidato conforme a complexidade aumenta.</p>
+            </div>
+            <div class="dashboard-carousel-slide">
               <h3>Analise de erros criticos</h3>
               <div class="chart">
                 <h3>Categorias de erro</h3>
@@ -1205,6 +1236,42 @@ _INDEX_HTML = """
                   </thead>
                   <tbody id="dashboard-critical-error-body">
                     <tr><td colspan="7" class="muted">Carregando analise.</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            <div class="dashboard-carousel-slide">
+              <h3>Concordancia entre Juizes</h3>
+              <div class="judge-agreement-layout">
+                <div id="dashboard-judge-agreement-cards" class="metric-grid">
+                  <div class="metric-card"><span class="metric-value">-</span><span class="metric-label">Carregando</span></div>
+                </div>
+                <div>
+                  <h3>Media da nota por juiz e modelo candidato</h3>
+                  <div id="dashboard-judge-candidate-heatmap" class="heatmap-wrap dashboard-compact-viz"></div>
+                </div>
+                <div>
+                  <h3>Diferenca maxima entre juizes por modelo</h3>
+                  <p class="judge-agreement-copy">Cada linha resume, para um modelo candidato, o quanto os juizes discordaram nas mesmas respostas. A escala vai de 0 a 4 pontos: 0 significa notas iguais; valores a partir de 2 indicam casos que devem ir para auditoria.</p>
+                  <div id="dashboard-judge-disagreement-boxplot" class="boxplot-wrap"></div>
+                </div>
+              </div>
+              <div class="table-wrap judge-agreement-table">
+                <table aria-label="Concordancia entre juizes com arbitragem">
+                  <thead>
+                    <tr>
+                      <th>ID da resposta</th>
+                      <th>ID da pergunta</th>
+                      <th>Modelo candidato</th>
+                      <th>Nota Juiz 1</th>
+                      <th>Nota Juiz 2</th>
+                      <th>Delta</th>
+                      <th>Nota arbitro</th>
+                      <th>Motivo de acionamento</th>
+                    </tr>
+                  </thead>
+                  <tbody id="dashboard-judge-agreement-body">
+                    <tr><td colspan="8" class="muted">Carregando concordancia.</td></tr>
                   </tbody>
                 </table>
               </div>
@@ -1698,6 +1765,7 @@ _INDEX_HTML = """
     async function loadDashboard() {
       const body = document.getElementById("dashboard-cases-body");
       body.innerHTML = '<tr><td colspan="9" class="muted">Carregando dashboard.</td></tr>';
+      document.getElementById("dashboard-judge-agreement-body").innerHTML = '<tr><td colspan="8" class="muted">Carregando concordancia.</td></tr>';
       try {
         const response = await fetch(`/api/dashboard?${dashboardQuery()}`);
         const data = await response.json();
@@ -1713,6 +1781,7 @@ _INDEX_HTML = """
         cell.textContent = friendlyErrorMessage(error.message);
         row.appendChild(cell);
         body.appendChild(row);
+        renderJudgeAgreement({}, [], friendlyErrorMessage(error.message));
       }
     }
 
@@ -1724,8 +1793,12 @@ _INDEX_HTML = """
       renderReferenceScatter(data.charts?.reference_alignment || {}, data.cards?.spearman_reference || {});
       renderOrdinalConfusion(data.charts?.ordinal_confusion || {});
       renderRubricHeatmap(data.charts?.rubric_heatmap || {});
+      renderJudgeCandidateHeatmap(data.charts?.judge_candidate_heatmap || {});
+      renderJudgeDisagreementBoxplot(data.charts?.judge_disagreement_boxplot || {});
       renderLegalSpecialtyPerformance(data.charts?.legal_specialty_performance || {});
+      renderDifficultyPerformance(data.charts?.difficulty_performance || {});
       renderCriticalErrorAnalysis(data.charts?.critical_error_categories || [], data.tables?.critical_error_analysis || []);
+      renderJudgeAgreement(data.cards?.judge_agreement || {}, data.tables?.judge_agreement_arbitrations || []);
       renderBarChart("dashboard-candidate-ranking", data.charts?.candidate_ranking || [], {scaleMax: 5});
       renderBarChart("dashboard-score-distribution", data.charts?.score_distribution || [], {scaleMax: 1, showPercent: true, colorByLabel: true});
       renderBarChart("dashboard-judge-average", data.charts?.judge_average || [], {scaleMax: 5});
@@ -1915,6 +1988,118 @@ _INDEX_HTML = """
       root.appendChild(grid);
     }
 
+    function renderJudgeCandidateHeatmap(heatmap) {
+      const root = document.getElementById("dashboard-judge-candidate-heatmap");
+      root.textContent = "";
+      const columns = heatmap.columns || [];
+      const rows = heatmap.rows || [];
+      if (!columns.length || !rows.length) {
+        const empty = document.createElement("div");
+        empty.className = "muted carousel-empty";
+        empty.textContent = "Sem notas por juiz e modelo candidato para o filtro atual.";
+        root.appendChild(empty);
+        return;
+      }
+      const grid = document.createElement("div");
+      grid.className = "heatmap-grid";
+      grid.style.gridTemplateColumns = `minmax(180px, 1.3fr) repeat(${columns.length}, minmax(112px, 1fr)) minmax(70px, .55fr)`;
+      grid.appendChild(heatmapCell("Juiz", "heatmap-head"));
+      columns.forEach((column) => grid.appendChild(heatmapCell(column, "heatmap-head")));
+      grid.appendChild(heatmapCell("n", "heatmap-head"));
+      rows.forEach((row) => {
+        grid.appendChild(heatmapCell(row.label, "heatmap-model"));
+        (row.values || []).forEach((value, index) => {
+          const candidate = columns[index] || "modelo";
+          const cell = heatmapCell(value == null ? "-" : formatAverage(value), "heatmap-value");
+          cell.style.background = heatmapColor(value);
+          cell.title = `${row.label} | ${candidate} | media ${display(value)} | n=${display(row.count)}`;
+          grid.appendChild(cell);
+        });
+        grid.appendChild(heatmapCell(display(row.count), "heatmap-head"));
+      });
+      root.appendChild(grid);
+    }
+
+    function renderJudgeDisagreementBoxplot(boxplot) {
+      const root = document.getElementById("dashboard-judge-disagreement-boxplot");
+      root.textContent = "";
+      const rows = boxplot.rows || [];
+      if (!rows.length) {
+        const empty = document.createElement("div");
+        empty.className = "muted carousel-empty";
+        empty.textContent = "Sem respostas com dois ou mais juizes para o filtro atual.";
+        root.appendChild(empty);
+        return;
+      }
+      const maxDelta = Math.max(4, ...rows.map((row) => Number(row.max) || 0));
+      const threshold = Number(boxplot.audit_threshold ?? 2);
+      const list = document.createElement("div");
+      list.className = "boxplot-list";
+      list.setAttribute("role", "img");
+      list.setAttribute("aria-label", "Distribuicao da diferenca maxima entre juizes por modelo candidato");
+      const scale = document.createElement("div");
+      scale.className = "boxplot-scale";
+      scale.appendChild(document.createElement("span"));
+      const ticks = document.createElement("div");
+      ticks.className = "boxplot-ticks";
+      for (let delta = 0; delta <= maxDelta; delta += 1) {
+        const tick = document.createElement("span");
+        tick.className = "boxplot-tick";
+        tick.style.left = `${boxplotPercent(delta, maxDelta)}%`;
+        tick.textContent = String(delta);
+        ticks.appendChild(tick);
+      }
+      scale.appendChild(ticks);
+      const scaleMeta = document.createElement("span");
+      scaleMeta.textContent = "escala 0-4";
+      scale.appendChild(scaleMeta);
+      list.appendChild(scale);
+
+      rows.forEach((row) => {
+        const item = document.createElement("div");
+        item.className = "boxplot-row";
+        const name = document.createElement("div");
+        name.className = "boxplot-name";
+        name.textContent = row.label;
+        name.title = row.label;
+        const track = document.createElement("div");
+        track.className = "boxplot-track";
+        if (Number(row.max) >= threshold) {
+          appendBoxplotPart(track, "boxplot-threshold", threshold, threshold, maxDelta);
+        }
+        appendBoxplotPart(track, "boxplot-whisker", row.min, row.max, maxDelta);
+        appendBoxplotPart(track, "boxplot-box", row.q1, row.q3, maxDelta);
+        appendBoxplotPart(track, "boxplot-median", row.median, row.median, maxDelta);
+        track.title = `min ${display(row.min)} | q1 ${display(row.q1)} | mediana ${display(row.median)} | q3 ${display(row.q3)} | max ${display(row.max)}`;
+        const meta = document.createElement("div");
+        meta.className = "boxplot-meta";
+        meta.textContent = `${display(row.count)} resp. | ${display(row.audit_count)} aud.`;
+        meta.title = `${display(row.count)} respostas comparadas; ${display(row.audit_count)} com diferenca >= ${display(threshold)}`;
+        item.appendChild(name);
+        item.appendChild(track);
+        item.appendChild(meta);
+        list.appendChild(item);
+      });
+      root.appendChild(list);
+    }
+
+    function appendBoxplotPart(track, className, start, end, maxDelta) {
+      const part = document.createElement("span");
+      part.className = className;
+      const left = boxplotPercent(start, maxDelta);
+      const right = boxplotPercent(end, maxDelta);
+      part.style.left = `${Math.min(left, right)}%`;
+      part.style.width = className === "boxplot-median" || className === "boxplot-threshold"
+        ? "2px"
+        : `${Math.max(1, Math.abs(right - left))}%`;
+      track.appendChild(part);
+    }
+
+    function boxplotPercent(value, maxDelta) {
+      const number = Math.max(0, Math.min(maxDelta, Number(value) || 0));
+      return (number / maxDelta) * 100;
+    }
+
     function renderLegalSpecialtyPerformance(heatmap) {
       const root = document.getElementById("dashboard-legal-specialty-performance");
       root.textContent = "";
@@ -1945,6 +2130,96 @@ _INDEX_HTML = """
         grid.appendChild(heatmapCell(display(row.count), "heatmap-head"));
       });
       root.appendChild(grid);
+    }
+
+    function renderDifficultyPerformance(chart) {
+      const root = document.getElementById("dashboard-difficulty-performance");
+      root.textContent = "";
+      const difficulties = chart.difficulties || [];
+      const series = chart.series || [];
+      const hasValues = series.some((row) => (row.values || []).some((value) => value != null));
+      if (!difficulties.length || !series.length || !hasValues) {
+        const empty = document.createElement("div");
+        empty.className = "muted carousel-empty";
+        empty.textContent = "Sem dificuldade registrada para o filtro atual.";
+        root.appendChild(empty);
+        return;
+      }
+
+      const width = 760;
+      const height = 360;
+      const margin = {top: 24, right: 34, bottom: 64, left: 56};
+      const plotWidth = width - margin.left - margin.right;
+      const plotHeight = height - margin.top - margin.bottom;
+      const xStep = difficulties.length > 1 ? plotWidth / (difficulties.length - 1) : 0;
+      const colors = ["#1769aa", "#1d7f4e", "#d97706", "#7c3aed", "#b42318", "#0f766e", "#475569"];
+      const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+      svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
+      svg.setAttribute("class", "line-chart-svg");
+      svg.setAttribute("role", "img");
+      svg.setAttribute("aria-label", "Desempenho por dificuldade");
+
+      for (let score = 1; score <= 5; score += 1) {
+        const y = margin.top + plotHeight - ((score - 1) / 4) * plotHeight;
+        svg.appendChild(svgLine(margin.left, y, width - margin.right, y, "scatter-grid"));
+        svg.appendChild(svgText(margin.left - 10, y + 4, String(score), "scatter-label", "end"));
+      }
+      svg.appendChild(svgLine(margin.left, margin.top, margin.left, height - margin.bottom, "scatter-axis"));
+      svg.appendChild(svgLine(margin.left, height - margin.bottom, width - margin.right, height - margin.bottom, "scatter-axis"));
+      difficulties.forEach((difficulty, index) => {
+        const x = margin.left + index * xStep;
+        svg.appendChild(svgText(x, height - margin.bottom + 24, difficulty, "scatter-label", "middle"));
+      });
+      svg.appendChild(svgText(width / 2, height - 16, chart.x_label || "dificuldade", "scatter-label", "middle"));
+      const yLabel = svgText(18, margin.top + plotHeight / 2, chart.y_label || "média da nota", "scatter-label", "middle");
+      yLabel.setAttribute("transform", `rotate(-90 18 ${margin.top + plotHeight / 2})`);
+      svg.appendChild(yLabel);
+
+      series.forEach((row, rowIndex) => {
+        const color = colors[rowIndex % colors.length];
+        const points = (row.values || []).map((value, index) => {
+          if (value == null) return null;
+          const number = Number(value);
+          const x = margin.left + index * xStep;
+          const y = margin.top + plotHeight - ((number - 1) / 4) * plotHeight;
+          return {x, y, value: number, difficulty: difficulties[index]};
+        });
+        const pathPoints = points.filter(Boolean);
+        if (pathPoints.length > 1) {
+          const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+          path.setAttribute("d", pathPoints.map((point, index) => `${index === 0 ? "M" : "L"} ${point.x} ${point.y}`).join(" "));
+          path.setAttribute("class", "line-series");
+          path.setAttribute("stroke", color);
+          svg.appendChild(path);
+        }
+        pathPoints.forEach((point) => {
+          const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+          circle.setAttribute("cx", String(point.x));
+          circle.setAttribute("cy", String(point.y));
+          circle.setAttribute("r", "4.5");
+          circle.setAttribute("class", "line-point");
+          circle.setAttribute("fill", color);
+          const title = document.createElementNS(svg.namespaceURI, "title");
+          title.textContent = `${row.label} | ${point.difficulty} | media ${formatAverage(point.value)}`;
+          circle.appendChild(title);
+          svg.appendChild(circle);
+        });
+      });
+
+      root.appendChild(svg);
+      const legend = document.createElement("div");
+      legend.className = "line-legend";
+      series.forEach((row, rowIndex) => {
+        const item = document.createElement("span");
+        item.className = "line-legend-item";
+        const swatch = document.createElement("span");
+        swatch.className = "line-legend-swatch";
+        swatch.style.background = colors[rowIndex % colors.length];
+        item.appendChild(swatch);
+        item.appendChild(document.createTextNode(row.label));
+        legend.appendChild(item);
+      });
+      root.appendChild(legend);
     }
 
     function renderOrdinalConfusion(confusion) {
@@ -2124,6 +2399,68 @@ _INDEX_HTML = """
         row.appendChild(logCell);
         body.appendChild(row);
       });
+    }
+
+    function renderJudgeAgreement(cards, cases, errorMessage) {
+      const cardRoot = document.getElementById("dashboard-judge-agreement-cards");
+      cardRoot.textContent = "";
+      const metrics = [
+        ["Avaliacoes comparadas", cards.total_compared],
+        ["Notas iguais", cards.delta_0],
+        ["Divergencia de 1 ponto", cards.delta_1],
+        ["Divergencia de 2 pontos", cards.delta_2],
+        ["Divergencia de 3 pontos", cards.delta_3],
+        ["Divergencia de 4 pontos", cards.delta_4],
+        ["Arbitro acionado", cards.arbiter_triggered],
+      ];
+      for (const metric of metrics) {
+        const card = document.createElement("div");
+        card.className = "metric-card";
+        const value = document.createElement("span");
+        value.className = "metric-value";
+        value.textContent = display(metric[1]);
+        const label = document.createElement("span");
+        label.className = "metric-label";
+        label.textContent = metric[0];
+        card.appendChild(value);
+        card.appendChild(label);
+        cardRoot.appendChild(card);
+      }
+
+      const body = document.getElementById("dashboard-judge-agreement-body");
+      body.textContent = "";
+      if (errorMessage) {
+        appendJudgeAgreementMessage(body, errorMessage);
+        return;
+      }
+      if (!cases.length) {
+        appendJudgeAgreementMessage(body, "Sem arbitragens acionadas para o filtro atual.");
+        return;
+      }
+      cases.slice(0, 40).forEach((item) => {
+        const row = document.createElement("tr");
+        for (const value of [
+          item.answer_id,
+          item.question_id,
+          item.candidate_model,
+          item.judge_1_score,
+          item.judge_2_score,
+          item.delta,
+          item.arbiter_score,
+          item.arbitration_reason,
+        ]) appendCell(row, display(value));
+        body.appendChild(row);
+      });
+    }
+
+    function appendJudgeAgreementMessage(body, message) {
+      const row = document.createElement("tr");
+      const cell = document.createElement("td");
+      cell.colSpan = 8;
+      cell.className = "muted";
+      cell.textContent = message;
+      row.appendChild(cell);
+      body.appendChild(row);
     }
 
     function scaleScore(value, minScore, maxScore, origin, span) {

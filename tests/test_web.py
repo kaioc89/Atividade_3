@@ -482,7 +482,17 @@ class FakeDashboardService:
                     "note": "Meta-avaliação complementar.",
                 },
                 "critical_failures": 1,
+                "minor_disagreements": 1,
                 "audit_divergences": 1,
+                "judge_agreement": {
+                    "total_compared": 2,
+                    "delta_0": 1,
+                    "delta_1": 0,
+                    "delta_2": 0,
+                    "delta_3": 1,
+                    "delta_4": 0,
+                    "arbiter_triggered": 1,
+                },
             },
             "charts": {
                 "candidate_ranking": [{"label": "modelo-candidato", "value": 4.25}],
@@ -547,6 +557,12 @@ class FakeDashboardService:
                     "columns": ["modelo-candidato"],
                     "rows": [{"label": "Direito Administrativo", "values": [4.25], "count": 4, "average": 4.25}],
                 },
+                "difficulty_performance": {
+                    "x_label": "dificuldade",
+                    "y_label": "média da nota",
+                    "difficulties": ["Fácil", "Médio", "Difícil", "Muito difícil"],
+                    "series": [{"label": "modelo-candidato", "values": [5.0, 4.0, 3.0, 2.0]}],
+                },
             },
             "tables": {
                 "critical_cases": [
@@ -563,6 +579,18 @@ class FakeDashboardService:
                     }
                 ],
                 "divergence_cases": [],
+                "judge_agreement_arbitrations": [
+                    {
+                        "answer_id": 10,
+                        "question_id": 20,
+                        "candidate_model": "modelo-candidato",
+                        "judge_1_score": 5,
+                        "judge_2_score": 2,
+                        "delta": 3,
+                        "arbiter_score": 4,
+                        "arbitration_reason": "primary_panel",
+                    }
+                ],
                 "critical_error_analysis": [
                     {
                         "question_id": 20,
@@ -839,6 +867,10 @@ def test_web_index_contains_progress_element() -> None:
     assert 'data-carousel-index="4"' in response.text
     assert 'data-carousel-index="5"' in response.text
     assert 'data-carousel-index="6"' in response.text
+    assert 'data-carousel-index="7"' in response.text
+    assert "Concordancia entre Juizes" in response.text
+    assert 'id="dashboard-judge-agreement-cards"' in response.text
+    assert 'id="dashboard-judge-agreement-body"' in response.text
     assert "Correlacao juiz x referencia humana/gabarito" in response.text
     assert 'id="dashboard-reference-scatter"' in response.text
     assert "Matriz de concordancia / divergencia" in response.text
@@ -881,6 +913,8 @@ def test_web_index_contains_progress_element() -> None:
     assert "ordinal_confusion" in response.text
     assert "rubric_heatmap" in response.text
     assert "legal_specialty_performance" in response.text
+    assert "difficulty_performance" in response.text
+    assert "Desempenho por dificuldade" in response.text
     assert "critical_error_categories" in response.text
     assert "critical_error_analysis" in response.text
     assert "function buildPostRunStats" in response.text
