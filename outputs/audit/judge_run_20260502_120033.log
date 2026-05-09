@@ -1,0 +1,147 @@
+2026-05-02T12:00:33+00:00 | audit_log_started | path=outputs/audit/judge_run_20260502_120033.log
+2026-05-02T12:00:33+00:00 | START Loading configuration
+2026-05-02T12:00:33+00:00 | DONE Loading configuration | elapsed_ms=0
+2026-05-02T12:00:33+00:00 | START Resolving judge mode and models | panel_mode_cli=provided judge_model_cli=provided secondary_judge_cli=provided arbiter_cli=provided execution_strategy_cli=provided
+2026-05-02T12:00:33+00:00 | DONE Resolving judge mode and models | panel_mode_cli=provided judge_model_cli=provided secondary_judge_cli=provided arbiter_cli=provided execution_strategy_cli=provided elapsed_ms=0
+2026-05-02T12:00:33+00:00 | execution_summary | Judge provider: remote_http | Judge mode: 2plus1 | Judge execution strategy: adaptive | Primary judges: | - Unbabel/M-Prometheus-14B | endpoint=api.featherless.ai | - meta-llama/Llama-3.3-70B-Instruct | endpoint=api.featherless.ai | Arbiter: | - openai/gpt-oss-120b | endpoint=api.featherless.ai | Arbitration min delta: 2 | Always run arbiter: false | Model source: CLI --judge-model / CLI --secondary-judge-model / CLI --arbiter-judge-model
+2026-05-02T12:00:33+00:00 | command_preview | .venv/bin/python -m atividade_2.cli run-judge --panel-mode 2plus1 --dataset J2 --batch-size 100 --judge-execution-strategy adaptive --judge-model Unbabel/M-Prometheus-14B --secondary-judge-model meta-llama/Llama-3.3-70B-Instruct --arbiter-judge-model openai/gpt-oss-120b
+2026-05-02T12:00:33+00:00 | START Connecting to local PostgreSQL | DATABASE_URL=<redacted>
+2026-05-02T12:00:33+00:00 | DONE Connecting to local PostgreSQL | DATABASE_URL=<redacted> elapsed_ms=10
+2026-05-02T12:00:33+00:00 | START Ensuring judge metadata schema
+2026-05-02T12:00:33+00:00 | DONE Ensuring judge metadata schema | elapsed_ms=5
+2026-05-02T12:00:33+00:00 | START Counting eligible answers for J2 | dataset=J2 batch_size=100
+2026-05-02T12:00:33+00:00 | DONE Counting eligible answers for J2 | dataset=J2 batch_size=100 elapsed_ms=42
+2026-05-02T12:00:33+00:00 | eligibility_summary | missing=1782 failed=0 successful=432 will_process=100
+2026-05-02T12:00:33+00:00 | START Selecting pending candidate answers for J2 | dataset=J2 batch_size=100
+2026-05-02T12:00:33+00:00 | DONE Selecting pending candidate answers for J2 | dataset=J2 batch_size=100 elapsed_ms=19
+2026-05-02T12:00:33+00:00 | answers_selected | count=100
+2026-05-02T12:00:33+00:00 | START Running judge pipeline | answers=100 mode=2plus1
+2026-05-02T12:00:34+00:00 | adaptive_concurrency_initial | provider=remote_http base_url=https://api.featherless.ai/v1 api_key=a3672be7 model=Unbabel/M-Prometheus-14B initial_concurrency=1 max_concurrency=4
+2026-05-02T12:00:34+00:00 | adaptive_concurrency_initial | provider=remote_http base_url=https://api.featherless.ai/v1 api_key=a3672be7 model=meta-llama/Llama-3.3-70B-Instruct initial_concurrency=1 max_concurrency=4
+2026-05-02T12:00:34+00:00 | START Running answer 391 with Unbabel/M-Prometheus-14B | answer_id=391 question_id=883 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-02T12:00:34+00:00 | START Running answer 391 with meta-llama/Llama-3.3-70B-Instruct | answer_id=391 question_id=883 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-02T12:00:35+00:00 | FAIL Running answer 391 with meta-llama/Llama-3.3-70B-Instruct | answer_id=391 question_id=883 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel error=Remote judge returned HTTP 429: Concurrency limit exceeded. Your account details:
+
+**Current Usage:**
+- Active concurrent requests: 1 units
+- This request requires: 4 units
+- Total needed: 5 units
+- Your plan limit: 4 units
+- Over limit by: 1 units
+
+**Model Details:**
+- Model: meta-llama/Llama-3.3-70B-Instruct
+- Model class: llama elapsed_ms=1078
+2026-05-02T12:00:35+00:00 | adaptive_task_requeued | provider=remote_http base_url=https://api.featherless.ai/v1 api_key=a3672be7 model=meta-llama/Llama-3.3-70B-Instruct answer_id=391 role=controle attempt=1 backoff_seconds=2.918 error=Remote judge returned HTTP 429: Concurrency limit exceeded. Your account details:
+
+**Current Usage:**
+- Active concurrent requests: 1 units
+- This request requires: 4 units
+- Total needed: 5 units
+- Your plan limit: 4 units
+- Over limit by: 1 units
+
+**Model Details:**
+- Model: meta-llama/Llama-3.3-70B-Instruct
+- Model class: llama
+2026-05-02T12:00:38+00:00 | START Running answer 514 with meta-llama/Llama-3.3-70B-Instruct | answer_id=514 question_id=883 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-02T12:00:39+00:00 | FAIL Running answer 514 with meta-llama/Llama-3.3-70B-Instruct | answer_id=514 question_id=883 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel error=Remote judge returned HTTP 429: Concurrency limit exceeded. Your account details:
+
+**Current Usage:**
+- Active concurrent requests: 1 units
+- This request requires: 4 units
+- Total needed: 5 units
+- Your plan limit: 4 units
+- Over limit by: 1 units
+
+**Model Details:**
+- Model: meta-llama/Llama-3.3-70B-Instruct
+- Model class: llama elapsed_ms=971
+2026-05-02T12:00:39+00:00 | adaptive_task_requeued | provider=remote_http base_url=https://api.featherless.ai/v1 api_key=a3672be7 model=meta-llama/Llama-3.3-70B-Instruct answer_id=514 role=controle attempt=1 backoff_seconds=2.280 error=Remote judge returned HTTP 429: Concurrency limit exceeded. Your account details:
+
+**Current Usage:**
+- Active concurrent requests: 1 units
+- This request requires: 4 units
+- Total needed: 5 units
+- Your plan limit: 4 units
+- Over limit by: 1 units
+
+**Model Details:**
+- Model: meta-llama/Llama-3.3-70B-Instruct
+- Model class: llama
+2026-05-02T12:00:41+00:00 | START Running answer 638 with meta-llama/Llama-3.3-70B-Instruct | answer_id=638 question_id=883 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-02T12:00:42+00:00 | FAIL Running answer 638 with meta-llama/Llama-3.3-70B-Instruct | answer_id=638 question_id=883 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel error=Remote judge returned HTTP 429: Concurrency limit exceeded. Your account details:
+
+**Current Usage:**
+- Active concurrent requests: 1 units
+- This request requires: 4 units
+- Total needed: 5 units
+- Your plan limit: 4 units
+- Over limit by: 1 units
+
+**Model Details:**
+- Model: meta-llama/Llama-3.3-70B-Instruct
+- Model class: llama elapsed_ms=929
+2026-05-02T12:00:42+00:00 | adaptive_task_requeued | provider=remote_http base_url=https://api.featherless.ai/v1 api_key=a3672be7 model=meta-llama/Llama-3.3-70B-Instruct answer_id=638 role=controle attempt=1 backoff_seconds=2.658 error=Remote judge returned HTTP 429: Concurrency limit exceeded. Your account details:
+
+**Current Usage:**
+- Active concurrent requests: 1 units
+- This request requires: 4 units
+- Total needed: 5 units
+- Your plan limit: 4 units
+- Over limit by: 1 units
+
+**Model Details:**
+- Model: meta-llama/Llama-3.3-70B-Instruct
+- Model class: llama
+2026-05-02T12:00:44+00:00 | START Running answer 392 with meta-llama/Llama-3.3-70B-Instruct | answer_id=392 question_id=884 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-02T12:00:45+00:00 | FAIL Running answer 392 with meta-llama/Llama-3.3-70B-Instruct | answer_id=392 question_id=884 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel error=Remote judge returned HTTP 429: Concurrency limit exceeded. Your account details:
+
+**Current Usage:**
+- Active concurrent requests: 1 units
+- This request requires: 4 units
+- Total needed: 5 units
+- Your plan limit: 4 units
+- Over limit by: 1 units
+
+**Model Details:**
+- Model: meta-llama/Llama-3.3-70B-Instruct
+- Model class: llama elapsed_ms=666
+2026-05-02T12:00:45+00:00 | adaptive_task_requeued | provider=remote_http base_url=https://api.featherless.ai/v1 api_key=a3672be7 model=meta-llama/Llama-3.3-70B-Instruct answer_id=392 role=controle attempt=1 backoff_seconds=2.333 error=Remote judge returned HTTP 429: Concurrency limit exceeded. Your account details:
+
+**Current Usage:**
+- Active concurrent requests: 1 units
+- This request requires: 4 units
+- Total needed: 5 units
+- Your plan limit: 4 units
+- Over limit by: 1 units
+
+**Model Details:**
+- Model: meta-llama/Llama-3.3-70B-Instruct
+- Model class: llama
+2026-05-02T12:00:47+00:00 | START Running answer 515 with meta-llama/Llama-3.3-70B-Instruct | answer_id=515 question_id=884 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-02T12:00:48+00:00 | FAIL Running answer 515 with meta-llama/Llama-3.3-70B-Instruct | answer_id=515 question_id=884 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel error=Remote judge returned HTTP 429: Concurrency limit exceeded. Your account details:
+
+**Current Usage:**
+- Active concurrent requests: 1 units
+- This request requires: 4 units
+- Total needed: 5 units
+- Your plan limit: 4 units
+- Over limit by: 1 units
+
+**Model Details:**
+- Model: meta-llama/Llama-3.3-70B-Instruct
+- Model class: llama elapsed_ms=948
+2026-05-02T12:00:48+00:00 | adaptive_task_requeued | provider=remote_http base_url=https://api.featherless.ai/v1 api_key=a3672be7 model=meta-llama/Llama-3.3-70B-Instruct answer_id=515 role=controle attempt=1 backoff_seconds=2.241 error=Remote judge returned HTTP 429: Concurrency limit exceeded. Your account details:
+
+**Current Usage:**
+- Active concurrent requests: 1 units
+- This request requires: 4 units
+- Total needed: 5 units
+- Your plan limit: 4 units
+- Over limit by: 1 units
+
+**Model Details:**
+- Model: meta-llama/Llama-3.3-70B-Instruct
+- Model class: llama
+2026-05-02T12:00:52+00:00 | FAIL Running answer 391 with Unbabel/M-Prometheus-14B | answer_id=391 question_id=883 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel error=Remote judge returned HTTP 503: Unbabel/M-Prometheus-14B is temporarily at capacity. Please try again shortly. elapsed_ms=18293

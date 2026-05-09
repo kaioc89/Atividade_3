@@ -1,0 +1,653 @@
+2026-05-03T22:29:34+00:00 | audit_log_started | path=outputs/audit/judge_run_20260503_222934.log
+2026-05-03T22:29:34+00:00 | START Loading configuration
+2026-05-03T22:29:34+00:00 | DONE Loading configuration | elapsed_ms=0
+2026-05-03T22:29:34+00:00 | START Resolving judge mode and models | panel_mode_cli=provided judge_model_cli=provided secondary_judge_cli=provided arbiter_cli=provided execution_strategy_cli=provided
+2026-05-03T22:29:34+00:00 | DONE Resolving judge mode and models | panel_mode_cli=provided judge_model_cli=provided secondary_judge_cli=provided arbiter_cli=provided execution_strategy_cli=provided elapsed_ms=0
+2026-05-03T22:29:34+00:00 | execution_summary | Judge provider: remote_http | Judge mode: 2plus1 | Judge execution strategy: adaptive | Primary judges: | - Unbabel/M-Prometheus-14B | endpoint=api.featherless.ai | - meta-llama/Llama-3.3-70B-Instruct | endpoint=api.featherless.ai | Arbiter: | - openai/gpt-oss-120b | endpoint=api.featherless.ai | Arbitration min delta: 2 | Always run arbiter: false | Model source: CLI --judge-model / CLI --secondary-judge-model / CLI --arbiter-judge-model
+2026-05-03T22:29:34+00:00 | command_preview | .venv/bin/python -m atividade_2.cli run-judge --panel-mode 2plus1 --dataset J1 --batch-size 55 --judge-execution-strategy adaptive --judge-model Unbabel/M-Prometheus-14B --secondary-judge-model meta-llama/Llama-3.3-70B-Instruct --arbiter-judge-model openai/gpt-oss-120b
+2026-05-03T22:29:34+00:00 | START Connecting to local PostgreSQL | DATABASE_URL=<redacted>
+2026-05-03T22:29:34+00:00 | DONE Connecting to local PostgreSQL | DATABASE_URL=<redacted> elapsed_ms=9
+2026-05-03T22:29:34+00:00 | START Ensuring judge metadata schema
+2026-05-03T22:29:34+00:00 | DONE Ensuring judge metadata schema | elapsed_ms=19
+2026-05-03T22:29:34+00:00 | START Counting eligible answers for J1 | dataset=J1 batch_size=55
+2026-05-03T22:29:34+00:00 | DONE Counting eligible answers for J1 | dataset=J1 batch_size=55 elapsed_ms=3
+2026-05-03T22:29:34+00:00 | eligibility_summary | missing=55 failed=0 successful=155 will_process=55
+2026-05-03T22:29:34+00:00 | START Selecting pending candidate answers for J1 | dataset=J1 batch_size=55
+2026-05-03T22:29:34+00:00 | DONE Selecting pending candidate answers for J1 | dataset=J1 batch_size=55 elapsed_ms=7
+2026-05-03T22:29:34+00:00 | answers_selected | count=55
+2026-05-03T22:29:34+00:00 | START Running judge pipeline | answers=55 mode=2plus1
+2026-05-03T22:29:34+00:00 | evaluation_skipped | answer_id=1499 model=meta-llama/Llama-3.3-70B-Instruct role=controle mode=2plus1 existing_score=2
+2026-05-03T22:29:34+00:00 | evaluation_skipped | answer_id=1991 model=meta-llama/Llama-3.3-70B-Instruct role=controle mode=2plus1 existing_score=4
+2026-05-03T22:29:34+00:00 | evaluation_skipped | answer_id=1992 model=meta-llama/Llama-3.3-70B-Instruct role=controle mode=2plus1 existing_score=4
+2026-05-03T22:29:34+00:00 | evaluation_skipped | answer_id=1993 model=meta-llama/Llama-3.3-70B-Instruct role=controle mode=2plus1 existing_score=4
+2026-05-03T22:29:34+00:00 | evaluation_skipped | answer_id=1999 model=meta-llama/Llama-3.3-70B-Instruct role=controle mode=2plus1 existing_score=4
+2026-05-03T22:29:34+00:00 | evaluation_skipped | answer_id=2000 model=meta-llama/Llama-3.3-70B-Instruct role=controle mode=2plus1 existing_score=4
+2026-05-03T22:29:34+00:00 | evaluation_skipped | answer_id=2001 model=meta-llama/Llama-3.3-70B-Instruct role=controle mode=2plus1 existing_score=4
+2026-05-03T22:29:34+00:00 | evaluation_skipped | answer_id=2002 model=meta-llama/Llama-3.3-70B-Instruct role=controle mode=2plus1 existing_score=4
+2026-05-03T22:29:34+00:00 | evaluation_skipped | answer_id=2003 model=meta-llama/Llama-3.3-70B-Instruct role=controle mode=2plus1 existing_score=4
+2026-05-03T22:29:34+00:00 | evaluation_skipped | answer_id=2004 model=meta-llama/Llama-3.3-70B-Instruct role=controle mode=2plus1 existing_score=4
+2026-05-03T22:29:34+00:00 | evaluation_skipped | answer_id=2005 model=meta-llama/Llama-3.3-70B-Instruct role=controle mode=2plus1 existing_score=4
+2026-05-03T22:29:34+00:00 | evaluation_skipped | answer_id=2006 model=meta-llama/Llama-3.3-70B-Instruct role=controle mode=2plus1 existing_score=4
+2026-05-03T22:29:34+00:00 | evaluation_skipped | answer_id=2007 model=meta-llama/Llama-3.3-70B-Instruct role=controle mode=2plus1 existing_score=5
+2026-05-03T22:29:34+00:00 | evaluation_skipped | answer_id=2008 model=meta-llama/Llama-3.3-70B-Instruct role=controle mode=2plus1 existing_score=4
+2026-05-03T22:29:34+00:00 | evaluation_skipped | answer_id=2009 model=meta-llama/Llama-3.3-70B-Instruct role=controle mode=2plus1 existing_score=4
+2026-05-03T22:29:34+00:00 | evaluation_skipped | answer_id=2010 model=meta-llama/Llama-3.3-70B-Instruct role=controle mode=2plus1 existing_score=4
+2026-05-03T22:29:34+00:00 | evaluation_skipped | answer_id=2011 model=meta-llama/Llama-3.3-70B-Instruct role=controle mode=2plus1 existing_score=4
+2026-05-03T22:29:34+00:00 | evaluation_skipped | answer_id=2012 model=meta-llama/Llama-3.3-70B-Instruct role=controle mode=2plus1 existing_score=4
+2026-05-03T22:29:34+00:00 | evaluation_skipped | answer_id=2013 model=meta-llama/Llama-3.3-70B-Instruct role=controle mode=2plus1 existing_score=5
+2026-05-03T22:29:34+00:00 | evaluation_skipped | answer_id=2014 model=meta-llama/Llama-3.3-70B-Instruct role=controle mode=2plus1 existing_score=4
+2026-05-03T22:29:34+00:00 | evaluation_skipped | answer_id=2015 model=meta-llama/Llama-3.3-70B-Instruct role=controle mode=2plus1 existing_score=4
+2026-05-03T22:29:34+00:00 | evaluation_skipped | answer_id=2016 model=meta-llama/Llama-3.3-70B-Instruct role=controle mode=2plus1 existing_score=5
+2026-05-03T22:29:34+00:00 | evaluation_skipped | answer_id=2017 model=meta-llama/Llama-3.3-70B-Instruct role=controle mode=2plus1 existing_score=4
+2026-05-03T22:29:34+00:00 | evaluation_skipped | answer_id=2018 model=meta-llama/Llama-3.3-70B-Instruct role=controle mode=2plus1 existing_score=4
+2026-05-03T22:29:34+00:00 | evaluation_skipped | answer_id=2019 model=meta-llama/Llama-3.3-70B-Instruct role=controle mode=2plus1 existing_score=4
+2026-05-03T22:29:34+00:00 | evaluation_skipped | answer_id=1595 model=meta-llama/Llama-3.3-70B-Instruct role=controle mode=2plus1 existing_score=1
+2026-05-03T22:29:34+00:00 | evaluation_skipped | answer_id=1605 model=meta-llama/Llama-3.3-70B-Instruct role=controle mode=2plus1 existing_score=2
+2026-05-03T22:29:34+00:00 | evaluation_skipped | answer_id=1585 model=meta-llama/Llama-3.3-70B-Instruct role=controle mode=2plus1 existing_score=2
+2026-05-03T22:29:34+00:00 | evaluation_skipped | answer_id=1596 model=meta-llama/Llama-3.3-70B-Instruct role=controle mode=2plus1 existing_score=4
+2026-05-03T22:29:34+00:00 | evaluation_skipped | answer_id=1606 model=meta-llama/Llama-3.3-70B-Instruct role=controle mode=2plus1 existing_score=4
+2026-05-03T22:29:34+00:00 | evaluation_skipped | answer_id=1586 model=meta-llama/Llama-3.3-70B-Instruct role=controle mode=2plus1 existing_score=4
+2026-05-03T22:29:34+00:00 | evaluation_skipped | answer_id=1597 model=meta-llama/Llama-3.3-70B-Instruct role=controle mode=2plus1 existing_score=2
+2026-05-03T22:29:34+00:00 | evaluation_skipped | answer_id=1607 model=meta-llama/Llama-3.3-70B-Instruct role=controle mode=2plus1 existing_score=2
+2026-05-03T22:29:34+00:00 | evaluation_skipped | answer_id=1587 model=meta-llama/Llama-3.3-70B-Instruct role=controle mode=2plus1 existing_score=2
+2026-05-03T22:29:34+00:00 | evaluation_skipped | answer_id=1598 model=meta-llama/Llama-3.3-70B-Instruct role=controle mode=2plus1 existing_score=4
+2026-05-03T22:29:34+00:00 | evaluation_skipped | answer_id=1608 model=meta-llama/Llama-3.3-70B-Instruct role=controle mode=2plus1 existing_score=2
+2026-05-03T22:29:34+00:00 | evaluation_skipped | answer_id=1588 model=meta-llama/Llama-3.3-70B-Instruct role=controle mode=2plus1 existing_score=2
+2026-05-03T22:29:34+00:00 | evaluation_skipped | answer_id=1599 model=meta-llama/Llama-3.3-70B-Instruct role=controle mode=2plus1 existing_score=2
+2026-05-03T22:29:34+00:00 | evaluation_skipped | answer_id=1609 model=meta-llama/Llama-3.3-70B-Instruct role=controle mode=2plus1 existing_score=3
+2026-05-03T22:29:34+00:00 | evaluation_skipped | answer_id=1589 model=meta-llama/Llama-3.3-70B-Instruct role=controle mode=2plus1 existing_score=2
+2026-05-03T22:29:34+00:00 | evaluation_skipped | answer_id=1600 model=meta-llama/Llama-3.3-70B-Instruct role=controle mode=2plus1 existing_score=3
+2026-05-03T22:29:34+00:00 | evaluation_skipped | answer_id=1610 model=meta-llama/Llama-3.3-70B-Instruct role=controle mode=2plus1 existing_score=3
+2026-05-03T22:29:34+00:00 | evaluation_skipped | answer_id=1590 model=meta-llama/Llama-3.3-70B-Instruct role=controle mode=2plus1 existing_score=3
+2026-05-03T22:29:34+00:00 | evaluation_skipped | answer_id=1601 model=meta-llama/Llama-3.3-70B-Instruct role=controle mode=2plus1 existing_score=3
+2026-05-03T22:29:34+00:00 | evaluation_skipped | answer_id=1611 model=meta-llama/Llama-3.3-70B-Instruct role=controle mode=2plus1 existing_score=2
+2026-05-03T22:29:34+00:00 | evaluation_skipped | answer_id=1591 model=meta-llama/Llama-3.3-70B-Instruct role=controle mode=2plus1 existing_score=3
+2026-05-03T22:29:34+00:00 | evaluation_skipped | answer_id=1602 model=meta-llama/Llama-3.3-70B-Instruct role=controle mode=2plus1 existing_score=2
+2026-05-03T22:29:34+00:00 | evaluation_skipped | answer_id=1612 model=meta-llama/Llama-3.3-70B-Instruct role=controle mode=2plus1 existing_score=2
+2026-05-03T22:29:34+00:00 | evaluation_skipped | answer_id=1592 model=meta-llama/Llama-3.3-70B-Instruct role=controle mode=2plus1 existing_score=2
+2026-05-03T22:29:34+00:00 | evaluation_skipped | answer_id=1603 model=meta-llama/Llama-3.3-70B-Instruct role=controle mode=2plus1 existing_score=2
+2026-05-03T22:29:34+00:00 | evaluation_skipped | answer_id=1613 model=meta-llama/Llama-3.3-70B-Instruct role=controle mode=2plus1 existing_score=3
+2026-05-03T22:29:34+00:00 | evaluation_skipped | answer_id=1593 model=meta-llama/Llama-3.3-70B-Instruct role=controle mode=2plus1 existing_score=2
+2026-05-03T22:29:34+00:00 | evaluation_skipped | answer_id=1604 model=meta-llama/Llama-3.3-70B-Instruct role=controle mode=2plus1 existing_score=3
+2026-05-03T22:29:34+00:00 | evaluation_skipped | answer_id=1614 model=meta-llama/Llama-3.3-70B-Instruct role=controle mode=2plus1 existing_score=3
+2026-05-03T22:29:34+00:00 | evaluation_skipped | answer_id=1594 model=meta-llama/Llama-3.3-70B-Instruct role=controle mode=2plus1 existing_score=2
+2026-05-03T22:29:34+00:00 | adaptive_concurrency_initial | provider=remote_http base_url=https://api.featherless.ai/v1 api_key=a3672be7 model=Unbabel/M-Prometheus-14B initial_concurrency=1 max_concurrency=4
+2026-05-03T22:29:34+00:00 | START Running answer 1499 with Unbabel/M-Prometheus-14B | answer_id=1499 question_id=77 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:29:55+00:00 | FAIL Running answer 1499 with Unbabel/M-Prometheus-14B | answer_id=1499 question_id=77 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel error=Remote judge returned HTTP 503: Unbabel/M-Prometheus-14B is temporarily at capacity. Please try again shortly. elapsed_ms=20957
+2026-05-03T22:29:55+00:00 | adaptive_task_requeued | provider=remote_http base_url=https://api.featherless.ai/v1 api_key=a3672be7 model=Unbabel/M-Prometheus-14B answer_id=1499 role=principal attempt=1 backoff_seconds=2.854 error=Remote judge returned HTTP 503: Unbabel/M-Prometheus-14B is temporarily at capacity. Please try again shortly.
+2026-05-03T22:29:58+00:00 | START Running answer 1991 with Unbabel/M-Prometheus-14B | answer_id=1991 question_id=121 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:30:28+00:00 | DONE Running answer 1991 with Unbabel/M-Prometheus-14B | answer_id=1991 question_id=121 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=29740
+2026-05-03T22:30:28+00:00 | START Parsing judge response for answer 1991 | answer_id=1991 question_id=121 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:30:28+00:00 | DONE Parsing judge response for answer 1991 | answer_id=1991 question_id=121 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=0
+2026-05-03T22:30:28+00:00 | evaluation_parsed | answer_id=1991 question_id=121 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel score=4 latency_ms=29740 status_code=200
+2026-05-03T22:30:28+00:00 | START Running answer 1992 with Unbabel/M-Prometheus-14B | answer_id=1992 question_id=121 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:30:40+00:00 | DONE Running answer 1992 with Unbabel/M-Prometheus-14B | answer_id=1992 question_id=121 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=12955
+2026-05-03T22:30:40+00:00 | START Parsing judge response for answer 1992 | answer_id=1992 question_id=121 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:30:40+00:00 | DONE Parsing judge response for answer 1992 | answer_id=1992 question_id=121 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=0
+2026-05-03T22:30:40+00:00 | evaluation_parsed | answer_id=1992 question_id=121 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel score=4 latency_ms=12954 status_code=200
+2026-05-03T22:30:40+00:00 | START Running answer 1993 with Unbabel/M-Prometheus-14B | answer_id=1993 question_id=122 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:30:53+00:00 | DONE Running answer 1993 with Unbabel/M-Prometheus-14B | answer_id=1993 question_id=122 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=12387
+2026-05-03T22:30:53+00:00 | START Parsing judge response for answer 1993 | answer_id=1993 question_id=122 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:30:53+00:00 | DONE Parsing judge response for answer 1993 | answer_id=1993 question_id=122 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=0
+2026-05-03T22:30:53+00:00 | evaluation_parsed | answer_id=1993 question_id=122 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel score=4 latency_ms=12387 status_code=200
+2026-05-03T22:30:53+00:00 | START Running answer 1999 with Unbabel/M-Prometheus-14B | answer_id=1999 question_id=124 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:31:04+00:00 | DONE Running answer 1999 with Unbabel/M-Prometheus-14B | answer_id=1999 question_id=124 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=11258
+2026-05-03T22:31:04+00:00 | START Parsing judge response for answer 1999 | answer_id=1999 question_id=124 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:31:04+00:00 | DONE Parsing judge response for answer 1999 | answer_id=1999 question_id=124 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=0
+2026-05-03T22:31:04+00:00 | evaluation_parsed | answer_id=1999 question_id=124 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel score=4 latency_ms=11258 status_code=200
+2026-05-03T22:31:04+00:00 | START Running answer 2000 with Unbabel/M-Prometheus-14B | answer_id=2000 question_id=124 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:31:15+00:00 | DONE Running answer 2000 with Unbabel/M-Prometheus-14B | answer_id=2000 question_id=124 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=11265
+2026-05-03T22:31:15+00:00 | START Parsing judge response for answer 2000 | answer_id=2000 question_id=124 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:31:15+00:00 | DONE Parsing judge response for answer 2000 | answer_id=2000 question_id=124 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=0
+2026-05-03T22:31:15+00:00 | evaluation_parsed | answer_id=2000 question_id=124 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel score=4 latency_ms=11265 status_code=200
+2026-05-03T22:31:15+00:00 | adaptive_concurrency_increased | provider=remote_http base_url=https://api.featherless.ai/v1 api_key=a3672be7 model=Unbabel/M-Prometheus-14B from=1 to=2 successes=5
+2026-05-03T22:31:15+00:00 | START Running answer 2001 with Unbabel/M-Prometheus-14B | answer_id=2001 question_id=124 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:31:15+00:00 | START Running answer 2002 with Unbabel/M-Prometheus-14B | answer_id=2002 question_id=125 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:31:24+00:00 | DONE Running answer 2002 with Unbabel/M-Prometheus-14B | answer_id=2002 question_id=125 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=8695
+2026-05-03T22:31:24+00:00 | START Parsing judge response for answer 2002 | answer_id=2002 question_id=125 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:31:24+00:00 | DONE Parsing judge response for answer 2002 | answer_id=2002 question_id=125 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=0
+2026-05-03T22:31:24+00:00 | evaluation_parsed | answer_id=2002 question_id=125 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel score=4 latency_ms=8694 status_code=200
+2026-05-03T22:31:24+00:00 | START Running answer 2003 with Unbabel/M-Prometheus-14B | answer_id=2003 question_id=125 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:31:27+00:00 | DONE Running answer 2001 with Unbabel/M-Prometheus-14B | answer_id=2001 question_id=124 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=11212
+2026-05-03T22:31:27+00:00 | START Parsing judge response for answer 2001 | answer_id=2001 question_id=124 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:31:27+00:00 | DONE Parsing judge response for answer 2001 | answer_id=2001 question_id=124 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=0
+2026-05-03T22:31:27+00:00 | evaluation_parsed | answer_id=2001 question_id=124 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel score=4 latency_ms=11212 status_code=200
+2026-05-03T22:31:27+00:00 | START Running answer 2004 with Unbabel/M-Prometheus-14B | answer_id=2004 question_id=125 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:31:32+00:00 | DONE Running answer 2003 with Unbabel/M-Prometheus-14B | answer_id=2003 question_id=125 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=7776
+2026-05-03T22:31:32+00:00 | START Parsing judge response for answer 2003 | answer_id=2003 question_id=125 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:31:32+00:00 | DONE Parsing judge response for answer 2003 | answer_id=2003 question_id=125 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=0
+2026-05-03T22:31:32+00:00 | evaluation_parsed | answer_id=2003 question_id=125 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel score=4 latency_ms=7776 status_code=200
+2026-05-03T22:31:32+00:00 | START Running answer 2005 with Unbabel/M-Prometheus-14B | answer_id=2005 question_id=126 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:31:38+00:00 | DONE Running answer 2004 with Unbabel/M-Prometheus-14B | answer_id=2004 question_id=125 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=11257
+2026-05-03T22:31:38+00:00 | START Parsing judge response for answer 2004 | answer_id=2004 question_id=125 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:31:38+00:00 | DONE Parsing judge response for answer 2004 | answer_id=2004 question_id=125 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=0
+2026-05-03T22:31:38+00:00 | evaluation_parsed | answer_id=2004 question_id=125 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel score=4 latency_ms=11257 status_code=200
+2026-05-03T22:31:38+00:00 | START Running answer 2006 with Unbabel/M-Prometheus-14B | answer_id=2006 question_id=126 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:31:47+00:00 | DONE Running answer 2005 with Unbabel/M-Prometheus-14B | answer_id=2005 question_id=126 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=15121
+2026-05-03T22:31:47+00:00 | START Parsing judge response for answer 2005 | answer_id=2005 question_id=126 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:31:47+00:00 | DONE Parsing judge response for answer 2005 | answer_id=2005 question_id=126 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=0
+2026-05-03T22:31:47+00:00 | evaluation_parsed | answer_id=2005 question_id=126 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel score=4 latency_ms=15121 status_code=200
+2026-05-03T22:31:47+00:00 | adaptive_concurrency_increased | provider=remote_http base_url=https://api.featherless.ai/v1 api_key=a3672be7 model=Unbabel/M-Prometheus-14B from=2 to=3 successes=10
+2026-05-03T22:31:47+00:00 | START Running answer 2007 with Unbabel/M-Prometheus-14B | answer_id=2007 question_id=126 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:31:47+00:00 | START Running answer 2008 with Unbabel/M-Prometheus-14B | answer_id=2008 question_id=127 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:31:47+00:00 | DONE Running answer 2006 with Unbabel/M-Prometheus-14B | answer_id=2006 question_id=126 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=9601
+2026-05-03T22:31:47+00:00 | START Parsing judge response for answer 2006 | answer_id=2006 question_id=126 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:31:47+00:00 | DONE Parsing judge response for answer 2006 | answer_id=2006 question_id=126 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=0
+2026-05-03T22:31:47+00:00 | evaluation_parsed | answer_id=2006 question_id=126 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel score=4 latency_ms=9601 status_code=200
+2026-05-03T22:31:47+00:00 | START Running answer 2009 with Unbabel/M-Prometheus-14B | answer_id=2009 question_id=127 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:31:58+00:00 | DONE Running answer 2008 with Unbabel/M-Prometheus-14B | answer_id=2008 question_id=127 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=11345
+2026-05-03T22:31:58+00:00 | START Parsing judge response for answer 2008 | answer_id=2008 question_id=127 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:31:58+00:00 | DONE Parsing judge response for answer 2008 | answer_id=2008 question_id=127 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=0
+2026-05-03T22:31:58+00:00 | evaluation_parsed | answer_id=2008 question_id=127 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel score=4 latency_ms=11345 status_code=200
+2026-05-03T22:31:58+00:00 | START Running answer 2010 with Unbabel/M-Prometheus-14B | answer_id=2010 question_id=127 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:32:01+00:00 | DONE Running answer 2009 with Unbabel/M-Prometheus-14B | answer_id=2009 question_id=127 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=13607
+2026-05-03T22:32:01+00:00 | START Parsing judge response for answer 2009 | answer_id=2009 question_id=127 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:32:01+00:00 | DONE Parsing judge response for answer 2009 | answer_id=2009 question_id=127 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=0
+2026-05-03T22:32:01+00:00 | evaluation_parsed | answer_id=2009 question_id=127 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel score=4 latency_ms=13607 status_code=200
+2026-05-03T22:32:01+00:00 | START Running answer 2011 with Unbabel/M-Prometheus-14B | answer_id=2011 question_id=128 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:32:02+00:00 | DONE Running answer 2007 with Unbabel/M-Prometheus-14B | answer_id=2007 question_id=126 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=15331
+2026-05-03T22:32:02+00:00 | START Parsing judge response for answer 2007 | answer_id=2007 question_id=126 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:32:02+00:00 | DONE Parsing judge response for answer 2007 | answer_id=2007 question_id=126 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=0
+2026-05-03T22:32:02+00:00 | evaluation_parsed | answer_id=2007 question_id=126 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel score=4 latency_ms=15331 status_code=200
+2026-05-03T22:32:02+00:00 | START Running answer 2012 with Unbabel/M-Prometheus-14B | answer_id=2012 question_id=128 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:32:09+00:00 | DONE Running answer 2010 with Unbabel/M-Prometheus-14B | answer_id=2010 question_id=127 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=11015
+2026-05-03T22:32:09+00:00 | START Parsing judge response for answer 2010 | answer_id=2010 question_id=127 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:32:09+00:00 | DONE Parsing judge response for answer 2010 | answer_id=2010 question_id=127 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=0
+2026-05-03T22:32:09+00:00 | evaluation_parsed | answer_id=2010 question_id=127 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel score=4 latency_ms=11015 status_code=200
+2026-05-03T22:32:09+00:00 | adaptive_concurrency_increased | provider=remote_http base_url=https://api.featherless.ai/v1 api_key=a3672be7 model=Unbabel/M-Prometheus-14B from=3 to=4 successes=15
+2026-05-03T22:32:09+00:00 | START Running answer 2013 with Unbabel/M-Prometheus-14B | answer_id=2013 question_id=128 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:32:09+00:00 | START Running answer 2014 with Unbabel/M-Prometheus-14B | answer_id=2014 question_id=129 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:32:13+00:00 | DONE Running answer 2011 with Unbabel/M-Prometheus-14B | answer_id=2011 question_id=128 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=11828
+2026-05-03T22:32:13+00:00 | START Parsing judge response for answer 2011 | answer_id=2011 question_id=128 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:32:13+00:00 | DONE Parsing judge response for answer 2011 | answer_id=2011 question_id=128 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=0
+2026-05-03T22:32:13+00:00 | evaluation_parsed | answer_id=2011 question_id=128 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel score=4 latency_ms=11828 status_code=200
+2026-05-03T22:32:13+00:00 | START Running answer 2015 with Unbabel/M-Prometheus-14B | answer_id=2015 question_id=129 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:32:13+00:00 | DONE Running answer 2012 with Unbabel/M-Prometheus-14B | answer_id=2012 question_id=128 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=10806
+2026-05-03T22:32:13+00:00 | START Parsing judge response for answer 2012 | answer_id=2012 question_id=128 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:32:13+00:00 | DONE Parsing judge response for answer 2012 | answer_id=2012 question_id=128 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=0
+2026-05-03T22:32:13+00:00 | evaluation_parsed | answer_id=2012 question_id=128 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel score=4 latency_ms=10806 status_code=200
+2026-05-03T22:32:13+00:00 | START Running answer 2016 with Unbabel/M-Prometheus-14B | answer_id=2016 question_id=129 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:32:19+00:00 | DONE Running answer 2013 with Unbabel/M-Prometheus-14B | answer_id=2013 question_id=128 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=9827
+2026-05-03T22:32:19+00:00 | START Parsing judge response for answer 2013 | answer_id=2013 question_id=128 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:32:19+00:00 | DONE Parsing judge response for answer 2013 | answer_id=2013 question_id=128 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=0
+2026-05-03T22:32:19+00:00 | evaluation_parsed | answer_id=2013 question_id=128 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel score=4 latency_ms=9827 status_code=200
+2026-05-03T22:32:19+00:00 | START Running answer 2017 with Unbabel/M-Prometheus-14B | answer_id=2017 question_id=130 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:32:21+00:00 | DONE Running answer 2014 with Unbabel/M-Prometheus-14B | answer_id=2014 question_id=129 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=11346
+2026-05-03T22:32:21+00:00 | START Parsing judge response for answer 2014 | answer_id=2014 question_id=129 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:32:21+00:00 | DONE Parsing judge response for answer 2014 | answer_id=2014 question_id=129 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=0
+2026-05-03T22:32:21+00:00 | evaluation_parsed | answer_id=2014 question_id=129 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel score=4 latency_ms=11346 status_code=200
+2026-05-03T22:32:21+00:00 | START Running answer 2018 with Unbabel/M-Prometheus-14B | answer_id=2018 question_id=130 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:32:23+00:00 | DONE Running answer 2016 with Unbabel/M-Prometheus-14B | answer_id=2016 question_id=129 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=9979
+2026-05-03T22:32:23+00:00 | START Parsing judge response for answer 2016 | answer_id=2016 question_id=129 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:32:23+00:00 | DONE Parsing judge response for answer 2016 | answer_id=2016 question_id=129 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=0
+2026-05-03T22:32:23+00:00 | evaluation_parsed | answer_id=2016 question_id=129 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel score=4 latency_ms=9979 status_code=200
+2026-05-03T22:32:23+00:00 | START Running answer 2019 with Unbabel/M-Prometheus-14B | answer_id=2019 question_id=130 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:32:27+00:00 | DONE Running answer 2015 with Unbabel/M-Prometheus-14B | answer_id=2015 question_id=129 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=14458
+2026-05-03T22:32:27+00:00 | START Parsing judge response for answer 2015 | answer_id=2015 question_id=129 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:32:27+00:00 | DONE Parsing judge response for answer 2015 | answer_id=2015 question_id=129 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=0
+2026-05-03T22:32:27+00:00 | evaluation_parsed | answer_id=2015 question_id=129 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel score=4 latency_ms=14458 status_code=200
+2026-05-03T22:32:27+00:00 | START Running answer 1595 with Unbabel/M-Prometheus-14B | answer_id=1595 question_id=131 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:32:32+00:00 | DONE Running answer 2017 with Unbabel/M-Prometheus-14B | answer_id=2017 question_id=130 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=12388
+2026-05-03T22:32:32+00:00 | START Parsing judge response for answer 2017 | answer_id=2017 question_id=130 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:32:32+00:00 | DONE Parsing judge response for answer 2017 | answer_id=2017 question_id=130 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=0
+2026-05-03T22:32:32+00:00 | evaluation_parsed | answer_id=2017 question_id=130 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel score=4 latency_ms=12388 status_code=200
+2026-05-03T22:32:32+00:00 | START Running answer 1605 with Unbabel/M-Prometheus-14B | answer_id=1605 question_id=131 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:32:32+00:00 | DONE Running answer 2018 with Unbabel/M-Prometheus-14B | answer_id=2018 question_id=130 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=11234
+2026-05-03T22:32:32+00:00 | START Parsing judge response for answer 2018 | answer_id=2018 question_id=130 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:32:32+00:00 | DONE Parsing judge response for answer 2018 | answer_id=2018 question_id=130 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=0
+2026-05-03T22:32:32+00:00 | evaluation_parsed | answer_id=2018 question_id=130 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel score=4 latency_ms=11234 status_code=200
+2026-05-03T22:32:32+00:00 | START Running answer 1585 with Unbabel/M-Prometheus-14B | answer_id=1585 question_id=131 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:32:34+00:00 | DONE Running answer 2019 with Unbabel/M-Prometheus-14B | answer_id=2019 question_id=130 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=10629
+2026-05-03T22:32:34+00:00 | START Parsing judge response for answer 2019 | answer_id=2019 question_id=130 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:32:34+00:00 | DONE Parsing judge response for answer 2019 | answer_id=2019 question_id=130 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=0
+2026-05-03T22:32:34+00:00 | evaluation_parsed | answer_id=2019 question_id=130 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel score=4 latency_ms=10629 status_code=200
+2026-05-03T22:32:34+00:00 | START Running answer 1596 with Unbabel/M-Prometheus-14B | answer_id=1596 question_id=132 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:32:42+00:00 | DONE Running answer 1585 with Unbabel/M-Prometheus-14B | answer_id=1585 question_id=131 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=10087
+2026-05-03T22:32:42+00:00 | START Parsing judge response for answer 1585 | answer_id=1585 question_id=131 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:32:42+00:00 | DONE Parsing judge response for answer 1585 | answer_id=1585 question_id=131 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=0
+2026-05-03T22:32:42+00:00 | evaluation_parsed | answer_id=1585 question_id=131 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel score=2 latency_ms=10087 status_code=200
+2026-05-03T22:32:42+00:00 | START Running answer 1606 with Unbabel/M-Prometheus-14B | answer_id=1606 question_id=132 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:32:42+00:00 | DONE Running answer 1605 with Unbabel/M-Prometheus-14B | answer_id=1605 question_id=131 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=10466
+2026-05-03T22:32:42+00:00 | START Parsing judge response for answer 1605 | answer_id=1605 question_id=131 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:32:42+00:00 | DONE Parsing judge response for answer 1605 | answer_id=1605 question_id=131 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=0
+2026-05-03T22:32:42+00:00 | evaluation_parsed | answer_id=1605 question_id=131 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel score=3 latency_ms=10466 status_code=200
+2026-05-03T22:32:42+00:00 | START Running answer 1586 with Unbabel/M-Prometheus-14B | answer_id=1586 question_id=132 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:32:42+00:00 | DONE Running answer 1595 with Unbabel/M-Prometheus-14B | answer_id=1595 question_id=131 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=14846
+2026-05-03T22:32:42+00:00 | START Parsing judge response for answer 1595 | answer_id=1595 question_id=131 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:32:42+00:00 | DONE Parsing judge response for answer 1595 | answer_id=1595 question_id=131 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=0
+2026-05-03T22:32:42+00:00 | evaluation_parsed | answer_id=1595 question_id=131 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel score=2 latency_ms=14846 status_code=200
+2026-05-03T22:32:42+00:00 | START Running answer 1597 with Unbabel/M-Prometheus-14B | answer_id=1597 question_id=133 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:32:47+00:00 | DONE Running answer 1596 with Unbabel/M-Prometheus-14B | answer_id=1596 question_id=132 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=13645
+2026-05-03T22:32:47+00:00 | START Parsing judge response for answer 1596 | answer_id=1596 question_id=132 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:32:47+00:00 | DONE Parsing judge response for answer 1596 | answer_id=1596 question_id=132 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=0
+2026-05-03T22:32:47+00:00 | evaluation_parsed | answer_id=1596 question_id=132 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel score=4 latency_ms=13645 status_code=200
+2026-05-03T22:32:47+00:00 | START Running answer 1607 with Unbabel/M-Prometheus-14B | answer_id=1607 question_id=133 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:32:52+00:00 | DONE Running answer 1597 with Unbabel/M-Prometheus-14B | answer_id=1597 question_id=133 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=9747
+2026-05-03T22:32:52+00:00 | START Parsing judge response for answer 1597 | answer_id=1597 question_id=133 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:32:52+00:00 | DONE Parsing judge response for answer 1597 | answer_id=1597 question_id=133 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=0
+2026-05-03T22:32:52+00:00 | evaluation_parsed | answer_id=1597 question_id=133 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel score=4 latency_ms=9746 status_code=200
+2026-05-03T22:32:52+00:00 | START Running answer 1587 with Unbabel/M-Prometheus-14B | answer_id=1587 question_id=133 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:32:55+00:00 | DONE Running answer 1606 with Unbabel/M-Prometheus-14B | answer_id=1606 question_id=132 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=12704
+2026-05-03T22:32:55+00:00 | START Parsing judge response for answer 1606 | answer_id=1606 question_id=132 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:32:55+00:00 | DONE Parsing judge response for answer 1606 | answer_id=1606 question_id=132 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=0
+2026-05-03T22:32:55+00:00 | evaluation_parsed | answer_id=1606 question_id=132 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel score=3 latency_ms=12704 status_code=200
+2026-05-03T22:32:55+00:00 | START Running answer 1598 with Unbabel/M-Prometheus-14B | answer_id=1598 question_id=134 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:32:58+00:00 | DONE Running answer 1586 with Unbabel/M-Prometheus-14B | answer_id=1586 question_id=132 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=15994
+2026-05-03T22:32:58+00:00 | START Parsing judge response for answer 1586 | answer_id=1586 question_id=132 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:32:58+00:00 | DONE Parsing judge response for answer 1586 | answer_id=1586 question_id=132 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=0
+2026-05-03T22:32:58+00:00 | evaluation_parsed | answer_id=1586 question_id=132 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel score=2 latency_ms=15994 status_code=200
+2026-05-03T22:32:58+00:00 | START Running answer 1608 with Unbabel/M-Prometheus-14B | answer_id=1608 question_id=134 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:33:02+00:00 | DONE Running answer 1607 with Unbabel/M-Prometheus-14B | answer_id=1607 question_id=133 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=15040
+2026-05-03T22:33:02+00:00 | START Parsing judge response for answer 1607 | answer_id=1607 question_id=133 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:33:02+00:00 | DONE Parsing judge response for answer 1607 | answer_id=1607 question_id=133 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=0
+2026-05-03T22:33:02+00:00 | evaluation_parsed | answer_id=1607 question_id=133 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel score=2 latency_ms=15040 status_code=200
+2026-05-03T22:33:02+00:00 | START Running answer 1588 with Unbabel/M-Prometheus-14B | answer_id=1588 question_id=134 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:33:05+00:00 | DONE Running answer 1587 with Unbabel/M-Prometheus-14B | answer_id=1587 question_id=133 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=12680
+2026-05-03T22:33:05+00:00 | START Parsing judge response for answer 1587 | answer_id=1587 question_id=133 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:33:05+00:00 | DONE Parsing judge response for answer 1587 | answer_id=1587 question_id=133 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=0
+2026-05-03T22:33:05+00:00 | evaluation_parsed | answer_id=1587 question_id=133 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel score=3 latency_ms=12680 status_code=200
+2026-05-03T22:33:05+00:00 | START Running answer 1599 with Unbabel/M-Prometheus-14B | answer_id=1599 question_id=135 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:33:08+00:00 | DONE Running answer 1598 with Unbabel/M-Prometheus-14B | answer_id=1598 question_id=134 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=12748
+2026-05-03T22:33:08+00:00 | START Parsing judge response for answer 1598 | answer_id=1598 question_id=134 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:33:08+00:00 | DONE Parsing judge response for answer 1598 | answer_id=1598 question_id=134 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=0
+2026-05-03T22:33:08+00:00 | evaluation_parsed | answer_id=1598 question_id=134 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel score=4 latency_ms=12748 status_code=200
+2026-05-03T22:33:08+00:00 | START Running answer 1609 with Unbabel/M-Prometheus-14B | answer_id=1609 question_id=135 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:33:13+00:00 | DONE Running answer 1608 with Unbabel/M-Prometheus-14B | answer_id=1608 question_id=134 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=15227
+2026-05-03T22:33:13+00:00 | START Parsing judge response for answer 1608 | answer_id=1608 question_id=134 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:33:13+00:00 | DONE Parsing judge response for answer 1608 | answer_id=1608 question_id=134 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=0
+2026-05-03T22:33:13+00:00 | evaluation_parsed | answer_id=1608 question_id=134 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel score=2 latency_ms=15227 status_code=200
+2026-05-03T22:33:13+00:00 | START Running answer 1589 with Unbabel/M-Prometheus-14B | answer_id=1589 question_id=135 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:33:15+00:00 | DONE Running answer 1588 with Unbabel/M-Prometheus-14B | answer_id=1588 question_id=134 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=12068
+2026-05-03T22:33:15+00:00 | START Parsing judge response for answer 1588 | answer_id=1588 question_id=134 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:33:15+00:00 | DONE Parsing judge response for answer 1588 | answer_id=1588 question_id=134 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=0
+2026-05-03T22:33:15+00:00 | evaluation_parsed | answer_id=1588 question_id=134 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel score=2 latency_ms=12068 status_code=200
+2026-05-03T22:33:15+00:00 | START Running answer 1600 with Unbabel/M-Prometheus-14B | answer_id=1600 question_id=136 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:33:20+00:00 | DONE Running answer 1599 with Unbabel/M-Prometheus-14B | answer_id=1599 question_id=135 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=14957
+2026-05-03T22:33:20+00:00 | START Parsing judge response for answer 1599 | answer_id=1599 question_id=135 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:33:20+00:00 | DONE Parsing judge response for answer 1599 | answer_id=1599 question_id=135 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=0
+2026-05-03T22:33:20+00:00 | evaluation_parsed | answer_id=1599 question_id=135 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel score=2 latency_ms=14957 status_code=200
+2026-05-03T22:33:20+00:00 | START Running answer 1610 with Unbabel/M-Prometheus-14B | answer_id=1610 question_id=136 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:33:22+00:00 | DONE Running answer 1609 with Unbabel/M-Prometheus-14B | answer_id=1609 question_id=135 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=14820
+2026-05-03T22:33:22+00:00 | START Parsing judge response for answer 1609 | answer_id=1609 question_id=135 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:33:22+00:00 | DONE Parsing judge response for answer 1609 | answer_id=1609 question_id=135 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=0
+2026-05-03T22:33:22+00:00 | evaluation_parsed | answer_id=1609 question_id=135 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel score=3 latency_ms=14820 status_code=200
+2026-05-03T22:33:22+00:00 | START Running answer 1590 with Unbabel/M-Prometheus-14B | answer_id=1590 question_id=136 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:33:25+00:00 | DONE Running answer 1600 with Unbabel/M-Prometheus-14B | answer_id=1600 question_id=136 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=10152
+2026-05-03T22:33:25+00:00 | START Parsing judge response for answer 1600 | answer_id=1600 question_id=136 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:33:25+00:00 | DONE Parsing judge response for answer 1600 | answer_id=1600 question_id=136 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=0
+2026-05-03T22:33:25+00:00 | evaluation_parsed | answer_id=1600 question_id=136 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel score=3 latency_ms=10152 status_code=200
+2026-05-03T22:33:25+00:00 | START Running answer 1601 with Unbabel/M-Prometheus-14B | answer_id=1601 question_id=137 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:33:25+00:00 | DONE Running answer 1589 with Unbabel/M-Prometheus-14B | answer_id=1589 question_id=135 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=11711
+2026-05-03T22:33:25+00:00 | START Parsing judge response for answer 1589 | answer_id=1589 question_id=135 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:33:25+00:00 | DONE Parsing judge response for answer 1589 | answer_id=1589 question_id=135 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=0
+2026-05-03T22:33:25+00:00 | evaluation_parsed | answer_id=1589 question_id=135 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel score=2 latency_ms=11711 status_code=200
+2026-05-03T22:33:25+00:00 | START Running answer 1611 with Unbabel/M-Prometheus-14B | answer_id=1611 question_id=137 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:33:32+00:00 | DONE Running answer 1590 with Unbabel/M-Prometheus-14B | answer_id=1590 question_id=136 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=9248
+2026-05-03T22:33:32+00:00 | START Parsing judge response for answer 1590 | answer_id=1590 question_id=136 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:33:32+00:00 | DONE Parsing judge response for answer 1590 | answer_id=1590 question_id=136 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=0
+2026-05-03T22:33:32+00:00 | evaluation_parsed | answer_id=1590 question_id=136 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel score=3 latency_ms=9248 status_code=200
+2026-05-03T22:33:32+00:00 | START Running answer 1591 with Unbabel/M-Prometheus-14B | answer_id=1591 question_id=137 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:33:32+00:00 | DONE Running answer 1610 with Unbabel/M-Prometheus-14B | answer_id=1610 question_id=136 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=12043
+2026-05-03T22:33:32+00:00 | START Parsing judge response for answer 1610 | answer_id=1610 question_id=136 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:33:32+00:00 | DONE Parsing judge response for answer 1610 | answer_id=1610 question_id=136 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=0
+2026-05-03T22:33:32+00:00 | evaluation_parsed | answer_id=1610 question_id=136 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel score=3 latency_ms=12043 status_code=200
+2026-05-03T22:33:32+00:00 | START Running answer 1602 with Unbabel/M-Prometheus-14B | answer_id=1602 question_id=138 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:33:36+00:00 | DONE Running answer 1611 with Unbabel/M-Prometheus-14B | answer_id=1611 question_id=137 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=10909
+2026-05-03T22:33:36+00:00 | START Parsing judge response for answer 1611 | answer_id=1611 question_id=137 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:33:36+00:00 | DONE Parsing judge response for answer 1611 | answer_id=1611 question_id=137 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=0
+2026-05-03T22:33:36+00:00 | evaluation_parsed | answer_id=1611 question_id=137 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel score=3 latency_ms=10908 status_code=200
+2026-05-03T22:33:36+00:00 | START Running answer 1612 with Unbabel/M-Prometheus-14B | answer_id=1612 question_id=138 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:33:36+00:00 | DONE Running answer 1601 with Unbabel/M-Prometheus-14B | answer_id=1601 question_id=137 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=11526
+2026-05-03T22:33:36+00:00 | START Parsing judge response for answer 1601 | answer_id=1601 question_id=137 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:33:36+00:00 | DONE Parsing judge response for answer 1601 | answer_id=1601 question_id=137 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=0
+2026-05-03T22:33:36+00:00 | evaluation_parsed | answer_id=1601 question_id=137 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel score=4 latency_ms=11526 status_code=200
+2026-05-03T22:33:36+00:00 | START Running answer 1592 with Unbabel/M-Prometheus-14B | answer_id=1592 question_id=138 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:33:41+00:00 | DONE Running answer 1591 with Unbabel/M-Prometheus-14B | answer_id=1591 question_id=137 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=9013
+2026-05-03T22:33:41+00:00 | START Parsing judge response for answer 1591 | answer_id=1591 question_id=137 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:33:41+00:00 | DONE Parsing judge response for answer 1591 | answer_id=1591 question_id=137 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=0
+2026-05-03T22:33:41+00:00 | evaluation_parsed | answer_id=1591 question_id=137 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel score=3 latency_ms=9013 status_code=200
+2026-05-03T22:33:41+00:00 | START Running answer 1603 with Unbabel/M-Prometheus-14B | answer_id=1603 question_id=139 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:33:41+00:00 | DONE Running answer 1602 with Unbabel/M-Prometheus-14B | answer_id=1602 question_id=138 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=9525
+2026-05-03T22:33:41+00:00 | START Parsing judge response for answer 1602 | answer_id=1602 question_id=138 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:33:41+00:00 | DONE Parsing judge response for answer 1602 | answer_id=1602 question_id=138 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=0
+2026-05-03T22:33:41+00:00 | evaluation_parsed | answer_id=1602 question_id=138 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel score=3 latency_ms=9525 status_code=200
+2026-05-03T22:33:41+00:00 | START Running answer 1613 with Unbabel/M-Prometheus-14B | answer_id=1613 question_id=139 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:33:47+00:00 | DONE Running answer 1592 with Unbabel/M-Prometheus-14B | answer_id=1592 question_id=138 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=11218
+2026-05-03T22:33:47+00:00 | START Parsing judge response for answer 1592 | answer_id=1592 question_id=138 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:33:47+00:00 | DONE Parsing judge response for answer 1592 | answer_id=1592 question_id=138 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=0
+2026-05-03T22:33:47+00:00 | evaluation_parsed | answer_id=1592 question_id=138 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel score=2 latency_ms=11218 status_code=200
+2026-05-03T22:33:47+00:00 | START Running answer 1593 with Unbabel/M-Prometheus-14B | answer_id=1593 question_id=139 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:33:47+00:00 | DONE Running answer 1612 with Unbabel/M-Prometheus-14B | answer_id=1612 question_id=138 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=11516
+2026-05-03T22:33:47+00:00 | START Parsing judge response for answer 1612 | answer_id=1612 question_id=138 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:33:47+00:00 | DONE Parsing judge response for answer 1612 | answer_id=1612 question_id=138 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=0
+2026-05-03T22:33:47+00:00 | evaluation_parsed | answer_id=1612 question_id=138 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel score=2 latency_ms=11516 status_code=200
+2026-05-03T22:33:47+00:00 | START Running answer 1604 with Unbabel/M-Prometheus-14B | answer_id=1604 question_id=140 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:33:52+00:00 | DONE Running answer 1613 with Unbabel/M-Prometheus-14B | answer_id=1613 question_id=139 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=10837
+2026-05-03T22:33:52+00:00 | START Parsing judge response for answer 1613 | answer_id=1613 question_id=139 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:33:52+00:00 | DONE Parsing judge response for answer 1613 | answer_id=1613 question_id=139 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=0
+2026-05-03T22:33:52+00:00 | evaluation_parsed | answer_id=1613 question_id=139 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel score=4 latency_ms=10837 status_code=200
+2026-05-03T22:33:52+00:00 | START Running answer 1614 with Unbabel/M-Prometheus-14B | answer_id=1614 question_id=140 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:33:53+00:00 | DONE Running answer 1603 with Unbabel/M-Prometheus-14B | answer_id=1603 question_id=139 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=12678
+2026-05-03T22:33:53+00:00 | START Parsing judge response for answer 1603 | answer_id=1603 question_id=139 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:33:53+00:00 | DONE Parsing judge response for answer 1603 | answer_id=1603 question_id=139 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=0
+2026-05-03T22:33:53+00:00 | evaluation_parsed | answer_id=1603 question_id=139 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel score=2 latency_ms=12678 status_code=200
+2026-05-03T22:33:53+00:00 | START Running answer 1594 with Unbabel/M-Prometheus-14B | answer_id=1594 question_id=140 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:33:59+00:00 | DONE Running answer 1604 with Unbabel/M-Prometheus-14B | answer_id=1604 question_id=140 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=11211
+2026-05-03T22:33:59+00:00 | START Parsing judge response for answer 1604 | answer_id=1604 question_id=140 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:33:59+00:00 | DONE Parsing judge response for answer 1604 | answer_id=1604 question_id=140 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=0
+2026-05-03T22:33:59+00:00 | evaluation_parsed | answer_id=1604 question_id=140 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel score=2 latency_ms=11211 status_code=200
+2026-05-03T22:33:59+00:00 | START Running answer 1499 with Unbabel/M-Prometheus-14B | answer_id=1499 question_id=77 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:33:59+00:00 | DONE Running answer 1593 with Unbabel/M-Prometheus-14B | answer_id=1593 question_id=139 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=11568
+2026-05-03T22:33:59+00:00 | START Parsing judge response for answer 1593 | answer_id=1593 question_id=139 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:33:59+00:00 | DONE Parsing judge response for answer 1593 | answer_id=1593 question_id=139 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=0
+2026-05-03T22:33:59+00:00 | evaluation_parsed | answer_id=1593 question_id=139 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel score=2 latency_ms=11568 status_code=200
+2026-05-03T22:34:04+00:00 | DONE Running answer 1614 with Unbabel/M-Prometheus-14B | answer_id=1614 question_id=140 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=11873
+2026-05-03T22:34:04+00:00 | START Parsing judge response for answer 1614 | answer_id=1614 question_id=140 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:34:04+00:00 | DONE Parsing judge response for answer 1614 | answer_id=1614 question_id=140 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=0
+2026-05-03T22:34:04+00:00 | evaluation_parsed | answer_id=1614 question_id=140 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel score=3 latency_ms=11873 status_code=200
+2026-05-03T22:34:05+00:00 | DONE Running answer 1594 with Unbabel/M-Prometheus-14B | answer_id=1594 question_id=140 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=11559
+2026-05-03T22:34:05+00:00 | START Parsing judge response for answer 1594 | answer_id=1594 question_id=140 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:34:05+00:00 | DONE Parsing judge response for answer 1594 | answer_id=1594 question_id=140 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=0
+2026-05-03T22:34:05+00:00 | evaluation_parsed | answer_id=1594 question_id=140 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel score=2 latency_ms=11558 status_code=200
+2026-05-03T22:34:11+00:00 | DONE Running answer 1499 with Unbabel/M-Prometheus-14B | answer_id=1499 question_id=77 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=12741
+2026-05-03T22:34:11+00:00 | START Parsing judge response for answer 1499 | answer_id=1499 question_id=77 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:34:11+00:00 | FAIL Parsing judge response for answer 1499 | answer_id=1499 question_id=77 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel error=Judge response does not contain a JSON object. Preview: { "score": 1, "rationale": "A resposta apresenta graves erros conceituais e normativos. Inventa artigos inexistentes como 'artigo nº 186 ("Empujonar")' e mencio elapsed_ms=0
+2026-05-03T22:34:11+00:00 | adaptive_task_failed | provider=remote_http base_url=https://api.featherless.ai/v1 api_key=a3672be7 model=Unbabel/M-Prometheus-14B answer_id=1499 role=principal attempts=2 discarded_pending=0 error=Judge response does not contain a JSON object. Preview: { "score": 1, "rationale": "A resposta apresenta graves erros conceituais e normativos. Inventa artigos inexistentes como 'artigo nº 186 ("Empujonar")' e mencio
+2026-05-03T22:34:11+00:00 | adaptive_group_disabled | provider=remote_http base_url=https://api.featherless.ai/v1 api_key=a3672be7 model=Unbabel/M-Prometheus-14B discarded_pending=0 error=Judge response does not contain a JSON object. Preview: { "score": 1, "rationale": "A resposta apresenta graves erros conceituais e normativos. Inventa artigos inexistentes como 'artigo nº 186 ("Empujonar")' e mencio
+2026-05-03T22:34:11+00:00 | START Persisting evaluation for answer 1991 | answer_id=1991 model=Unbabel/M-Prometheus-14B role=principal score=4
+2026-05-03T22:34:11+00:00 | DONE Persisting evaluation for answer 1991 | answer_id=1991 model=Unbabel/M-Prometheus-14B role=principal score=4 elapsed_ms=7
+2026-05-03T22:34:11+00:00 | batch_progress | current=55 total=55 percent=100 executed=1 skipped=55 arbiters=0
+2026-05-03T22:34:11+00:00 | eligibility_progress | missing=54 failed=0 successful=156 will_process=54
+2026-05-03T22:34:11+00:00 | START Persisting evaluation for answer 1992 | answer_id=1992 model=Unbabel/M-Prometheus-14B role=principal score=4
+2026-05-03T22:34:11+00:00 | DONE Persisting evaluation for answer 1992 | answer_id=1992 model=Unbabel/M-Prometheus-14B role=principal score=4 elapsed_ms=1
+2026-05-03T22:34:11+00:00 | batch_progress | current=55 total=55 percent=100 executed=2 skipped=55 arbiters=0
+2026-05-03T22:34:11+00:00 | eligibility_progress | missing=53 failed=0 successful=157 will_process=53
+2026-05-03T22:34:11+00:00 | START Persisting evaluation for answer 1993 | answer_id=1993 model=Unbabel/M-Prometheus-14B role=principal score=4
+2026-05-03T22:34:11+00:00 | DONE Persisting evaluation for answer 1993 | answer_id=1993 model=Unbabel/M-Prometheus-14B role=principal score=4 elapsed_ms=0
+2026-05-03T22:34:11+00:00 | batch_progress | current=55 total=55 percent=100 executed=3 skipped=55 arbiters=0
+2026-05-03T22:34:11+00:00 | eligibility_progress | missing=52 failed=0 successful=158 will_process=52
+2026-05-03T22:34:11+00:00 | START Persisting evaluation for answer 1999 | answer_id=1999 model=Unbabel/M-Prometheus-14B role=principal score=4
+2026-05-03T22:34:11+00:00 | DONE Persisting evaluation for answer 1999 | answer_id=1999 model=Unbabel/M-Prometheus-14B role=principal score=4 elapsed_ms=1
+2026-05-03T22:34:11+00:00 | batch_progress | current=55 total=55 percent=100 executed=4 skipped=55 arbiters=0
+2026-05-03T22:34:11+00:00 | eligibility_progress | missing=51 failed=0 successful=159 will_process=51
+2026-05-03T22:34:11+00:00 | START Persisting evaluation for answer 2000 | answer_id=2000 model=Unbabel/M-Prometheus-14B role=principal score=4
+2026-05-03T22:34:11+00:00 | DONE Persisting evaluation for answer 2000 | answer_id=2000 model=Unbabel/M-Prometheus-14B role=principal score=4 elapsed_ms=1
+2026-05-03T22:34:11+00:00 | batch_progress | current=55 total=55 percent=100 executed=5 skipped=55 arbiters=0
+2026-05-03T22:34:11+00:00 | eligibility_progress | missing=50 failed=0 successful=160 will_process=50
+2026-05-03T22:34:11+00:00 | START Persisting evaluation for answer 2002 | answer_id=2002 model=Unbabel/M-Prometheus-14B role=principal score=4
+2026-05-03T22:34:11+00:00 | DONE Persisting evaluation for answer 2002 | answer_id=2002 model=Unbabel/M-Prometheus-14B role=principal score=4 elapsed_ms=0
+2026-05-03T22:34:11+00:00 | batch_progress | current=55 total=55 percent=100 executed=6 skipped=55 arbiters=0
+2026-05-03T22:34:11+00:00 | eligibility_progress | missing=49 failed=0 successful=161 will_process=49
+2026-05-03T22:34:11+00:00 | START Persisting evaluation for answer 2001 | answer_id=2001 model=Unbabel/M-Prometheus-14B role=principal score=4
+2026-05-03T22:34:11+00:00 | DONE Persisting evaluation for answer 2001 | answer_id=2001 model=Unbabel/M-Prometheus-14B role=principal score=4 elapsed_ms=0
+2026-05-03T22:34:11+00:00 | batch_progress | current=55 total=55 percent=100 executed=7 skipped=55 arbiters=0
+2026-05-03T22:34:11+00:00 | eligibility_progress | missing=48 failed=0 successful=162 will_process=48
+2026-05-03T22:34:11+00:00 | START Persisting evaluation for answer 2003 | answer_id=2003 model=Unbabel/M-Prometheus-14B role=principal score=4
+2026-05-03T22:34:11+00:00 | DONE Persisting evaluation for answer 2003 | answer_id=2003 model=Unbabel/M-Prometheus-14B role=principal score=4 elapsed_ms=0
+2026-05-03T22:34:11+00:00 | batch_progress | current=55 total=55 percent=100 executed=8 skipped=55 arbiters=0
+2026-05-03T22:34:11+00:00 | eligibility_progress | missing=47 failed=0 successful=163 will_process=47
+2026-05-03T22:34:11+00:00 | START Persisting evaluation for answer 2004 | answer_id=2004 model=Unbabel/M-Prometheus-14B role=principal score=4
+2026-05-03T22:34:11+00:00 | DONE Persisting evaluation for answer 2004 | answer_id=2004 model=Unbabel/M-Prometheus-14B role=principal score=4 elapsed_ms=0
+2026-05-03T22:34:11+00:00 | batch_progress | current=55 total=55 percent=100 executed=9 skipped=55 arbiters=0
+2026-05-03T22:34:11+00:00 | eligibility_progress | missing=46 failed=0 successful=164 will_process=46
+2026-05-03T22:34:11+00:00 | START Persisting evaluation for answer 2005 | answer_id=2005 model=Unbabel/M-Prometheus-14B role=principal score=4
+2026-05-03T22:34:11+00:00 | DONE Persisting evaluation for answer 2005 | answer_id=2005 model=Unbabel/M-Prometheus-14B role=principal score=4 elapsed_ms=0
+2026-05-03T22:34:11+00:00 | batch_progress | current=55 total=55 percent=100 executed=10 skipped=55 arbiters=0
+2026-05-03T22:34:11+00:00 | eligibility_progress | missing=45 failed=0 successful=165 will_process=45
+2026-05-03T22:34:11+00:00 | START Persisting evaluation for answer 2006 | answer_id=2006 model=Unbabel/M-Prometheus-14B role=principal score=4
+2026-05-03T22:34:11+00:00 | DONE Persisting evaluation for answer 2006 | answer_id=2006 model=Unbabel/M-Prometheus-14B role=principal score=4 elapsed_ms=0
+2026-05-03T22:34:11+00:00 | batch_progress | current=55 total=55 percent=100 executed=11 skipped=55 arbiters=0
+2026-05-03T22:34:11+00:00 | eligibility_progress | missing=44 failed=0 successful=166 will_process=44
+2026-05-03T22:34:11+00:00 | START Persisting evaluation for answer 2008 | answer_id=2008 model=Unbabel/M-Prometheus-14B role=principal score=4
+2026-05-03T22:34:11+00:00 | DONE Persisting evaluation for answer 2008 | answer_id=2008 model=Unbabel/M-Prometheus-14B role=principal score=4 elapsed_ms=0
+2026-05-03T22:34:11+00:00 | batch_progress | current=55 total=55 percent=100 executed=12 skipped=55 arbiters=0
+2026-05-03T22:34:11+00:00 | eligibility_progress | missing=43 failed=0 successful=167 will_process=43
+2026-05-03T22:34:11+00:00 | START Persisting evaluation for answer 2009 | answer_id=2009 model=Unbabel/M-Prometheus-14B role=principal score=4
+2026-05-03T22:34:11+00:00 | DONE Persisting evaluation for answer 2009 | answer_id=2009 model=Unbabel/M-Prometheus-14B role=principal score=4 elapsed_ms=0
+2026-05-03T22:34:11+00:00 | batch_progress | current=55 total=55 percent=100 executed=13 skipped=55 arbiters=0
+2026-05-03T22:34:11+00:00 | eligibility_progress | missing=42 failed=0 successful=168 will_process=42
+2026-05-03T22:34:11+00:00 | START Persisting evaluation for answer 2007 | answer_id=2007 model=Unbabel/M-Prometheus-14B role=principal score=4
+2026-05-03T22:34:11+00:00 | DONE Persisting evaluation for answer 2007 | answer_id=2007 model=Unbabel/M-Prometheus-14B role=principal score=4 elapsed_ms=0
+2026-05-03T22:34:11+00:00 | batch_progress | current=55 total=55 percent=100 executed=14 skipped=55 arbiters=0
+2026-05-03T22:34:11+00:00 | eligibility_progress | missing=41 failed=0 successful=169 will_process=41
+2026-05-03T22:34:11+00:00 | START Persisting evaluation for answer 2010 | answer_id=2010 model=Unbabel/M-Prometheus-14B role=principal score=4
+2026-05-03T22:34:11+00:00 | DONE Persisting evaluation for answer 2010 | answer_id=2010 model=Unbabel/M-Prometheus-14B role=principal score=4 elapsed_ms=0
+2026-05-03T22:34:11+00:00 | batch_progress | current=55 total=55 percent=100 executed=15 skipped=55 arbiters=0
+2026-05-03T22:34:11+00:00 | eligibility_progress | missing=40 failed=0 successful=170 will_process=40
+2026-05-03T22:34:11+00:00 | START Persisting evaluation for answer 2011 | answer_id=2011 model=Unbabel/M-Prometheus-14B role=principal score=4
+2026-05-03T22:34:11+00:00 | DONE Persisting evaluation for answer 2011 | answer_id=2011 model=Unbabel/M-Prometheus-14B role=principal score=4 elapsed_ms=0
+2026-05-03T22:34:11+00:00 | batch_progress | current=55 total=55 percent=100 executed=16 skipped=55 arbiters=0
+2026-05-03T22:34:11+00:00 | eligibility_progress | missing=39 failed=0 successful=171 will_process=39
+2026-05-03T22:34:11+00:00 | START Persisting evaluation for answer 2012 | answer_id=2012 model=Unbabel/M-Prometheus-14B role=principal score=4
+2026-05-03T22:34:11+00:00 | DONE Persisting evaluation for answer 2012 | answer_id=2012 model=Unbabel/M-Prometheus-14B role=principal score=4 elapsed_ms=0
+2026-05-03T22:34:11+00:00 | batch_progress | current=55 total=55 percent=100 executed=17 skipped=55 arbiters=0
+2026-05-03T22:34:11+00:00 | eligibility_progress | missing=38 failed=0 successful=172 will_process=38
+2026-05-03T22:34:11+00:00 | START Persisting evaluation for answer 2013 | answer_id=2013 model=Unbabel/M-Prometheus-14B role=principal score=4
+2026-05-03T22:34:11+00:00 | DONE Persisting evaluation for answer 2013 | answer_id=2013 model=Unbabel/M-Prometheus-14B role=principal score=4 elapsed_ms=0
+2026-05-03T22:34:11+00:00 | batch_progress | current=55 total=55 percent=100 executed=18 skipped=55 arbiters=0
+2026-05-03T22:34:11+00:00 | eligibility_progress | missing=37 failed=0 successful=173 will_process=37
+2026-05-03T22:34:11+00:00 | START Persisting evaluation for answer 2014 | answer_id=2014 model=Unbabel/M-Prometheus-14B role=principal score=4
+2026-05-03T22:34:11+00:00 | DONE Persisting evaluation for answer 2014 | answer_id=2014 model=Unbabel/M-Prometheus-14B role=principal score=4 elapsed_ms=0
+2026-05-03T22:34:11+00:00 | batch_progress | current=55 total=55 percent=100 executed=19 skipped=55 arbiters=0
+2026-05-03T22:34:12+00:00 | eligibility_progress | missing=36 failed=0 successful=174 will_process=36
+2026-05-03T22:34:12+00:00 | START Persisting evaluation for answer 2016 | answer_id=2016 model=Unbabel/M-Prometheus-14B role=principal score=4
+2026-05-03T22:34:12+00:00 | DONE Persisting evaluation for answer 2016 | answer_id=2016 model=Unbabel/M-Prometheus-14B role=principal score=4 elapsed_ms=0
+2026-05-03T22:34:12+00:00 | batch_progress | current=55 total=55 percent=100 executed=20 skipped=55 arbiters=0
+2026-05-03T22:34:12+00:00 | eligibility_progress | missing=35 failed=0 successful=175 will_process=35
+2026-05-03T22:34:12+00:00 | START Persisting evaluation for answer 2015 | answer_id=2015 model=Unbabel/M-Prometheus-14B role=principal score=4
+2026-05-03T22:34:12+00:00 | DONE Persisting evaluation for answer 2015 | answer_id=2015 model=Unbabel/M-Prometheus-14B role=principal score=4 elapsed_ms=0
+2026-05-03T22:34:12+00:00 | batch_progress | current=55 total=55 percent=100 executed=21 skipped=55 arbiters=0
+2026-05-03T22:34:12+00:00 | eligibility_progress | missing=34 failed=0 successful=176 will_process=34
+2026-05-03T22:34:12+00:00 | START Persisting evaluation for answer 2017 | answer_id=2017 model=Unbabel/M-Prometheus-14B role=principal score=4
+2026-05-03T22:34:12+00:00 | DONE Persisting evaluation for answer 2017 | answer_id=2017 model=Unbabel/M-Prometheus-14B role=principal score=4 elapsed_ms=0
+2026-05-03T22:34:12+00:00 | batch_progress | current=55 total=55 percent=100 executed=22 skipped=55 arbiters=0
+2026-05-03T22:34:12+00:00 | eligibility_progress | missing=33 failed=0 successful=177 will_process=33
+2026-05-03T22:34:12+00:00 | START Persisting evaluation for answer 2018 | answer_id=2018 model=Unbabel/M-Prometheus-14B role=principal score=4
+2026-05-03T22:34:12+00:00 | DONE Persisting evaluation for answer 2018 | answer_id=2018 model=Unbabel/M-Prometheus-14B role=principal score=4 elapsed_ms=0
+2026-05-03T22:34:12+00:00 | batch_progress | current=55 total=55 percent=100 executed=23 skipped=55 arbiters=0
+2026-05-03T22:34:12+00:00 | eligibility_progress | missing=32 failed=0 successful=178 will_process=32
+2026-05-03T22:34:12+00:00 | START Persisting evaluation for answer 2019 | answer_id=2019 model=Unbabel/M-Prometheus-14B role=principal score=4
+2026-05-03T22:34:12+00:00 | DONE Persisting evaluation for answer 2019 | answer_id=2019 model=Unbabel/M-Prometheus-14B role=principal score=4 elapsed_ms=0
+2026-05-03T22:34:12+00:00 | batch_progress | current=55 total=55 percent=100 executed=24 skipped=55 arbiters=0
+2026-05-03T22:34:12+00:00 | eligibility_progress | missing=31 failed=0 successful=179 will_process=31
+2026-05-03T22:34:12+00:00 | START Persisting evaluation for answer 1585 | answer_id=1585 model=Unbabel/M-Prometheus-14B role=principal score=2
+2026-05-03T22:34:12+00:00 | DONE Persisting evaluation for answer 1585 | answer_id=1585 model=Unbabel/M-Prometheus-14B role=principal score=2 elapsed_ms=0
+2026-05-03T22:34:12+00:00 | batch_progress | current=55 total=55 percent=100 executed=25 skipped=55 arbiters=0
+2026-05-03T22:34:12+00:00 | eligibility_progress | missing=30 failed=0 successful=180 will_process=30
+2026-05-03T22:34:12+00:00 | START Persisting evaluation for answer 1605 | answer_id=1605 model=Unbabel/M-Prometheus-14B role=principal score=3
+2026-05-03T22:34:12+00:00 | DONE Persisting evaluation for answer 1605 | answer_id=1605 model=Unbabel/M-Prometheus-14B role=principal score=3 elapsed_ms=0
+2026-05-03T22:34:12+00:00 | batch_progress | current=55 total=55 percent=100 executed=26 skipped=55 arbiters=0
+2026-05-03T22:34:12+00:00 | eligibility_progress | missing=29 failed=0 successful=181 will_process=29
+2026-05-03T22:34:12+00:00 | START Persisting evaluation for answer 1595 | answer_id=1595 model=Unbabel/M-Prometheus-14B role=principal score=2
+2026-05-03T22:34:12+00:00 | DONE Persisting evaluation for answer 1595 | answer_id=1595 model=Unbabel/M-Prometheus-14B role=principal score=2 elapsed_ms=0
+2026-05-03T22:34:12+00:00 | batch_progress | current=55 total=55 percent=100 executed=27 skipped=55 arbiters=0
+2026-05-03T22:34:12+00:00 | eligibility_progress | missing=28 failed=0 successful=182 will_process=28
+2026-05-03T22:34:12+00:00 | START Persisting evaluation for answer 1596 | answer_id=1596 model=Unbabel/M-Prometheus-14B role=principal score=4
+2026-05-03T22:34:12+00:00 | DONE Persisting evaluation for answer 1596 | answer_id=1596 model=Unbabel/M-Prometheus-14B role=principal score=4 elapsed_ms=0
+2026-05-03T22:34:12+00:00 | batch_progress | current=55 total=55 percent=100 executed=28 skipped=55 arbiters=0
+2026-05-03T22:34:12+00:00 | eligibility_progress | missing=27 failed=0 successful=183 will_process=27
+2026-05-03T22:34:12+00:00 | START Persisting evaluation for answer 1597 | answer_id=1597 model=Unbabel/M-Prometheus-14B role=principal score=4
+2026-05-03T22:34:12+00:00 | DONE Persisting evaluation for answer 1597 | answer_id=1597 model=Unbabel/M-Prometheus-14B role=principal score=4 elapsed_ms=0
+2026-05-03T22:34:12+00:00 | batch_progress | current=55 total=55 percent=100 executed=29 skipped=55 arbiters=0
+2026-05-03T22:34:12+00:00 | eligibility_progress | missing=26 failed=0 successful=184 will_process=26
+2026-05-03T22:34:12+00:00 | START Persisting evaluation for answer 1606 | answer_id=1606 model=Unbabel/M-Prometheus-14B role=principal score=3
+2026-05-03T22:34:12+00:00 | DONE Persisting evaluation for answer 1606 | answer_id=1606 model=Unbabel/M-Prometheus-14B role=principal score=3 elapsed_ms=0
+2026-05-03T22:34:12+00:00 | batch_progress | current=55 total=55 percent=100 executed=30 skipped=55 arbiters=0
+2026-05-03T22:34:12+00:00 | eligibility_progress | missing=25 failed=0 successful=185 will_process=25
+2026-05-03T22:34:12+00:00 | START Persisting evaluation for answer 1586 | answer_id=1586 model=Unbabel/M-Prometheus-14B role=principal score=2
+2026-05-03T22:34:12+00:00 | DONE Persisting evaluation for answer 1586 | answer_id=1586 model=Unbabel/M-Prometheus-14B role=principal score=2 elapsed_ms=0
+2026-05-03T22:34:12+00:00 | batch_progress | current=55 total=55 percent=100 executed=31 skipped=55 arbiters=0
+2026-05-03T22:34:12+00:00 | eligibility_progress | missing=24 failed=0 successful=186 will_process=24
+2026-05-03T22:34:12+00:00 | START Persisting evaluation for answer 1607 | answer_id=1607 model=Unbabel/M-Prometheus-14B role=principal score=2
+2026-05-03T22:34:12+00:00 | DONE Persisting evaluation for answer 1607 | answer_id=1607 model=Unbabel/M-Prometheus-14B role=principal score=2 elapsed_ms=0
+2026-05-03T22:34:12+00:00 | batch_progress | current=55 total=55 percent=100 executed=32 skipped=55 arbiters=0
+2026-05-03T22:34:12+00:00 | eligibility_progress | missing=23 failed=0 successful=187 will_process=23
+2026-05-03T22:34:12+00:00 | START Persisting evaluation for answer 1587 | answer_id=1587 model=Unbabel/M-Prometheus-14B role=principal score=3
+2026-05-03T22:34:12+00:00 | DONE Persisting evaluation for answer 1587 | answer_id=1587 model=Unbabel/M-Prometheus-14B role=principal score=3 elapsed_ms=0
+2026-05-03T22:34:12+00:00 | batch_progress | current=55 total=55 percent=100 executed=33 skipped=55 arbiters=0
+2026-05-03T22:34:12+00:00 | eligibility_progress | missing=22 failed=0 successful=188 will_process=22
+2026-05-03T22:34:12+00:00 | START Persisting evaluation for answer 1598 | answer_id=1598 model=Unbabel/M-Prometheus-14B role=principal score=4
+2026-05-03T22:34:12+00:00 | DONE Persisting evaluation for answer 1598 | answer_id=1598 model=Unbabel/M-Prometheus-14B role=principal score=4 elapsed_ms=0
+2026-05-03T22:34:12+00:00 | batch_progress | current=55 total=55 percent=100 executed=34 skipped=55 arbiters=0
+2026-05-03T22:34:12+00:00 | eligibility_progress | missing=21 failed=0 successful=189 will_process=21
+2026-05-03T22:34:12+00:00 | START Persisting evaluation for answer 1608 | answer_id=1608 model=Unbabel/M-Prometheus-14B role=principal score=2
+2026-05-03T22:34:12+00:00 | DONE Persisting evaluation for answer 1608 | answer_id=1608 model=Unbabel/M-Prometheus-14B role=principal score=2 elapsed_ms=0
+2026-05-03T22:34:12+00:00 | batch_progress | current=55 total=55 percent=100 executed=35 skipped=55 arbiters=0
+2026-05-03T22:34:12+00:00 | eligibility_progress | missing=20 failed=0 successful=190 will_process=20
+2026-05-03T22:34:12+00:00 | START Persisting evaluation for answer 1588 | answer_id=1588 model=Unbabel/M-Prometheus-14B role=principal score=2
+2026-05-03T22:34:12+00:00 | DONE Persisting evaluation for answer 1588 | answer_id=1588 model=Unbabel/M-Prometheus-14B role=principal score=2 elapsed_ms=0
+2026-05-03T22:34:12+00:00 | batch_progress | current=55 total=55 percent=100 executed=36 skipped=55 arbiters=0
+2026-05-03T22:34:12+00:00 | eligibility_progress | missing=19 failed=0 successful=191 will_process=19
+2026-05-03T22:34:12+00:00 | START Persisting evaluation for answer 1599 | answer_id=1599 model=Unbabel/M-Prometheus-14B role=principal score=2
+2026-05-03T22:34:12+00:00 | DONE Persisting evaluation for answer 1599 | answer_id=1599 model=Unbabel/M-Prometheus-14B role=principal score=2 elapsed_ms=0
+2026-05-03T22:34:12+00:00 | batch_progress | current=55 total=55 percent=100 executed=37 skipped=55 arbiters=0
+2026-05-03T22:34:12+00:00 | eligibility_progress | missing=18 failed=0 successful=192 will_process=18
+2026-05-03T22:34:12+00:00 | START Persisting evaluation for answer 1609 | answer_id=1609 model=Unbabel/M-Prometheus-14B role=principal score=3
+2026-05-03T22:34:12+00:00 | DONE Persisting evaluation for answer 1609 | answer_id=1609 model=Unbabel/M-Prometheus-14B role=principal score=3 elapsed_ms=0
+2026-05-03T22:34:12+00:00 | batch_progress | current=55 total=55 percent=100 executed=38 skipped=55 arbiters=0
+2026-05-03T22:34:12+00:00 | eligibility_progress | missing=17 failed=0 successful=193 will_process=17
+2026-05-03T22:34:12+00:00 | START Persisting evaluation for answer 1600 | answer_id=1600 model=Unbabel/M-Prometheus-14B role=principal score=3
+2026-05-03T22:34:12+00:00 | DONE Persisting evaluation for answer 1600 | answer_id=1600 model=Unbabel/M-Prometheus-14B role=principal score=3 elapsed_ms=0
+2026-05-03T22:34:12+00:00 | batch_progress | current=55 total=55 percent=100 executed=39 skipped=55 arbiters=0
+2026-05-03T22:34:12+00:00 | eligibility_progress | missing=16 failed=0 successful=194 will_process=16
+2026-05-03T22:34:12+00:00 | START Persisting evaluation for answer 1589 | answer_id=1589 model=Unbabel/M-Prometheus-14B role=principal score=2
+2026-05-03T22:34:12+00:00 | DONE Persisting evaluation for answer 1589 | answer_id=1589 model=Unbabel/M-Prometheus-14B role=principal score=2 elapsed_ms=0
+2026-05-03T22:34:12+00:00 | batch_progress | current=55 total=55 percent=100 executed=40 skipped=55 arbiters=0
+2026-05-03T22:34:12+00:00 | eligibility_progress | missing=15 failed=0 successful=195 will_process=15
+2026-05-03T22:34:12+00:00 | START Persisting evaluation for answer 1590 | answer_id=1590 model=Unbabel/M-Prometheus-14B role=principal score=3
+2026-05-03T22:34:12+00:00 | DONE Persisting evaluation for answer 1590 | answer_id=1590 model=Unbabel/M-Prometheus-14B role=principal score=3 elapsed_ms=0
+2026-05-03T22:34:12+00:00 | batch_progress | current=55 total=55 percent=100 executed=41 skipped=55 arbiters=0
+2026-05-03T22:34:12+00:00 | eligibility_progress | missing=14 failed=0 successful=196 will_process=14
+2026-05-03T22:34:12+00:00 | START Persisting evaluation for answer 1610 | answer_id=1610 model=Unbabel/M-Prometheus-14B role=principal score=3
+2026-05-03T22:34:12+00:00 | DONE Persisting evaluation for answer 1610 | answer_id=1610 model=Unbabel/M-Prometheus-14B role=principal score=3 elapsed_ms=0
+2026-05-03T22:34:12+00:00 | batch_progress | current=55 total=55 percent=100 executed=42 skipped=55 arbiters=0
+2026-05-03T22:34:12+00:00 | eligibility_progress | missing=13 failed=0 successful=197 will_process=13
+2026-05-03T22:34:12+00:00 | START Persisting evaluation for answer 1611 | answer_id=1611 model=Unbabel/M-Prometheus-14B role=principal score=3
+2026-05-03T22:34:12+00:00 | DONE Persisting evaluation for answer 1611 | answer_id=1611 model=Unbabel/M-Prometheus-14B role=principal score=3 elapsed_ms=0
+2026-05-03T22:34:12+00:00 | batch_progress | current=55 total=55 percent=100 executed=43 skipped=55 arbiters=0
+2026-05-03T22:34:12+00:00 | eligibility_progress | missing=12 failed=0 successful=198 will_process=12
+2026-05-03T22:34:12+00:00 | START Persisting evaluation for answer 1601 | answer_id=1601 model=Unbabel/M-Prometheus-14B role=principal score=4
+2026-05-03T22:34:12+00:00 | DONE Persisting evaluation for answer 1601 | answer_id=1601 model=Unbabel/M-Prometheus-14B role=principal score=4 elapsed_ms=0
+2026-05-03T22:34:12+00:00 | batch_progress | current=55 total=55 percent=100 executed=44 skipped=55 arbiters=0
+2026-05-03T22:34:12+00:00 | eligibility_progress | missing=11 failed=0 successful=199 will_process=11
+2026-05-03T22:34:12+00:00 | START Persisting evaluation for answer 1591 | answer_id=1591 model=Unbabel/M-Prometheus-14B role=principal score=3
+2026-05-03T22:34:12+00:00 | DONE Persisting evaluation for answer 1591 | answer_id=1591 model=Unbabel/M-Prometheus-14B role=principal score=3 elapsed_ms=0
+2026-05-03T22:34:12+00:00 | batch_progress | current=55 total=55 percent=100 executed=45 skipped=55 arbiters=0
+2026-05-03T22:34:12+00:00 | eligibility_progress | missing=10 failed=0 successful=200 will_process=10
+2026-05-03T22:34:12+00:00 | START Persisting evaluation for answer 1602 | answer_id=1602 model=Unbabel/M-Prometheus-14B role=principal score=3
+2026-05-03T22:34:12+00:00 | DONE Persisting evaluation for answer 1602 | answer_id=1602 model=Unbabel/M-Prometheus-14B role=principal score=3 elapsed_ms=0
+2026-05-03T22:34:12+00:00 | batch_progress | current=55 total=55 percent=100 executed=46 skipped=55 arbiters=0
+2026-05-03T22:34:12+00:00 | eligibility_progress | missing=9 failed=0 successful=201 will_process=9
+2026-05-03T22:34:12+00:00 | START Persisting evaluation for answer 1592 | answer_id=1592 model=Unbabel/M-Prometheus-14B role=principal score=2
+2026-05-03T22:34:12+00:00 | DONE Persisting evaluation for answer 1592 | answer_id=1592 model=Unbabel/M-Prometheus-14B role=principal score=2 elapsed_ms=0
+2026-05-03T22:34:12+00:00 | batch_progress | current=55 total=55 percent=100 executed=47 skipped=55 arbiters=0
+2026-05-03T22:34:12+00:00 | eligibility_progress | missing=8 failed=0 successful=202 will_process=8
+2026-05-03T22:34:12+00:00 | START Persisting evaluation for answer 1612 | answer_id=1612 model=Unbabel/M-Prometheus-14B role=principal score=2
+2026-05-03T22:34:12+00:00 | DONE Persisting evaluation for answer 1612 | answer_id=1612 model=Unbabel/M-Prometheus-14B role=principal score=2 elapsed_ms=0
+2026-05-03T22:34:12+00:00 | batch_progress | current=55 total=55 percent=100 executed=48 skipped=55 arbiters=0
+2026-05-03T22:34:12+00:00 | eligibility_progress | missing=7 failed=0 successful=203 will_process=7
+2026-05-03T22:34:12+00:00 | START Persisting evaluation for answer 1613 | answer_id=1613 model=Unbabel/M-Prometheus-14B role=principal score=4
+2026-05-03T22:34:12+00:00 | DONE Persisting evaluation for answer 1613 | answer_id=1613 model=Unbabel/M-Prometheus-14B role=principal score=4 elapsed_ms=0
+2026-05-03T22:34:12+00:00 | batch_progress | current=55 total=55 percent=100 executed=49 skipped=55 arbiters=0
+2026-05-03T22:34:12+00:00 | eligibility_progress | missing=6 failed=0 successful=204 will_process=6
+2026-05-03T22:34:12+00:00 | START Persisting evaluation for answer 1603 | answer_id=1603 model=Unbabel/M-Prometheus-14B role=principal score=2
+2026-05-03T22:34:12+00:00 | DONE Persisting evaluation for answer 1603 | answer_id=1603 model=Unbabel/M-Prometheus-14B role=principal score=2 elapsed_ms=0
+2026-05-03T22:34:12+00:00 | batch_progress | current=55 total=55 percent=100 executed=50 skipped=55 arbiters=0
+2026-05-03T22:34:12+00:00 | eligibility_progress | missing=5 failed=0 successful=205 will_process=5
+2026-05-03T22:34:12+00:00 | START Persisting evaluation for answer 1604 | answer_id=1604 model=Unbabel/M-Prometheus-14B role=principal score=2
+2026-05-03T22:34:12+00:00 | DONE Persisting evaluation for answer 1604 | answer_id=1604 model=Unbabel/M-Prometheus-14B role=principal score=2 elapsed_ms=0
+2026-05-03T22:34:12+00:00 | batch_progress | current=55 total=55 percent=100 executed=51 skipped=55 arbiters=0
+2026-05-03T22:34:12+00:00 | eligibility_progress | missing=4 failed=0 successful=206 will_process=4
+2026-05-03T22:34:12+00:00 | START Persisting evaluation for answer 1593 | answer_id=1593 model=Unbabel/M-Prometheus-14B role=principal score=2
+2026-05-03T22:34:12+00:00 | DONE Persisting evaluation for answer 1593 | answer_id=1593 model=Unbabel/M-Prometheus-14B role=principal score=2 elapsed_ms=0
+2026-05-03T22:34:12+00:00 | batch_progress | current=55 total=55 percent=100 executed=52 skipped=55 arbiters=0
+2026-05-03T22:34:12+00:00 | eligibility_progress | missing=3 failed=0 successful=207 will_process=3
+2026-05-03T22:34:12+00:00 | START Persisting evaluation for answer 1614 | answer_id=1614 model=Unbabel/M-Prometheus-14B role=principal score=3
+2026-05-03T22:34:12+00:00 | DONE Persisting evaluation for answer 1614 | answer_id=1614 model=Unbabel/M-Prometheus-14B role=principal score=3 elapsed_ms=0
+2026-05-03T22:34:12+00:00 | batch_progress | current=55 total=55 percent=100 executed=53 skipped=55 arbiters=0
+2026-05-03T22:34:12+00:00 | eligibility_progress | missing=2 failed=0 successful=208 will_process=2
+2026-05-03T22:34:12+00:00 | START Persisting evaluation for answer 1594 | answer_id=1594 model=Unbabel/M-Prometheus-14B role=principal score=2
+2026-05-03T22:34:12+00:00 | DONE Persisting evaluation for answer 1594 | answer_id=1594 model=Unbabel/M-Prometheus-14B role=principal score=2 elapsed_ms=0
+2026-05-03T22:34:12+00:00 | batch_progress | current=55 total=55 percent=100 executed=54 skipped=55 arbiters=0
+2026-05-03T22:34:12+00:00 | eligibility_progress | missing=1 failed=0 successful=209 will_process=1
+2026-05-03T22:34:12+00:00 | arbiter_skipped | answer_id=1991 score_delta=0 threshold=2
+2026-05-03T22:34:12+00:00 | arbiter_skipped | answer_id=1992 score_delta=0 threshold=2
+2026-05-03T22:34:12+00:00 | arbiter_skipped | answer_id=1993 score_delta=0 threshold=2
+2026-05-03T22:34:12+00:00 | arbiter_skipped | answer_id=1999 score_delta=0 threshold=2
+2026-05-03T22:34:12+00:00 | arbiter_skipped | answer_id=2000 score_delta=0 threshold=2
+2026-05-03T22:34:12+00:00 | arbiter_skipped | answer_id=2001 score_delta=0 threshold=2
+2026-05-03T22:34:12+00:00 | arbiter_skipped | answer_id=2002 score_delta=0 threshold=2
+2026-05-03T22:34:12+00:00 | arbiter_skipped | answer_id=2003 score_delta=0 threshold=2
+2026-05-03T22:34:12+00:00 | arbiter_skipped | answer_id=2004 score_delta=0 threshold=2
+2026-05-03T22:34:12+00:00 | arbiter_skipped | answer_id=2005 score_delta=0 threshold=2
+2026-05-03T22:34:12+00:00 | arbiter_skipped | answer_id=2006 score_delta=0 threshold=2
+2026-05-03T22:34:12+00:00 | arbiter_skipped | answer_id=2007 score_delta=1 threshold=2
+2026-05-03T22:34:12+00:00 | arbiter_skipped | answer_id=2008 score_delta=0 threshold=2
+2026-05-03T22:34:12+00:00 | arbiter_skipped | answer_id=2009 score_delta=0 threshold=2
+2026-05-03T22:34:12+00:00 | arbiter_skipped | answer_id=2010 score_delta=0 threshold=2
+2026-05-03T22:34:12+00:00 | arbiter_skipped | answer_id=2011 score_delta=0 threshold=2
+2026-05-03T22:34:12+00:00 | arbiter_skipped | answer_id=2012 score_delta=0 threshold=2
+2026-05-03T22:34:12+00:00 | arbiter_skipped | answer_id=2013 score_delta=1 threshold=2
+2026-05-03T22:34:12+00:00 | arbiter_skipped | answer_id=2014 score_delta=0 threshold=2
+2026-05-03T22:34:12+00:00 | arbiter_skipped | answer_id=2015 score_delta=0 threshold=2
+2026-05-03T22:34:12+00:00 | arbiter_skipped | answer_id=2016 score_delta=1 threshold=2
+2026-05-03T22:34:12+00:00 | arbiter_skipped | answer_id=2017 score_delta=0 threshold=2
+2026-05-03T22:34:12+00:00 | arbiter_skipped | answer_id=2018 score_delta=0 threshold=2
+2026-05-03T22:34:12+00:00 | arbiter_skipped | answer_id=2019 score_delta=0 threshold=2
+2026-05-03T22:34:12+00:00 | arbiter_skipped | answer_id=1595 score_delta=1 threshold=2
+2026-05-03T22:34:12+00:00 | arbiter_skipped | answer_id=1605 score_delta=1 threshold=2
+2026-05-03T22:34:12+00:00 | arbiter_skipped | answer_id=1585 score_delta=0 threshold=2
+2026-05-03T22:34:12+00:00 | arbiter_skipped | answer_id=1596 score_delta=0 threshold=2
+2026-05-03T22:34:12+00:00 | arbiter_skipped | answer_id=1606 score_delta=1 threshold=2
+2026-05-03T22:34:12+00:00 | arbiter_skipped | answer_id=1607 score_delta=0 threshold=2
+2026-05-03T22:34:12+00:00 | arbiter_skipped | answer_id=1587 score_delta=1 threshold=2
+2026-05-03T22:34:12+00:00 | arbiter_skipped | answer_id=1598 score_delta=0 threshold=2
+2026-05-03T22:34:12+00:00 | arbiter_skipped | answer_id=1608 score_delta=0 threshold=2
+2026-05-03T22:34:12+00:00 | arbiter_skipped | answer_id=1588 score_delta=0 threshold=2
+2026-05-03T22:34:12+00:00 | arbiter_skipped | answer_id=1599 score_delta=0 threshold=2
+2026-05-03T22:34:12+00:00 | arbiter_skipped | answer_id=1609 score_delta=0 threshold=2
+2026-05-03T22:34:12+00:00 | arbiter_skipped | answer_id=1589 score_delta=0 threshold=2
+2026-05-03T22:34:12+00:00 | arbiter_skipped | answer_id=1600 score_delta=0 threshold=2
+2026-05-03T22:34:12+00:00 | arbiter_skipped | answer_id=1610 score_delta=0 threshold=2
+2026-05-03T22:34:12+00:00 | arbiter_skipped | answer_id=1590 score_delta=0 threshold=2
+2026-05-03T22:34:12+00:00 | arbiter_skipped | answer_id=1601 score_delta=1 threshold=2
+2026-05-03T22:34:12+00:00 | arbiter_skipped | answer_id=1611 score_delta=1 threshold=2
+2026-05-03T22:34:12+00:00 | arbiter_skipped | answer_id=1591 score_delta=0 threshold=2
+2026-05-03T22:34:12+00:00 | arbiter_skipped | answer_id=1602 score_delta=1 threshold=2
+2026-05-03T22:34:12+00:00 | arbiter_skipped | answer_id=1612 score_delta=0 threshold=2
+2026-05-03T22:34:12+00:00 | arbiter_skipped | answer_id=1592 score_delta=0 threshold=2
+2026-05-03T22:34:12+00:00 | arbiter_skipped | answer_id=1603 score_delta=0 threshold=2
+2026-05-03T22:34:12+00:00 | arbiter_skipped | answer_id=1613 score_delta=1 threshold=2
+2026-05-03T22:34:12+00:00 | arbiter_skipped | answer_id=1593 score_delta=0 threshold=2
+2026-05-03T22:34:12+00:00 | arbiter_skipped | answer_id=1604 score_delta=1 threshold=2
+2026-05-03T22:34:12+00:00 | arbiter_skipped | answer_id=1614 score_delta=0 threshold=2
+2026-05-03T22:34:12+00:00 | arbiter_skipped | answer_id=1594 score_delta=0 threshold=2
+2026-05-03T22:34:12+00:00 | adaptive_concurrency_initial | provider=remote_http base_url=https://api.featherless.ai/v1 api_key=a3672be7 model=openai/gpt-oss-120b initial_concurrency=1 max_concurrency=4
+2026-05-03T22:34:12+00:00 | START Running answer 1586 with openai/gpt-oss-120b | answer_id=1586 question_id=132 model=openai/gpt-oss-120b role=arbitro trigger=score_delta
+2026-05-03T22:34:55+00:00 | DONE Running answer 1586 with openai/gpt-oss-120b | answer_id=1586 question_id=132 model=openai/gpt-oss-120b role=arbitro trigger=score_delta elapsed_ms=43033
+2026-05-03T22:34:55+00:00 | START Parsing judge response for answer 1586 | answer_id=1586 question_id=132 model=openai/gpt-oss-120b role=arbitro trigger=score_delta
+2026-05-03T22:34:55+00:00 | DONE Parsing judge response for answer 1586 | answer_id=1586 question_id=132 model=openai/gpt-oss-120b role=arbitro trigger=score_delta elapsed_ms=0
+2026-05-03T22:34:55+00:00 | evaluation_parsed | answer_id=1586 question_id=132 model=openai/gpt-oss-120b role=arbitro trigger=score_delta score=2 latency_ms=43033 status_code=200
+2026-05-03T22:34:55+00:00 | START Running answer 1597 with openai/gpt-oss-120b | answer_id=1597 question_id=133 model=openai/gpt-oss-120b role=arbitro trigger=score_delta
+2026-05-03T22:35:18+00:00 | DONE Running answer 1597 with openai/gpt-oss-120b | answer_id=1597 question_id=133 model=openai/gpt-oss-120b role=arbitro trigger=score_delta elapsed_ms=22956
+2026-05-03T22:35:18+00:00 | START Parsing judge response for answer 1597 | answer_id=1597 question_id=133 model=openai/gpt-oss-120b role=arbitro trigger=score_delta
+2026-05-03T22:35:18+00:00 | DONE Parsing judge response for answer 1597 | answer_id=1597 question_id=133 model=openai/gpt-oss-120b role=arbitro trigger=score_delta elapsed_ms=0
+2026-05-03T22:35:18+00:00 | evaluation_parsed | answer_id=1597 question_id=133 model=openai/gpt-oss-120b role=arbitro trigger=score_delta score=2 latency_ms=22956 status_code=200
+2026-05-03T22:35:18+00:00 | START Persisting evaluation for answer 1586 | answer_id=1586 model=openai/gpt-oss-120b role=arbitro score=2
+2026-05-03T22:35:18+00:00 | DONE Persisting evaluation for answer 1586 | answer_id=1586 model=openai/gpt-oss-120b role=arbitro score=2 elapsed_ms=4
+2026-05-03T22:35:18+00:00 | batch_progress | current=55 total=55 percent=100 executed=55 skipped=55 arbiters=1
+2026-05-03T22:35:18+00:00 | eligibility_progress | missing=1 failed=0 successful=209 will_process=1
+2026-05-03T22:35:18+00:00 | START Persisting evaluation for answer 1597 | answer_id=1597 model=openai/gpt-oss-120b role=arbitro score=2
+2026-05-03T22:35:18+00:00 | DONE Persisting evaluation for answer 1597 | answer_id=1597 model=openai/gpt-oss-120b role=arbitro score=2 elapsed_ms=1
+2026-05-03T22:35:18+00:00 | batch_progress | current=55 total=55 percent=100 executed=56 skipped=55 arbiters=2
+2026-05-03T22:35:18+00:00 | eligibility_progress | missing=1 failed=0 successful=209 will_process=1
+2026-05-03T22:35:18+00:00 | batch_progress | current=55 total=55 percent=100 executed=56 skipped=55 arbiters=2
+2026-05-03T22:35:18+00:00 | eligibility_progress | missing=1 failed=0 successful=209 will_process=1
+2026-05-03T22:35:18+00:00 | adaptive_concurrency_final | provider=remote_http base_url=https://api.featherless.ai/v1 api_key=a3672be7 model=Unbabel/M-Prometheus-14B final_concurrency=4 successes=54 failures=2 timeouts=0 rate_limits=0 retries=1 requeued=1 disabled=True
+2026-05-03T22:35:18+00:00 | adaptive_concurrency_final | provider=remote_http base_url=https://api.featherless.ai/v1 api_key=a3672be7 model=openai/gpt-oss-120b final_concurrency=1 successes=2 failures=0 timeouts=0 rate_limits=0 retries=0 requeued=0 disabled=False
+2026-05-03T22:35:18+00:00 | DONE Running judge pipeline | answers=55 mode=2plus1 elapsed_ms=343655
+2026-05-03T22:35:18+00:00 | eligibility_final | missing=1 failed=0 successful=209 will_process=1
+2026-05-03T22:35:18+00:00 | START Closing PostgreSQL connection
+2026-05-03T22:35:18+00:00 | DONE Closing PostgreSQL connection | elapsed_ms=0
+2026-05-03T22:35:18+00:00 | execution_result | selected=55 executed=56 skipped=55 arbiters=2
+2026-05-03T22:35:18+00:00 | audit_log_finished

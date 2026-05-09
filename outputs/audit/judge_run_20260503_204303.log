@@ -1,0 +1,397 @@
+2026-05-03T20:43:03+00:00 | audit_log_started | path=outputs/audit/judge_run_20260503_204303.log
+2026-05-03T20:43:03+00:00 | START Loading configuration
+2026-05-03T20:43:03+00:00 | DONE Loading configuration | elapsed_ms=0
+2026-05-03T20:43:03+00:00 | START Resolving judge mode and models | panel_mode_cli=provided judge_model_cli=provided secondary_judge_cli=provided arbiter_cli=provided execution_strategy_cli=provided
+2026-05-03T20:43:03+00:00 | DONE Resolving judge mode and models | panel_mode_cli=provided judge_model_cli=provided secondary_judge_cli=provided arbiter_cli=provided execution_strategy_cli=provided elapsed_ms=0
+2026-05-03T20:43:03+00:00 | execution_summary | Judge provider: remote_http | Judge mode: 2plus1 | Judge execution strategy: adaptive | Primary judges: | - Unbabel/M-Prometheus-14B | endpoint=api.featherless.ai | - meta-llama/Llama-3.3-70B-Instruct | endpoint=api.featherless.ai | Arbiter: | - openai/gpt-oss-120b | endpoint=api.featherless.ai | Arbitration min delta: 2 | Always run arbiter: false | Model source: CLI --judge-model / CLI --secondary-judge-model / CLI --arbiter-judge-model
+2026-05-03T20:43:03+00:00 | command_preview | .venv/bin/python -m atividade_2.cli run-judge --panel-mode 2plus1 --dataset J1 --batch-size 5 --judge-execution-strategy adaptive --judge-model Unbabel/M-Prometheus-14B --secondary-judge-model meta-llama/Llama-3.3-70B-Instruct --arbiter-judge-model openai/gpt-oss-120b
+2026-05-03T20:43:03+00:00 | START Connecting to local PostgreSQL | DATABASE_URL=<redacted>
+2026-05-03T20:43:03+00:00 | DONE Connecting to local PostgreSQL | DATABASE_URL=<redacted> elapsed_ms=10
+2026-05-03T20:43:03+00:00 | START Ensuring judge metadata schema
+2026-05-03T20:43:03+00:00 | DONE Ensuring judge metadata schema | elapsed_ms=14
+2026-05-03T20:43:03+00:00 | START Counting eligible answers for J1 | dataset=J1 batch_size=5
+2026-05-03T20:43:03+00:00 | DONE Counting eligible answers for J1 | dataset=J1 batch_size=5 elapsed_ms=4
+2026-05-03T20:43:03+00:00 | eligibility_summary | missing=67 failed=0 successful=143 will_process=5
+2026-05-03T20:43:03+00:00 | START Selecting pending candidate answers for J1 | dataset=J1 batch_size=5
+2026-05-03T20:43:03+00:00 | DONE Selecting pending candidate answers for J1 | dataset=J1 batch_size=5 elapsed_ms=6
+2026-05-03T20:43:03+00:00 | answers_selected | count=7
+2026-05-03T20:43:03+00:00 | START Running judge pipeline | answers=7 mode=2plus1
+2026-05-03T20:43:03+00:00 | evaluation_skipped | answer_id=1499 model=meta-llama/Llama-3.3-70B-Instruct role=controle mode=2plus1 existing_score=2
+2026-05-03T20:43:03+00:00 | evaluation_skipped | answer_id=1571 model=meta-llama/Llama-3.3-70B-Instruct role=controle mode=2plus1 existing_score=1
+2026-05-03T20:43:03+00:00 | adaptive_concurrency_initial | provider=remote_http base_url=https://api.featherless.ai/v1 api_key=a3672be7 model=Unbabel/M-Prometheus-14B initial_concurrency=1 max_concurrency=4
+2026-05-03T20:43:03+00:00 | adaptive_concurrency_initial | provider=remote_http base_url=https://api.featherless.ai/v1 api_key=a3672be7 model=meta-llama/Llama-3.3-70B-Instruct initial_concurrency=1 max_concurrency=4
+2026-05-03T20:43:03+00:00 | START Running answer 1499 with Unbabel/M-Prometheus-14B | answer_id=1499 question_id=77 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T20:43:03+00:00 | START Running answer 1985 with meta-llama/Llama-3.3-70B-Instruct | answer_id=1985 question_id=119 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-03T20:43:06+00:00 | FAIL Running answer 1499 with Unbabel/M-Prometheus-14B | answer_id=1499 question_id=77 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel error=Remote judge returned HTTP 429: Concurrency limit exceeded. Your account details:
+
+**Current Usage:**
+- Active concurrent requests: 4 units
+- This request requires: 1 units
+- Total needed: 5 units
+- Your plan limit: 4 units
+- Over limit by: 1 units
+
+**Model Details:**
+- Model: Unbabel/M-Prometheus-14B
+- Model class: qwen25-14b
+- M elapsed_ms=3141
+2026-05-03T20:43:06+00:00 | adaptive_task_waiting_for_global_idle | provider=remote_http base_url=https://api.featherless.ai/v1 api_key=a3672be7 model=Unbabel/M-Prometheus-14B answer_id=1499 role=principal active_other_tasks=1 error=Remote judge returned HTTP 429: Concurrency limit exceeded. Your account details:
+
+**Current Usage:**
+- Active concurrent requests: 4 units
+- This request requires: 1 units
+- Total needed: 5 units
+- Your plan limit: 4 units
+- Over limit by: 1 units
+
+**Model Details:**
+- Model: Unbabel/M-Prometheus-14B
+- Model class: qwen25-14b
+- M
+2026-05-03T20:43:12+00:00 | DONE Running answer 1985 with meta-llama/Llama-3.3-70B-Instruct | answer_id=1985 question_id=119 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel elapsed_ms=9465
+2026-05-03T20:43:12+00:00 | START Parsing judge response for answer 1985 | answer_id=1985 question_id=119 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-03T20:43:12+00:00 | DONE Parsing judge response for answer 1985 | answer_id=1985 question_id=119 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel elapsed_ms=0
+2026-05-03T20:43:12+00:00 | evaluation_parsed | answer_id=1985 question_id=119 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel score=3 latency_ms=9465 status_code=200
+2026-05-03T20:43:12+00:00 | adaptive_concurrency_increased | provider=remote_http base_url=https://api.featherless.ai/v1 api_key=a3672be7 model=meta-llama/Llama-3.3-70B-Instruct from=1 to=2 successes=1
+2026-05-03T20:43:12+00:00 | START Running answer 1571 with Unbabel/M-Prometheus-14B | answer_id=1571 question_id=105 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T20:43:12+00:00 | START Running answer 1986 with meta-llama/Llama-3.3-70B-Instruct | answer_id=1986 question_id=119 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-03T20:43:12+00:00 | START Running answer 1987 with meta-llama/Llama-3.3-70B-Instruct | answer_id=1987 question_id=120 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-03T20:43:13+00:00 | FAIL Running answer 1987 with meta-llama/Llama-3.3-70B-Instruct | answer_id=1987 question_id=120 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel error=Remote judge returned HTTP 429: Concurrency limit exceeded. Your account details:
+
+**Current Usage:**
+- Active concurrent requests: 4 units
+- This request requires: 4 units
+- Total needed: 8 units
+- Your plan limit: 4 units
+- Over limit by: 4 units
+
+**Model Details:**
+- Model: meta-llama/Llama-3.3-70B-Instruct
+- Model class: llama elapsed_ms=775
+2026-05-03T20:43:13+00:00 | adaptive_concurrency_reduced | provider=remote_http base_url=https://api.featherless.ai/v1 api_key=a3672be7 model=meta-llama/Llama-3.3-70B-Instruct from=2 to=1 reason=http_429
+2026-05-03T20:43:13+00:00 | adaptive_task_requeued | provider=remote_http base_url=https://api.featherless.ai/v1 api_key=a3672be7 model=meta-llama/Llama-3.3-70B-Instruct answer_id=1987 role=controle attempt=1 backoff_seconds=2.057 error=Remote judge returned HTTP 429: Concurrency limit exceeded. Your account details:
+
+**Current Usage:**
+- Active concurrent requests: 4 units
+- This request requires: 4 units
+- Total needed: 8 units
+- Your plan limit: 4 units
+- Over limit by: 4 units
+
+**Model Details:**
+- Model: meta-llama/Llama-3.3-70B-Instruct
+- Model class: llama
+2026-05-03T20:43:13+00:00 | FAIL Running answer 1571 with Unbabel/M-Prometheus-14B | answer_id=1571 question_id=105 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel error=Remote judge returned HTTP 429: Concurrency limit exceeded. Your account details:
+
+**Current Usage:**
+- Active concurrent requests: 4 units
+- This request requires: 1 units
+- Total needed: 5 units
+- Your plan limit: 4 units
+- Over limit by: 1 units
+
+**Model Details:**
+- Model: Unbabel/M-Prometheus-14B
+- Model class: qwen25-14b
+- M elapsed_ms=852
+2026-05-03T20:43:13+00:00 | adaptive_task_waiting_for_global_idle | provider=remote_http base_url=https://api.featherless.ai/v1 api_key=a3672be7 model=Unbabel/M-Prometheus-14B answer_id=1571 role=principal active_other_tasks=1 error=Remote judge returned HTTP 429: Concurrency limit exceeded. Your account details:
+
+**Current Usage:**
+- Active concurrent requests: 4 units
+- This request requires: 1 units
+- Total needed: 5 units
+- Your plan limit: 4 units
+- Over limit by: 1 units
+
+**Model Details:**
+- Model: Unbabel/M-Prometheus-14B
+- Model class: qwen25-14b
+- M
+2026-05-03T20:43:23+00:00 | DONE Running answer 1986 with meta-llama/Llama-3.3-70B-Instruct | answer_id=1986 question_id=119 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel elapsed_ms=11322
+2026-05-03T20:43:23+00:00 | START Parsing judge response for answer 1986 | answer_id=1986 question_id=119 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-03T20:43:23+00:00 | DONE Parsing judge response for answer 1986 | answer_id=1986 question_id=119 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel elapsed_ms=0
+2026-05-03T20:43:23+00:00 | evaluation_parsed | answer_id=1986 question_id=119 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel score=5 latency_ms=11322 status_code=200
+2026-05-03T20:43:23+00:00 | adaptive_concurrency_increased | provider=remote_http base_url=https://api.featherless.ai/v1 api_key=a3672be7 model=meta-llama/Llama-3.3-70B-Instruct from=1 to=2 successes=2
+2026-05-03T20:43:23+00:00 | START Running answer 1985 with Unbabel/M-Prometheus-14B | answer_id=1985 question_id=119 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T20:43:23+00:00 | START Running answer 1989 with meta-llama/Llama-3.3-70B-Instruct | answer_id=1989 question_id=120 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-03T20:43:23+00:00 | START Running answer 1988 with meta-llama/Llama-3.3-70B-Instruct | answer_id=1988 question_id=120 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-03T20:43:24+00:00 | FAIL Running answer 1985 with Unbabel/M-Prometheus-14B | answer_id=1985 question_id=119 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel error=Remote judge returned HTTP 429: Concurrency limit exceeded. Your account details:
+
+**Current Usage:**
+- Active concurrent requests: 4 units
+- This request requires: 1 units
+- Total needed: 5 units
+- Your plan limit: 4 units
+- Over limit by: 1 units
+
+**Model Details:**
+- Model: Unbabel/M-Prometheus-14B
+- Model class: qwen25-14b
+- M elapsed_ms=917
+2026-05-03T20:43:24+00:00 | adaptive_task_waiting_for_global_idle | provider=remote_http base_url=https://api.featherless.ai/v1 api_key=a3672be7 model=Unbabel/M-Prometheus-14B answer_id=1985 role=principal active_other_tasks=2 error=Remote judge returned HTTP 429: Concurrency limit exceeded. Your account details:
+
+**Current Usage:**
+- Active concurrent requests: 4 units
+- This request requires: 1 units
+- Total needed: 5 units
+- Your plan limit: 4 units
+- Over limit by: 1 units
+
+**Model Details:**
+- Model: Unbabel/M-Prometheus-14B
+- Model class: qwen25-14b
+- M
+2026-05-03T20:43:24+00:00 | FAIL Running answer 1989 with meta-llama/Llama-3.3-70B-Instruct | answer_id=1989 question_id=120 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel error=Remote judge returned HTTP 429: Concurrency limit exceeded. Your account details:
+
+**Current Usage:**
+- Active concurrent requests: 4 units
+- This request requires: 4 units
+- Total needed: 8 units
+- Your plan limit: 4 units
+- Over limit by: 4 units
+
+**Model Details:**
+- Model: meta-llama/Llama-3.3-70B-Instruct
+- Model class: llama elapsed_ms=1032
+2026-05-03T20:43:24+00:00 | adaptive_concurrency_reduced | provider=remote_http base_url=https://api.featherless.ai/v1 api_key=a3672be7 model=meta-llama/Llama-3.3-70B-Instruct from=2 to=1 reason=http_429
+2026-05-03T20:43:24+00:00 | adaptive_task_requeued | provider=remote_http base_url=https://api.featherless.ai/v1 api_key=a3672be7 model=meta-llama/Llama-3.3-70B-Instruct answer_id=1989 role=controle attempt=1 backoff_seconds=2.437 error=Remote judge returned HTTP 429: Concurrency limit exceeded. Your account details:
+
+**Current Usage:**
+- Active concurrent requests: 4 units
+- This request requires: 4 units
+- Total needed: 8 units
+- Your plan limit: 4 units
+- Over limit by: 4 units
+
+**Model Details:**
+- Model: meta-llama/Llama-3.3-70B-Instruct
+- Model class: llama
+2026-05-03T20:43:34+00:00 | DONE Running answer 1988 with meta-llama/Llama-3.3-70B-Instruct | answer_id=1988 question_id=120 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel elapsed_ms=10335
+2026-05-03T20:43:34+00:00 | START Parsing judge response for answer 1988 | answer_id=1988 question_id=120 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-03T20:43:34+00:00 | DONE Parsing judge response for answer 1988 | answer_id=1988 question_id=120 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel elapsed_ms=0
+2026-05-03T20:43:34+00:00 | evaluation_parsed | answer_id=1988 question_id=120 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel score=4 latency_ms=10335 status_code=200
+2026-05-03T20:43:34+00:00 | adaptive_concurrency_increased | provider=remote_http base_url=https://api.featherless.ai/v1 api_key=a3672be7 model=meta-llama/Llama-3.3-70B-Instruct from=1 to=2 successes=3
+2026-05-03T20:43:34+00:00 | START Running answer 1986 with Unbabel/M-Prometheus-14B | answer_id=1986 question_id=119 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T20:43:34+00:00 | START Running answer 1989 with meta-llama/Llama-3.3-70B-Instruct | answer_id=1989 question_id=120 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-03T20:43:34+00:00 | START Running answer 1987 with meta-llama/Llama-3.3-70B-Instruct | answer_id=1987 question_id=120 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-03T20:43:34+00:00 | FAIL Running answer 1987 with meta-llama/Llama-3.3-70B-Instruct | answer_id=1987 question_id=120 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel error=Remote judge returned HTTP 429: Concurrency limit exceeded. Your account details:
+
+**Current Usage:**
+- Active concurrent requests: 4 units
+- This request requires: 4 units
+- Total needed: 8 units
+- Your plan limit: 4 units
+- Over limit by: 4 units
+
+**Model Details:**
+- Model: meta-llama/Llama-3.3-70B-Instruct
+- Model class: llama elapsed_ms=674
+2026-05-03T20:43:34+00:00 | adaptive_concurrency_reduced | provider=remote_http base_url=https://api.featherless.ai/v1 api_key=a3672be7 model=meta-llama/Llama-3.3-70B-Instruct from=2 to=1 reason=http_429
+2026-05-03T20:43:34+00:00 | adaptive_task_requeued | provider=remote_http base_url=https://api.featherless.ai/v1 api_key=a3672be7 model=meta-llama/Llama-3.3-70B-Instruct answer_id=1987 role=controle attempt=2 backoff_seconds=4.435 error=Remote judge returned HTTP 429: Concurrency limit exceeded. Your account details:
+
+**Current Usage:**
+- Active concurrent requests: 4 units
+- This request requires: 4 units
+- Total needed: 8 units
+- Your plan limit: 4 units
+- Over limit by: 4 units
+
+**Model Details:**
+- Model: meta-llama/Llama-3.3-70B-Instruct
+- Model class: llama
+2026-05-03T20:43:35+00:00 | FAIL Running answer 1986 with Unbabel/M-Prometheus-14B | answer_id=1986 question_id=119 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel error=Remote judge returned HTTP 429: Concurrency limit exceeded. Your account details:
+
+**Current Usage:**
+- Active concurrent requests: 4 units
+- This request requires: 1 units
+- Total needed: 5 units
+- Your plan limit: 4 units
+- Over limit by: 1 units
+
+**Model Details:**
+- Model: Unbabel/M-Prometheus-14B
+- Model class: qwen25-14b
+- M elapsed_ms=867
+2026-05-03T20:43:35+00:00 | adaptive_task_waiting_for_global_idle | provider=remote_http base_url=https://api.featherless.ai/v1 api_key=a3672be7 model=Unbabel/M-Prometheus-14B answer_id=1986 role=principal active_other_tasks=1 error=Remote judge returned HTTP 429: Concurrency limit exceeded. Your account details:
+
+**Current Usage:**
+- Active concurrent requests: 4 units
+- This request requires: 1 units
+- Total needed: 5 units
+- Your plan limit: 4 units
+- Over limit by: 1 units
+
+**Model Details:**
+- Model: Unbabel/M-Prometheus-14B
+- Model class: qwen25-14b
+- M
+2026-05-03T20:43:44+00:00 | DONE Running answer 1989 with meta-llama/Llama-3.3-70B-Instruct | answer_id=1989 question_id=120 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel elapsed_ms=10107
+2026-05-03T20:43:44+00:00 | START Parsing judge response for answer 1989 | answer_id=1989 question_id=120 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-03T20:43:44+00:00 | DONE Parsing judge response for answer 1989 | answer_id=1989 question_id=120 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel elapsed_ms=0
+2026-05-03T20:43:44+00:00 | evaluation_parsed | answer_id=1989 question_id=120 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel score=4 latency_ms=10107 status_code=200
+2026-05-03T20:43:44+00:00 | adaptive_concurrency_increased | provider=remote_http base_url=https://api.featherless.ai/v1 api_key=a3672be7 model=meta-llama/Llama-3.3-70B-Instruct from=1 to=2 successes=4
+2026-05-03T20:43:44+00:00 | START Running answer 1987 with Unbabel/M-Prometheus-14B | answer_id=1987 question_id=120 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T20:43:44+00:00 | START Running answer 1987 with meta-llama/Llama-3.3-70B-Instruct | answer_id=1987 question_id=120 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-03T20:43:45+00:00 | FAIL Running answer 1987 with meta-llama/Llama-3.3-70B-Instruct | answer_id=1987 question_id=120 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel error=Remote judge returned HTTP 429: Concurrency limit exceeded. Your account details:
+
+**Current Usage:**
+- Active concurrent requests: 1 units
+- This request requires: 4 units
+- Total needed: 5 units
+- Your plan limit: 4 units
+- Over limit by: 1 units
+
+**Model Details:**
+- Model: meta-llama/Llama-3.3-70B-Instruct
+- Model class: llama elapsed_ms=733
+2026-05-03T20:43:45+00:00 | adaptive_concurrency_reduced | provider=remote_http base_url=https://api.featherless.ai/v1 api_key=a3672be7 model=meta-llama/Llama-3.3-70B-Instruct from=2 to=1 reason=http_429
+2026-05-03T20:43:45+00:00 | adaptive_task_requeued | provider=remote_http base_url=https://api.featherless.ai/v1 api_key=a3672be7 model=meta-llama/Llama-3.3-70B-Instruct answer_id=1987 role=controle attempt=3 backoff_seconds=8.472 error=Remote judge returned HTTP 429: Concurrency limit exceeded. Your account details:
+
+**Current Usage:**
+- Active concurrent requests: 1 units
+- This request requires: 4 units
+- Total needed: 5 units
+- Your plan limit: 4 units
+- Over limit by: 1 units
+
+**Model Details:**
+- Model: meta-llama/Llama-3.3-70B-Instruct
+- Model class: llama
+2026-05-03T20:43:53+00:00 | START Running answer 1987 with meta-llama/Llama-3.3-70B-Instruct | answer_id=1987 question_id=120 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-03T20:43:54+00:00 | FAIL Running answer 1987 with meta-llama/Llama-3.3-70B-Instruct | answer_id=1987 question_id=120 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel error=Remote judge returned HTTP 429: Concurrency limit exceeded. Your account details:
+
+**Current Usage:**
+- Active concurrent requests: 1 units
+- This request requires: 4 units
+- Total needed: 5 units
+- Your plan limit: 4 units
+- Over limit by: 1 units
+
+**Model Details:**
+- Model: meta-llama/Llama-3.3-70B-Instruct
+- Model class: llama elapsed_ms=721
+2026-05-03T20:43:54+00:00 | adaptive_task_waiting_for_global_idle | provider=remote_http base_url=https://api.featherless.ai/v1 api_key=a3672be7 model=meta-llama/Llama-3.3-70B-Instruct answer_id=1987 role=controle active_other_tasks=1 error=Remote judge returned HTTP 429: Concurrency limit exceeded. Your account details:
+
+**Current Usage:**
+- Active concurrent requests: 1 units
+- This request requires: 4 units
+- Total needed: 5 units
+- Your plan limit: 4 units
+- Over limit by: 1 units
+
+**Model Details:**
+- Model: meta-llama/Llama-3.3-70B-Instruct
+- Model class: llama
+2026-05-03T20:44:19+00:00 | DONE Running answer 1987 with Unbabel/M-Prometheus-14B | answer_id=1987 question_id=120 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=35552
+2026-05-03T20:44:19+00:00 | START Parsing judge response for answer 1987 | answer_id=1987 question_id=120 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T20:44:19+00:00 | DONE Parsing judge response for answer 1987 | answer_id=1987 question_id=120 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=0
+2026-05-03T20:44:19+00:00 | evaluation_parsed | answer_id=1987 question_id=120 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel score=4 latency_ms=35552 status_code=200
+2026-05-03T20:44:19+00:00 | adaptive_concurrency_increased | provider=remote_http base_url=https://api.featherless.ai/v1 api_key=a3672be7 model=Unbabel/M-Prometheus-14B from=1 to=2 successes=1
+2026-05-03T20:44:19+00:00 | START Running answer 1988 with Unbabel/M-Prometheus-14B | answer_id=1988 question_id=120 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T20:44:19+00:00 | START Running answer 1989 with Unbabel/M-Prometheus-14B | answer_id=1989 question_id=120 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T20:44:32+00:00 | DONE Running answer 1988 with Unbabel/M-Prometheus-14B | answer_id=1988 question_id=120 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=12181
+2026-05-03T20:44:32+00:00 | START Parsing judge response for answer 1988 | answer_id=1988 question_id=120 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T20:44:32+00:00 | DONE Parsing judge response for answer 1988 | answer_id=1988 question_id=120 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=0
+2026-05-03T20:44:32+00:00 | evaluation_parsed | answer_id=1988 question_id=120 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel score=4 latency_ms=12180 status_code=200
+2026-05-03T20:44:32+00:00 | adaptive_concurrency_increased | provider=remote_http base_url=https://api.featherless.ai/v1 api_key=a3672be7 model=Unbabel/M-Prometheus-14B from=2 to=3 successes=2
+2026-05-03T20:44:32+00:00 | START Running answer 1499 with Unbabel/M-Prometheus-14B | answer_id=1499 question_id=77 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T20:44:32+00:00 | START Running answer 1571 with Unbabel/M-Prometheus-14B | answer_id=1571 question_id=105 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T20:44:32+00:00 | DONE Running answer 1989 with Unbabel/M-Prometheus-14B | answer_id=1989 question_id=120 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=12394
+2026-05-03T20:44:32+00:00 | START Parsing judge response for answer 1989 | answer_id=1989 question_id=120 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T20:44:32+00:00 | DONE Parsing judge response for answer 1989 | answer_id=1989 question_id=120 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=0
+2026-05-03T20:44:32+00:00 | evaluation_parsed | answer_id=1989 question_id=120 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel score=4 latency_ms=12394 status_code=200
+2026-05-03T20:44:32+00:00 | adaptive_concurrency_increased | provider=remote_http base_url=https://api.featherless.ai/v1 api_key=a3672be7 model=Unbabel/M-Prometheus-14B from=3 to=4 successes=3
+2026-05-03T20:44:32+00:00 | START Running answer 1985 with Unbabel/M-Prometheus-14B | answer_id=1985 question_id=119 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T20:44:32+00:00 | START Running answer 1986 with Unbabel/M-Prometheus-14B | answer_id=1986 question_id=119 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T20:44:44+00:00 | DONE Running answer 1571 with Unbabel/M-Prometheus-14B | answer_id=1571 question_id=105 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=12750
+2026-05-03T20:44:44+00:00 | START Parsing judge response for answer 1571 | answer_id=1571 question_id=105 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T20:44:44+00:00 | DONE Parsing judge response for answer 1571 | answer_id=1571 question_id=105 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=0
+2026-05-03T20:44:44+00:00 | evaluation_parsed | answer_id=1571 question_id=105 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel score=2 latency_ms=12750 status_code=200
+2026-05-03T20:44:45+00:00 | DONE Running answer 1499 with Unbabel/M-Prometheus-14B | answer_id=1499 question_id=77 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=12916
+2026-05-03T20:44:45+00:00 | START Parsing judge response for answer 1499 | answer_id=1499 question_id=77 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T20:44:45+00:00 | FAIL Parsing judge response for answer 1499 | answer_id=1499 question_id=77 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel error=Judge response does not contain a JSON object. Preview: { "score": 1, "rationale": "A resposta apresenta graves erros conceituais e normativos, incluindo a citação de artigos inexistentes como 'artigo nº 186 ("Empujo elapsed_ms=0
+2026-05-03T20:44:45+00:00 | adaptive_task_failed | provider=remote_http base_url=https://api.featherless.ai/v1 api_key=a3672be7 model=Unbabel/M-Prometheus-14B answer_id=1499 role=principal attempts=1 discarded_pending=0 error=Judge response does not contain a JSON object. Preview: { "score": 1, "rationale": "A resposta apresenta graves erros conceituais e normativos, incluindo a citação de artigos inexistentes como 'artigo nº 186 ("Empujo
+2026-05-03T20:44:45+00:00 | adaptive_group_disabled | provider=remote_http base_url=https://api.featherless.ai/v1 api_key=a3672be7 model=Unbabel/M-Prometheus-14B discarded_pending=0 error=Judge response does not contain a JSON object. Preview: { "score": 1, "rationale": "A resposta apresenta graves erros conceituais e normativos, incluindo a citação de artigos inexistentes como 'artigo nº 186 ("Empujo
+2026-05-03T20:44:45+00:00 | DONE Running answer 1985 with Unbabel/M-Prometheus-14B | answer_id=1985 question_id=119 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=13090
+2026-05-03T20:44:45+00:00 | START Parsing judge response for answer 1985 | answer_id=1985 question_id=119 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T20:44:45+00:00 | DONE Parsing judge response for answer 1985 | answer_id=1985 question_id=119 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=0
+2026-05-03T20:44:45+00:00 | evaluation_parsed | answer_id=1985 question_id=119 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel score=4 latency_ms=13090 status_code=200
+2026-05-03T20:44:49+00:00 | DONE Running answer 1986 with Unbabel/M-Prometheus-14B | answer_id=1986 question_id=119 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=16950
+2026-05-03T20:44:49+00:00 | START Parsing judge response for answer 1986 | answer_id=1986 question_id=119 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T20:44:49+00:00 | DONE Parsing judge response for answer 1986 | answer_id=1986 question_id=119 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=0
+2026-05-03T20:44:49+00:00 | evaluation_parsed | answer_id=1986 question_id=119 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel score=4 latency_ms=16950 status_code=200
+2026-05-03T20:44:49+00:00 | START Running answer 1987 with meta-llama/Llama-3.3-70B-Instruct | answer_id=1987 question_id=120 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-03T20:45:00+00:00 | DONE Running answer 1987 with meta-llama/Llama-3.3-70B-Instruct | answer_id=1987 question_id=120 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel elapsed_ms=11507
+2026-05-03T20:45:00+00:00 | START Parsing judge response for answer 1987 | answer_id=1987 question_id=120 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-03T20:45:00+00:00 | DONE Parsing judge response for answer 1987 | answer_id=1987 question_id=120 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel elapsed_ms=0
+2026-05-03T20:45:00+00:00 | evaluation_parsed | answer_id=1987 question_id=120 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel score=2 latency_ms=11507 status_code=200
+2026-05-03T20:45:00+00:00 | START Persisting evaluation for answer 1985 | answer_id=1985 model=meta-llama/Llama-3.3-70B-Instruct role=controle score=3
+2026-05-03T20:45:00+00:00 | DONE Persisting evaluation for answer 1985 | answer_id=1985 model=meta-llama/Llama-3.3-70B-Instruct role=controle score=3 elapsed_ms=4
+2026-05-03T20:45:00+00:00 | batch_progress | current=3 total=7 percent=42 executed=1 skipped=2 arbiters=0
+2026-05-03T20:45:00+00:00 | eligibility_progress | missing=67 failed=0 successful=143 will_process=5
+2026-05-03T20:45:00+00:00 | START Persisting evaluation for answer 1986 | answer_id=1986 model=meta-llama/Llama-3.3-70B-Instruct role=controle score=5
+2026-05-03T20:45:00+00:00 | DONE Persisting evaluation for answer 1986 | answer_id=1986 model=meta-llama/Llama-3.3-70B-Instruct role=controle score=5 elapsed_ms=2
+2026-05-03T20:45:00+00:00 | batch_progress | current=4 total=7 percent=57 executed=2 skipped=2 arbiters=0
+2026-05-03T20:45:00+00:00 | eligibility_progress | missing=67 failed=0 successful=143 will_process=5
+2026-05-03T20:45:00+00:00 | START Persisting evaluation for answer 1988 | answer_id=1988 model=meta-llama/Llama-3.3-70B-Instruct role=controle score=4
+2026-05-03T20:45:00+00:00 | DONE Persisting evaluation for answer 1988 | answer_id=1988 model=meta-llama/Llama-3.3-70B-Instruct role=controle score=4 elapsed_ms=1
+2026-05-03T20:45:00+00:00 | batch_progress | current=5 total=7 percent=71 executed=3 skipped=2 arbiters=0
+2026-05-03T20:45:00+00:00 | eligibility_progress | missing=67 failed=0 successful=143 will_process=5
+2026-05-03T20:45:00+00:00 | START Persisting evaluation for answer 1989 | answer_id=1989 model=meta-llama/Llama-3.3-70B-Instruct role=controle score=4
+2026-05-03T20:45:00+00:00 | DONE Persisting evaluation for answer 1989 | answer_id=1989 model=meta-llama/Llama-3.3-70B-Instruct role=controle score=4 elapsed_ms=0
+2026-05-03T20:45:00+00:00 | batch_progress | current=6 total=7 percent=85 executed=4 skipped=2 arbiters=0
+2026-05-03T20:45:00+00:00 | eligibility_progress | missing=67 failed=0 successful=143 will_process=5
+2026-05-03T20:45:00+00:00 | START Persisting evaluation for answer 1987 | answer_id=1987 model=Unbabel/M-Prometheus-14B role=principal score=4
+2026-05-03T20:45:00+00:00 | DONE Persisting evaluation for answer 1987 | answer_id=1987 model=Unbabel/M-Prometheus-14B role=principal score=4 elapsed_ms=0
+2026-05-03T20:45:00+00:00 | batch_progress | current=7 total=7 percent=100 executed=5 skipped=2 arbiters=0
+2026-05-03T20:45:00+00:00 | eligibility_progress | missing=67 failed=0 successful=143 will_process=5
+2026-05-03T20:45:00+00:00 | START Persisting evaluation for answer 1988 | answer_id=1988 model=Unbabel/M-Prometheus-14B role=principal score=4
+2026-05-03T20:45:00+00:00 | DONE Persisting evaluation for answer 1988 | answer_id=1988 model=Unbabel/M-Prometheus-14B role=principal score=4 elapsed_ms=0
+2026-05-03T20:45:00+00:00 | batch_progress | current=7 total=7 percent=100 executed=6 skipped=2 arbiters=0
+2026-05-03T20:45:00+00:00 | eligibility_progress | missing=66 failed=0 successful=144 will_process=5
+2026-05-03T20:45:00+00:00 | START Persisting evaluation for answer 1989 | answer_id=1989 model=Unbabel/M-Prometheus-14B role=principal score=4
+2026-05-03T20:45:00+00:00 | DONE Persisting evaluation for answer 1989 | answer_id=1989 model=Unbabel/M-Prometheus-14B role=principal score=4 elapsed_ms=0
+2026-05-03T20:45:00+00:00 | batch_progress | current=7 total=7 percent=100 executed=7 skipped=2 arbiters=0
+2026-05-03T20:45:00+00:00 | eligibility_progress | missing=65 failed=0 successful=145 will_process=5
+2026-05-03T20:45:00+00:00 | START Persisting evaluation for answer 1571 | answer_id=1571 model=Unbabel/M-Prometheus-14B role=principal score=2
+2026-05-03T20:45:00+00:00 | DONE Persisting evaluation for answer 1571 | answer_id=1571 model=Unbabel/M-Prometheus-14B role=principal score=2 elapsed_ms=0
+2026-05-03T20:45:00+00:00 | batch_progress | current=7 total=7 percent=100 executed=8 skipped=2 arbiters=0
+2026-05-03T20:45:00+00:00 | eligibility_progress | missing=64 failed=0 successful=146 will_process=5
+2026-05-03T20:45:00+00:00 | START Persisting evaluation for answer 1985 | answer_id=1985 model=Unbabel/M-Prometheus-14B role=principal score=4
+2026-05-03T20:45:00+00:00 | DONE Persisting evaluation for answer 1985 | answer_id=1985 model=Unbabel/M-Prometheus-14B role=principal score=4 elapsed_ms=0
+2026-05-03T20:45:00+00:00 | batch_progress | current=7 total=7 percent=100 executed=9 skipped=2 arbiters=0
+2026-05-03T20:45:00+00:00 | eligibility_progress | missing=63 failed=0 successful=147 will_process=5
+2026-05-03T20:45:00+00:00 | START Persisting evaluation for answer 1986 | answer_id=1986 model=Unbabel/M-Prometheus-14B role=principal score=4
+2026-05-03T20:45:00+00:00 | DONE Persisting evaluation for answer 1986 | answer_id=1986 model=Unbabel/M-Prometheus-14B role=principal score=4 elapsed_ms=0
+2026-05-03T20:45:00+00:00 | batch_progress | current=7 total=7 percent=100 executed=10 skipped=2 arbiters=0
+2026-05-03T20:45:00+00:00 | eligibility_progress | missing=62 failed=0 successful=148 will_process=5
+2026-05-03T20:45:00+00:00 | START Persisting evaluation for answer 1987 | answer_id=1987 model=meta-llama/Llama-3.3-70B-Instruct role=controle score=2
+2026-05-03T20:45:00+00:00 | DONE Persisting evaluation for answer 1987 | answer_id=1987 model=meta-llama/Llama-3.3-70B-Instruct role=controle score=2 elapsed_ms=0
+2026-05-03T20:45:00+00:00 | batch_progress | current=7 total=7 percent=100 executed=11 skipped=2 arbiters=0
+2026-05-03T20:45:00+00:00 | eligibility_progress | missing=61 failed=0 successful=149 will_process=5
+2026-05-03T20:45:00+00:00 | arbiter_skipped | answer_id=1571 score_delta=1 threshold=2
+2026-05-03T20:45:00+00:00 | arbiter_skipped | answer_id=1985 score_delta=1 threshold=2
+2026-05-03T20:45:00+00:00 | arbiter_skipped | answer_id=1986 score_delta=1 threshold=2
+2026-05-03T20:45:00+00:00 | arbiter_skipped | answer_id=1988 score_delta=0 threshold=2
+2026-05-03T20:45:00+00:00 | arbiter_skipped | answer_id=1989 score_delta=0 threshold=2
+2026-05-03T20:45:00+00:00 | adaptive_concurrency_initial | provider=remote_http base_url=https://api.featherless.ai/v1 api_key=a3672be7 model=openai/gpt-oss-120b initial_concurrency=1 max_concurrency=4
+2026-05-03T20:45:00+00:00 | START Running answer 1987 with openai/gpt-oss-120b | answer_id=1987 question_id=120 model=openai/gpt-oss-120b role=arbitro trigger=score_delta
+2026-05-03T20:45:20+00:00 | DONE Running answer 1987 with openai/gpt-oss-120b | answer_id=1987 question_id=120 model=openai/gpt-oss-120b role=arbitro trigger=score_delta elapsed_ms=19974
+2026-05-03T20:45:20+00:00 | START Parsing judge response for answer 1987 | answer_id=1987 question_id=120 model=openai/gpt-oss-120b role=arbitro trigger=score_delta
+2026-05-03T20:45:20+00:00 | DONE Parsing judge response for answer 1987 | answer_id=1987 question_id=120 model=openai/gpt-oss-120b role=arbitro trigger=score_delta elapsed_ms=0
+2026-05-03T20:45:20+00:00 | evaluation_parsed | answer_id=1987 question_id=120 model=openai/gpt-oss-120b role=arbitro trigger=score_delta score=2 latency_ms=19974 status_code=200
+2026-05-03T20:45:20+00:00 | START Persisting evaluation for answer 1987 | answer_id=1987 model=openai/gpt-oss-120b role=arbitro score=2
+2026-05-03T20:45:20+00:00 | DONE Persisting evaluation for answer 1987 | answer_id=1987 model=openai/gpt-oss-120b role=arbitro score=2 elapsed_ms=3
+2026-05-03T20:45:20+00:00 | batch_progress | current=7 total=7 percent=100 executed=12 skipped=2 arbiters=1
+2026-05-03T20:45:20+00:00 | eligibility_progress | missing=61 failed=0 successful=149 will_process=5
+2026-05-03T20:45:20+00:00 | batch_progress | current=7 total=7 percent=100 executed=12 skipped=2 arbiters=1
+2026-05-03T20:45:20+00:00 | eligibility_progress | missing=61 failed=0 successful=149 will_process=5
+2026-05-03T20:45:20+00:00 | adaptive_concurrency_final | provider=remote_http base_url=https://api.featherless.ai/v1 api_key=a3672be7 model=Unbabel/M-Prometheus-14B final_concurrency=4 successes=6 failures=5 timeouts=0 rate_limits=4 retries=0 requeued=0 disabled=True
+2026-05-03T20:45:20+00:00 | adaptive_concurrency_final | provider=remote_http base_url=https://api.featherless.ai/v1 api_key=a3672be7 model=meta-llama/Llama-3.3-70B-Instruct final_concurrency=1 successes=5 failures=5 timeouts=0 rate_limits=5 retries=4 requeued=4 disabled=False
+2026-05-03T20:45:20+00:00 | adaptive_concurrency_final | provider=remote_http base_url=https://api.featherless.ai/v1 api_key=a3672be7 model=openai/gpt-oss-120b final_concurrency=1 successes=1 failures=0 timeouts=0 rate_limits=0 retries=0 requeued=0 disabled=False
+2026-05-03T20:45:20+00:00 | DONE Running judge pipeline | answers=7 mode=2plus1 elapsed_ms=137731
+2026-05-03T20:45:20+00:00 | eligibility_final | missing=61 failed=0 successful=149 will_process=5
+2026-05-03T20:45:20+00:00 | START Closing PostgreSQL connection
+2026-05-03T20:45:20+00:00 | DONE Closing PostgreSQL connection | elapsed_ms=0
+2026-05-03T20:45:20+00:00 | execution_result | selected=7 executed=12 skipped=2 arbiters=1
+2026-05-03T20:45:20+00:00 | audit_log_finished

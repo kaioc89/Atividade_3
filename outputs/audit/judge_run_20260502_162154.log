@@ -1,0 +1,9 @@
+2026-05-02T19:21:54+00:00 | audit_log_started | path=outputs/audit/judge_run_20260502_162154.log
+2026-05-02T19:21:54+00:00 | START Loading configuration
+2026-05-02T19:21:54+00:00 | DONE Loading configuration | elapsed_ms=0
+2026-05-02T19:21:54+00:00 | START Resolving judge mode and models | panel_mode_cli=not_provided judge_model_cli=not_provided secondary_judge_cli=not_provided arbiter_cli=not_provided execution_strategy_cli=not_provided
+2026-05-02T19:21:54+00:00 | DONE Resolving judge mode and models | panel_mode_cli=not_provided judge_model_cli=not_provided secondary_judge_cli=not_provided arbiter_cli=not_provided execution_strategy_cli=not_provided elapsed_ms=0
+2026-05-02T19:21:54+00:00 | execution_summary | Judge provider: remote_http | Judge mode: 2plus1 | Judge execution strategy: adaptive | Primary judges: | - Unbabel/M-Prometheus-14B | endpoint=api.featherless.ai | - meta-llama/Llama-3.3-70B-Instruct | endpoint=api.featherless.ai | Arbiter: | - openai/gpt-oss-120b | endpoint=api.featherless.ai | Arbitration min delta: 2 | Always run arbiter: false | Model source: .env REMOTE_JUDGE_MODEL / .env REMOTE_SECONDARY_JUDGE_MODEL / .env REMOTE_ARBITER_JUDGE_MODEL
+2026-05-02T19:21:54+00:00 | command_preview | .venv/bin/python -m atividade_2.cli run-judge --panel-mode 2plus1 --dataset J1 --batch-size 10 --judge-execution-strategy adaptive --judge-model Unbabel/M-Prometheus-14B --secondary-judge-model meta-llama/Llama-3.3-70B-Instruct --arbiter-judge-model openai/gpt-oss-120b --dry-run
+2026-05-02T19:21:54+00:00 | dry_run_finished | no database rows selected and no remote judge calls made
+2026-05-02T19:21:54+00:00 | audit_log_finished

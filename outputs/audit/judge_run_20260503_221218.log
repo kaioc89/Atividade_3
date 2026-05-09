@@ -1,0 +1,757 @@
+2026-05-03T22:12:18+00:00 | audit_log_started | path=outputs/audit/judge_run_20260503_221218.log
+2026-05-03T22:12:18+00:00 | START Loading configuration
+2026-05-03T22:12:18+00:00 | DONE Loading configuration | elapsed_ms=0
+2026-05-03T22:12:18+00:00 | START Resolving judge mode and models | panel_mode_cli=provided judge_model_cli=provided secondary_judge_cli=provided arbiter_cli=provided execution_strategy_cli=provided
+2026-05-03T22:12:18+00:00 | DONE Resolving judge mode and models | panel_mode_cli=provided judge_model_cli=provided secondary_judge_cli=provided arbiter_cli=provided execution_strategy_cli=provided elapsed_ms=0
+2026-05-03T22:12:18+00:00 | execution_summary | Judge provider: remote_http | Judge mode: 2plus1 | Judge execution strategy: adaptive | Primary judges: | - Unbabel/M-Prometheus-14B | endpoint=api.featherless.ai | - meta-llama/Llama-3.3-70B-Instruct | endpoint=api.featherless.ai | Arbiter: | - openai/gpt-oss-120b | endpoint=api.featherless.ai | Arbitration min delta: 2 | Always run arbiter: false | Model source: CLI --judge-model / CLI --secondary-judge-model / CLI --arbiter-judge-model
+2026-05-03T22:12:18+00:00 | command_preview | .venv/bin/python -m atividade_2.cli run-judge --panel-mode 2plus1 --dataset J1 --batch-size 61 --judge-execution-strategy adaptive --judge-model Unbabel/M-Prometheus-14B --secondary-judge-model meta-llama/Llama-3.3-70B-Instruct --arbiter-judge-model openai/gpt-oss-120b
+2026-05-03T22:12:18+00:00 | START Connecting to local PostgreSQL | DATABASE_URL=<redacted>
+2026-05-03T22:12:18+00:00 | DONE Connecting to local PostgreSQL | DATABASE_URL=<redacted> elapsed_ms=8
+2026-05-03T22:12:18+00:00 | START Ensuring judge metadata schema
+2026-05-03T22:12:18+00:00 | DONE Ensuring judge metadata schema | elapsed_ms=7
+2026-05-03T22:12:18+00:00 | START Counting eligible answers for J1 | dataset=J1 batch_size=61
+2026-05-03T22:12:18+00:00 | DONE Counting eligible answers for J1 | dataset=J1 batch_size=61 elapsed_ms=2
+2026-05-03T22:12:18+00:00 | eligibility_summary | missing=61 failed=0 successful=149 will_process=61
+2026-05-03T22:12:18+00:00 | START Selecting pending candidate answers for J1 | dataset=J1 batch_size=61
+2026-05-03T22:12:18+00:00 | DONE Selecting pending candidate answers for J1 | dataset=J1 batch_size=61 elapsed_ms=5
+2026-05-03T22:12:18+00:00 | answers_selected | count=61
+2026-05-03T22:12:18+00:00 | START Running judge pipeline | answers=61 mode=2plus1
+2026-05-03T22:12:18+00:00 | evaluation_skipped | answer_id=1499 model=meta-llama/Llama-3.3-70B-Instruct role=controle mode=2plus1 existing_score=2
+2026-05-03T22:12:18+00:00 | evaluation_skipped | answer_id=1990 model=meta-llama/Llama-3.3-70B-Instruct role=controle mode=2plus1 existing_score=4
+2026-05-03T22:12:18+00:00 | evaluation_skipped | answer_id=1991 model=meta-llama/Llama-3.3-70B-Instruct role=controle mode=2plus1 existing_score=4
+2026-05-03T22:12:18+00:00 | evaluation_skipped | answer_id=1992 model=meta-llama/Llama-3.3-70B-Instruct role=controle mode=2plus1 existing_score=4
+2026-05-03T22:12:18+00:00 | evaluation_skipped | answer_id=1993 model=meta-llama/Llama-3.3-70B-Instruct role=controle mode=2plus1 existing_score=4
+2026-05-03T22:12:18+00:00 | evaluation_skipped | answer_id=1994 model=meta-llama/Llama-3.3-70B-Instruct role=controle mode=2plus1 existing_score=4
+2026-05-03T22:12:18+00:00 | evaluation_skipped | answer_id=1995 model=meta-llama/Llama-3.3-70B-Instruct role=controle mode=2plus1 existing_score=4
+2026-05-03T22:12:18+00:00 | evaluation_skipped | answer_id=1996 model=meta-llama/Llama-3.3-70B-Instruct role=controle mode=2plus1 existing_score=4
+2026-05-03T22:12:18+00:00 | evaluation_skipped | answer_id=1997 model=meta-llama/Llama-3.3-70B-Instruct role=controle mode=2plus1 existing_score=4
+2026-05-03T22:12:18+00:00 | evaluation_skipped | answer_id=1998 model=meta-llama/Llama-3.3-70B-Instruct role=controle mode=2plus1 existing_score=5
+2026-05-03T22:12:18+00:00 | evaluation_skipped | answer_id=1999 model=meta-llama/Llama-3.3-70B-Instruct role=controle mode=2plus1 existing_score=4
+2026-05-03T22:12:18+00:00 | evaluation_skipped | answer_id=2000 model=meta-llama/Llama-3.3-70B-Instruct role=controle mode=2plus1 existing_score=4
+2026-05-03T22:12:18+00:00 | adaptive_concurrency_initial | provider=remote_http base_url=https://api.featherless.ai/v1 api_key=a3672be7 model=Unbabel/M-Prometheus-14B initial_concurrency=1 max_concurrency=4
+2026-05-03T22:12:18+00:00 | adaptive_concurrency_initial | provider=remote_http base_url=https://api.featherless.ai/v1 api_key=a3672be7 model=meta-llama/Llama-3.3-70B-Instruct initial_concurrency=1 max_concurrency=4
+2026-05-03T22:12:18+00:00 | START Running answer 1499 with Unbabel/M-Prometheus-14B | answer_id=1499 question_id=77 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:12:18+00:00 | START Running answer 2001 with meta-llama/Llama-3.3-70B-Instruct | answer_id=2001 question_id=124 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-03T22:12:19+00:00 | FAIL Running answer 2001 with meta-llama/Llama-3.3-70B-Instruct | answer_id=2001 question_id=124 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel error=Remote judge returned HTTP 429: Concurrency limit exceeded. Your account details:
+
+**Current Usage:**
+- Active concurrent requests: 1 units
+- This request requires: 4 units
+- Total needed: 5 units
+- Your plan limit: 4 units
+- Over limit by: 1 units
+
+**Model Details:**
+- Model: meta-llama/Llama-3.3-70B-Instruct
+- Model class: llama elapsed_ms=1055
+2026-05-03T22:12:19+00:00 | adaptive_task_waiting_for_global_idle | provider=remote_http base_url=https://api.featherless.ai/v1 api_key=a3672be7 model=meta-llama/Llama-3.3-70B-Instruct answer_id=2001 role=controle active_other_tasks=1 error=Remote judge returned HTTP 429: Concurrency limit exceeded. Your account details:
+
+**Current Usage:**
+- Active concurrent requests: 1 units
+- This request requires: 4 units
+- Total needed: 5 units
+- Your plan limit: 4 units
+- Over limit by: 1 units
+
+**Model Details:**
+- Model: meta-llama/Llama-3.3-70B-Instruct
+- Model class: llama
+2026-05-03T22:12:54+00:00 | DONE Running answer 1499 with Unbabel/M-Prometheus-14B | answer_id=1499 question_id=77 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=36766
+2026-05-03T22:12:54+00:00 | START Parsing judge response for answer 1499 | answer_id=1499 question_id=77 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:12:54+00:00 | FAIL Parsing judge response for answer 1499 | answer_id=1499 question_id=77 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel error=Judge response does not contain a JSON object. Preview: { "score": 1, "rationale": "A resposta apresenta graves erros conceituais e normativos. Inventa artigos inexistentes como 'artigo nº 186 ("Empujonar")' e mencio elapsed_ms=0
+2026-05-03T22:12:54+00:00 | adaptive_task_failed | provider=remote_http base_url=https://api.featherless.ai/v1 api_key=a3672be7 model=Unbabel/M-Prometheus-14B answer_id=1499 role=principal attempts=1 discarded_pending=60 error=Judge response does not contain a JSON object. Preview: { "score": 1, "rationale": "A resposta apresenta graves erros conceituais e normativos. Inventa artigos inexistentes como 'artigo nº 186 ("Empujonar")' e mencio
+2026-05-03T22:12:54+00:00 | adaptive_group_disabled | provider=remote_http base_url=https://api.featherless.ai/v1 api_key=a3672be7 model=Unbabel/M-Prometheus-14B discarded_pending=60 error=Judge response does not contain a JSON object. Preview: { "score": 1, "rationale": "A resposta apresenta graves erros conceituais e normativos. Inventa artigos inexistentes como 'artigo nº 186 ("Empujonar")' e mencio
+2026-05-03T22:12:54+00:00 | START Running answer 2002 with meta-llama/Llama-3.3-70B-Instruct | answer_id=2002 question_id=125 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-03T22:13:06+00:00 | DONE Running answer 2002 with meta-llama/Llama-3.3-70B-Instruct | answer_id=2002 question_id=125 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel elapsed_ms=11799
+2026-05-03T22:13:06+00:00 | START Parsing judge response for answer 2002 | answer_id=2002 question_id=125 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-03T22:13:06+00:00 | DONE Parsing judge response for answer 2002 | answer_id=2002 question_id=125 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel elapsed_ms=0
+2026-05-03T22:13:06+00:00 | evaluation_parsed | answer_id=2002 question_id=125 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel score=4 latency_ms=11799 status_code=200
+2026-05-03T22:13:06+00:00 | START Running answer 2003 with meta-llama/Llama-3.3-70B-Instruct | answer_id=2003 question_id=125 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-03T22:13:18+00:00 | DONE Running answer 2003 with meta-llama/Llama-3.3-70B-Instruct | answer_id=2003 question_id=125 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel elapsed_ms=11831
+2026-05-03T22:13:18+00:00 | START Parsing judge response for answer 2003 | answer_id=2003 question_id=125 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-03T22:13:18+00:00 | DONE Parsing judge response for answer 2003 | answer_id=2003 question_id=125 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel elapsed_ms=0
+2026-05-03T22:13:18+00:00 | evaluation_parsed | answer_id=2003 question_id=125 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel score=4 latency_ms=11831 status_code=200
+2026-05-03T22:13:18+00:00 | START Running answer 2004 with meta-llama/Llama-3.3-70B-Instruct | answer_id=2004 question_id=125 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-03T22:13:31+00:00 | DONE Running answer 2004 with meta-llama/Llama-3.3-70B-Instruct | answer_id=2004 question_id=125 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel elapsed_ms=13249
+2026-05-03T22:13:31+00:00 | START Parsing judge response for answer 2004 | answer_id=2004 question_id=125 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-03T22:13:31+00:00 | DONE Parsing judge response for answer 2004 | answer_id=2004 question_id=125 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel elapsed_ms=0
+2026-05-03T22:13:31+00:00 | evaluation_parsed | answer_id=2004 question_id=125 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel score=4 latency_ms=13249 status_code=200
+2026-05-03T22:13:31+00:00 | START Running answer 2005 with meta-llama/Llama-3.3-70B-Instruct | answer_id=2005 question_id=126 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-03T22:13:45+00:00 | DONE Running answer 2005 with meta-llama/Llama-3.3-70B-Instruct | answer_id=2005 question_id=126 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel elapsed_ms=14032
+2026-05-03T22:13:45+00:00 | START Parsing judge response for answer 2005 | answer_id=2005 question_id=126 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-03T22:13:45+00:00 | DONE Parsing judge response for answer 2005 | answer_id=2005 question_id=126 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel elapsed_ms=0
+2026-05-03T22:13:45+00:00 | evaluation_parsed | answer_id=2005 question_id=126 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel score=4 latency_ms=14032 status_code=200
+2026-05-03T22:13:45+00:00 | START Running answer 2006 with meta-llama/Llama-3.3-70B-Instruct | answer_id=2006 question_id=126 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-03T22:13:56+00:00 | DONE Running answer 2006 with meta-llama/Llama-3.3-70B-Instruct | answer_id=2006 question_id=126 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel elapsed_ms=10537
+2026-05-03T22:13:56+00:00 | START Parsing judge response for answer 2006 | answer_id=2006 question_id=126 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-03T22:13:56+00:00 | DONE Parsing judge response for answer 2006 | answer_id=2006 question_id=126 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel elapsed_ms=0
+2026-05-03T22:13:56+00:00 | evaluation_parsed | answer_id=2006 question_id=126 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel score=4 latency_ms=10537 status_code=200
+2026-05-03T22:13:56+00:00 | adaptive_concurrency_increased | provider=remote_http base_url=https://api.featherless.ai/v1 api_key=a3672be7 model=meta-llama/Llama-3.3-70B-Instruct from=1 to=2 successes=5
+2026-05-03T22:13:56+00:00 | START Running answer 2007 with meta-llama/Llama-3.3-70B-Instruct | answer_id=2007 question_id=126 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-03T22:13:56+00:00 | START Running answer 2008 with meta-llama/Llama-3.3-70B-Instruct | answer_id=2008 question_id=127 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-03T22:13:57+00:00 | FAIL Running answer 2007 with meta-llama/Llama-3.3-70B-Instruct | answer_id=2007 question_id=126 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel error=Remote judge returned HTTP 429: Concurrency limit exceeded. Your account details:
+
+**Current Usage:**
+- Active concurrent requests: 4 units
+- This request requires: 4 units
+- Total needed: 8 units
+- Your plan limit: 4 units
+- Over limit by: 4 units
+
+**Model Details:**
+- Model: meta-llama/Llama-3.3-70B-Instruct
+- Model class: llama elapsed_ms=1219
+2026-05-03T22:13:57+00:00 | adaptive_concurrency_reduced | provider=remote_http base_url=https://api.featherless.ai/v1 api_key=a3672be7 model=meta-llama/Llama-3.3-70B-Instruct from=2 to=1 reason=http_429
+2026-05-03T22:13:57+00:00 | adaptive_task_requeued | provider=remote_http base_url=https://api.featherless.ai/v1 api_key=a3672be7 model=meta-llama/Llama-3.3-70B-Instruct answer_id=2007 role=controle attempt=1 backoff_seconds=2.165 error=Remote judge returned HTTP 429: Concurrency limit exceeded. Your account details:
+
+**Current Usage:**
+- Active concurrent requests: 4 units
+- This request requires: 4 units
+- Total needed: 8 units
+- Your plan limit: 4 units
+- Over limit by: 4 units
+
+**Model Details:**
+- Model: meta-llama/Llama-3.3-70B-Instruct
+- Model class: llama
+2026-05-03T22:14:05+00:00 | DONE Running answer 2008 with meta-llama/Llama-3.3-70B-Instruct | answer_id=2008 question_id=127 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel elapsed_ms=8898
+2026-05-03T22:14:05+00:00 | START Parsing judge response for answer 2008 | answer_id=2008 question_id=127 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-03T22:14:05+00:00 | DONE Parsing judge response for answer 2008 | answer_id=2008 question_id=127 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel elapsed_ms=0
+2026-05-03T22:14:05+00:00 | evaluation_parsed | answer_id=2008 question_id=127 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel score=4 latency_ms=8898 status_code=200
+2026-05-03T22:14:05+00:00 | START Running answer 2009 with meta-llama/Llama-3.3-70B-Instruct | answer_id=2009 question_id=127 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-03T22:14:13+00:00 | DONE Running answer 2009 with meta-llama/Llama-3.3-70B-Instruct | answer_id=2009 question_id=127 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel elapsed_ms=8486
+2026-05-03T22:14:13+00:00 | START Parsing judge response for answer 2009 | answer_id=2009 question_id=127 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-03T22:14:13+00:00 | DONE Parsing judge response for answer 2009 | answer_id=2009 question_id=127 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel elapsed_ms=0
+2026-05-03T22:14:13+00:00 | evaluation_parsed | answer_id=2009 question_id=127 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel score=4 latency_ms=8486 status_code=200
+2026-05-03T22:14:13+00:00 | START Running answer 2010 with meta-llama/Llama-3.3-70B-Instruct | answer_id=2010 question_id=127 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-03T22:14:24+00:00 | DONE Running answer 2010 with meta-llama/Llama-3.3-70B-Instruct | answer_id=2010 question_id=127 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel elapsed_ms=10548
+2026-05-03T22:14:24+00:00 | START Parsing judge response for answer 2010 | answer_id=2010 question_id=127 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-03T22:14:24+00:00 | DONE Parsing judge response for answer 2010 | answer_id=2010 question_id=127 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel elapsed_ms=0
+2026-05-03T22:14:24+00:00 | evaluation_parsed | answer_id=2010 question_id=127 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel score=4 latency_ms=10548 status_code=200
+2026-05-03T22:14:24+00:00 | START Running answer 2011 with meta-llama/Llama-3.3-70B-Instruct | answer_id=2011 question_id=128 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-03T22:14:35+00:00 | DONE Running answer 2011 with meta-llama/Llama-3.3-70B-Instruct | answer_id=2011 question_id=128 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel elapsed_ms=11261
+2026-05-03T22:14:35+00:00 | START Parsing judge response for answer 2011 | answer_id=2011 question_id=128 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-03T22:14:35+00:00 | DONE Parsing judge response for answer 2011 | answer_id=2011 question_id=128 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel elapsed_ms=0
+2026-05-03T22:14:35+00:00 | evaluation_parsed | answer_id=2011 question_id=128 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel score=4 latency_ms=11261 status_code=200
+2026-05-03T22:14:35+00:00 | START Running answer 2012 with meta-llama/Llama-3.3-70B-Instruct | answer_id=2012 question_id=128 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-03T22:14:49+00:00 | DONE Running answer 2012 with meta-llama/Llama-3.3-70B-Instruct | answer_id=2012 question_id=128 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel elapsed_ms=13723
+2026-05-03T22:14:49+00:00 | START Parsing judge response for answer 2012 | answer_id=2012 question_id=128 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-03T22:14:49+00:00 | DONE Parsing judge response for answer 2012 | answer_id=2012 question_id=128 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel elapsed_ms=0
+2026-05-03T22:14:49+00:00 | evaluation_parsed | answer_id=2012 question_id=128 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel score=4 latency_ms=13723 status_code=200
+2026-05-03T22:14:49+00:00 | adaptive_concurrency_increased | provider=remote_http base_url=https://api.featherless.ai/v1 api_key=a3672be7 model=meta-llama/Llama-3.3-70B-Instruct from=1 to=2 successes=10
+2026-05-03T22:14:49+00:00 | START Running answer 2013 with meta-llama/Llama-3.3-70B-Instruct | answer_id=2013 question_id=128 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-03T22:14:49+00:00 | START Running answer 2014 with meta-llama/Llama-3.3-70B-Instruct | answer_id=2014 question_id=129 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-03T22:14:50+00:00 | FAIL Running answer 2013 with meta-llama/Llama-3.3-70B-Instruct | answer_id=2013 question_id=128 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel error=Remote judge returned HTTP 429: Concurrency limit exceeded. Your account details:
+
+**Current Usage:**
+- Active concurrent requests: 4 units
+- This request requires: 4 units
+- Total needed: 8 units
+- Your plan limit: 4 units
+- Over limit by: 4 units
+
+**Model Details:**
+- Model: meta-llama/Llama-3.3-70B-Instruct
+- Model class: llama elapsed_ms=1010
+2026-05-03T22:14:50+00:00 | adaptive_concurrency_reduced | provider=remote_http base_url=https://api.featherless.ai/v1 api_key=a3672be7 model=meta-llama/Llama-3.3-70B-Instruct from=2 to=1 reason=http_429
+2026-05-03T22:14:50+00:00 | adaptive_task_requeued | provider=remote_http base_url=https://api.featherless.ai/v1 api_key=a3672be7 model=meta-llama/Llama-3.3-70B-Instruct answer_id=2013 role=controle attempt=1 backoff_seconds=2.377 error=Remote judge returned HTTP 429: Concurrency limit exceeded. Your account details:
+
+**Current Usage:**
+- Active concurrent requests: 4 units
+- This request requires: 4 units
+- Total needed: 8 units
+- Your plan limit: 4 units
+- Over limit by: 4 units
+
+**Model Details:**
+- Model: meta-llama/Llama-3.3-70B-Instruct
+- Model class: llama
+2026-05-03T22:14:59+00:00 | DONE Running answer 2014 with meta-llama/Llama-3.3-70B-Instruct | answer_id=2014 question_id=129 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel elapsed_ms=10327
+2026-05-03T22:14:59+00:00 | START Parsing judge response for answer 2014 | answer_id=2014 question_id=129 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-03T22:14:59+00:00 | DONE Parsing judge response for answer 2014 | answer_id=2014 question_id=129 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel elapsed_ms=0
+2026-05-03T22:14:59+00:00 | evaluation_parsed | answer_id=2014 question_id=129 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel score=4 latency_ms=10327 status_code=200
+2026-05-03T22:14:59+00:00 | START Running answer 2015 with meta-llama/Llama-3.3-70B-Instruct | answer_id=2015 question_id=129 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-03T22:15:11+00:00 | DONE Running answer 2015 with meta-llama/Llama-3.3-70B-Instruct | answer_id=2015 question_id=129 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel elapsed_ms=11656
+2026-05-03T22:15:11+00:00 | START Parsing judge response for answer 2015 | answer_id=2015 question_id=129 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-03T22:15:11+00:00 | DONE Parsing judge response for answer 2015 | answer_id=2015 question_id=129 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel elapsed_ms=0
+2026-05-03T22:15:11+00:00 | evaluation_parsed | answer_id=2015 question_id=129 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel score=4 latency_ms=11656 status_code=200
+2026-05-03T22:15:11+00:00 | START Running answer 2016 with meta-llama/Llama-3.3-70B-Instruct | answer_id=2016 question_id=129 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-03T22:15:20+00:00 | DONE Running answer 2016 with meta-llama/Llama-3.3-70B-Instruct | answer_id=2016 question_id=129 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel elapsed_ms=9531
+2026-05-03T22:15:20+00:00 | START Parsing judge response for answer 2016 | answer_id=2016 question_id=129 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-03T22:15:20+00:00 | DONE Parsing judge response for answer 2016 | answer_id=2016 question_id=129 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel elapsed_ms=0
+2026-05-03T22:15:20+00:00 | evaluation_parsed | answer_id=2016 question_id=129 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel score=5 latency_ms=9531 status_code=200
+2026-05-03T22:15:20+00:00 | START Running answer 2017 with meta-llama/Llama-3.3-70B-Instruct | answer_id=2017 question_id=130 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-03T22:15:33+00:00 | DONE Running answer 2017 with meta-llama/Llama-3.3-70B-Instruct | answer_id=2017 question_id=130 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel elapsed_ms=12797
+2026-05-03T22:15:33+00:00 | START Parsing judge response for answer 2017 | answer_id=2017 question_id=130 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-03T22:15:33+00:00 | DONE Parsing judge response for answer 2017 | answer_id=2017 question_id=130 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel elapsed_ms=0
+2026-05-03T22:15:33+00:00 | evaluation_parsed | answer_id=2017 question_id=130 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel score=4 latency_ms=12797 status_code=200
+2026-05-03T22:15:33+00:00 | START Running answer 2018 with meta-llama/Llama-3.3-70B-Instruct | answer_id=2018 question_id=130 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-03T22:15:45+00:00 | DONE Running answer 2018 with meta-llama/Llama-3.3-70B-Instruct | answer_id=2018 question_id=130 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel elapsed_ms=11809
+2026-05-03T22:15:45+00:00 | START Parsing judge response for answer 2018 | answer_id=2018 question_id=130 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-03T22:15:45+00:00 | DONE Parsing judge response for answer 2018 | answer_id=2018 question_id=130 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel elapsed_ms=0
+2026-05-03T22:15:45+00:00 | evaluation_parsed | answer_id=2018 question_id=130 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel score=4 latency_ms=11809 status_code=200
+2026-05-03T22:15:45+00:00 | adaptive_concurrency_increased | provider=remote_http base_url=https://api.featherless.ai/v1 api_key=a3672be7 model=meta-llama/Llama-3.3-70B-Instruct from=1 to=2 successes=15
+2026-05-03T22:15:45+00:00 | START Running answer 2019 with meta-llama/Llama-3.3-70B-Instruct | answer_id=2019 question_id=130 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-03T22:15:45+00:00 | START Running answer 1595 with meta-llama/Llama-3.3-70B-Instruct | answer_id=1595 question_id=131 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-03T22:15:46+00:00 | FAIL Running answer 1595 with meta-llama/Llama-3.3-70B-Instruct | answer_id=1595 question_id=131 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel error=Remote judge returned HTTP 429: Concurrency limit exceeded. Your account details:
+
+**Current Usage:**
+- Active concurrent requests: 4 units
+- This request requires: 4 units
+- Total needed: 8 units
+- Your plan limit: 4 units
+- Over limit by: 4 units
+
+**Model Details:**
+- Model: meta-llama/Llama-3.3-70B-Instruct
+- Model class: llama elapsed_ms=554
+2026-05-03T22:15:46+00:00 | adaptive_concurrency_reduced | provider=remote_http base_url=https://api.featherless.ai/v1 api_key=a3672be7 model=meta-llama/Llama-3.3-70B-Instruct from=2 to=1 reason=http_429
+2026-05-03T22:15:46+00:00 | adaptive_task_requeued | provider=remote_http base_url=https://api.featherless.ai/v1 api_key=a3672be7 model=meta-llama/Llama-3.3-70B-Instruct answer_id=1595 role=controle attempt=1 backoff_seconds=2.552 error=Remote judge returned HTTP 429: Concurrency limit exceeded. Your account details:
+
+**Current Usage:**
+- Active concurrent requests: 4 units
+- This request requires: 4 units
+- Total needed: 8 units
+- Your plan limit: 4 units
+- Over limit by: 4 units
+
+**Model Details:**
+- Model: meta-llama/Llama-3.3-70B-Instruct
+- Model class: llama
+2026-05-03T22:15:56+00:00 | DONE Running answer 2019 with meta-llama/Llama-3.3-70B-Instruct | answer_id=2019 question_id=130 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel elapsed_ms=10811
+2026-05-03T22:15:56+00:00 | START Parsing judge response for answer 2019 | answer_id=2019 question_id=130 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-03T22:15:56+00:00 | DONE Parsing judge response for answer 2019 | answer_id=2019 question_id=130 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel elapsed_ms=0
+2026-05-03T22:15:56+00:00 | evaluation_parsed | answer_id=2019 question_id=130 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel score=4 latency_ms=10811 status_code=200
+2026-05-03T22:15:56+00:00 | START Running answer 1605 with meta-llama/Llama-3.3-70B-Instruct | answer_id=1605 question_id=131 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-03T22:16:07+00:00 | DONE Running answer 1605 with meta-llama/Llama-3.3-70B-Instruct | answer_id=1605 question_id=131 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel elapsed_ms=11156
+2026-05-03T22:16:07+00:00 | START Parsing judge response for answer 1605 | answer_id=1605 question_id=131 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-03T22:16:07+00:00 | DONE Parsing judge response for answer 1605 | answer_id=1605 question_id=131 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel elapsed_ms=0
+2026-05-03T22:16:07+00:00 | evaluation_parsed | answer_id=1605 question_id=131 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel score=2 latency_ms=11156 status_code=200
+2026-05-03T22:16:07+00:00 | START Running answer 1585 with meta-llama/Llama-3.3-70B-Instruct | answer_id=1585 question_id=131 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-03T22:16:18+00:00 | DONE Running answer 1585 with meta-llama/Llama-3.3-70B-Instruct | answer_id=1585 question_id=131 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel elapsed_ms=10871
+2026-05-03T22:16:18+00:00 | START Parsing judge response for answer 1585 | answer_id=1585 question_id=131 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-03T22:16:18+00:00 | DONE Parsing judge response for answer 1585 | answer_id=1585 question_id=131 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel elapsed_ms=0
+2026-05-03T22:16:18+00:00 | evaluation_parsed | answer_id=1585 question_id=131 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel score=2 latency_ms=10871 status_code=200
+2026-05-03T22:16:18+00:00 | START Running answer 1596 with meta-llama/Llama-3.3-70B-Instruct | answer_id=1596 question_id=132 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-03T22:16:29+00:00 | DONE Running answer 1596 with meta-llama/Llama-3.3-70B-Instruct | answer_id=1596 question_id=132 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel elapsed_ms=10728
+2026-05-03T22:16:29+00:00 | START Parsing judge response for answer 1596 | answer_id=1596 question_id=132 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-03T22:16:29+00:00 | DONE Parsing judge response for answer 1596 | answer_id=1596 question_id=132 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel elapsed_ms=0
+2026-05-03T22:16:29+00:00 | evaluation_parsed | answer_id=1596 question_id=132 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel score=4 latency_ms=10728 status_code=200
+2026-05-03T22:16:29+00:00 | START Running answer 1606 with meta-llama/Llama-3.3-70B-Instruct | answer_id=1606 question_id=132 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-03T22:16:40+00:00 | DONE Running answer 1606 with meta-llama/Llama-3.3-70B-Instruct | answer_id=1606 question_id=132 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel elapsed_ms=11262
+2026-05-03T22:16:40+00:00 | START Parsing judge response for answer 1606 | answer_id=1606 question_id=132 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-03T22:16:40+00:00 | DONE Parsing judge response for answer 1606 | answer_id=1606 question_id=132 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel elapsed_ms=0
+2026-05-03T22:16:40+00:00 | evaluation_parsed | answer_id=1606 question_id=132 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel score=4 latency_ms=11261 status_code=200
+2026-05-03T22:16:40+00:00 | adaptive_concurrency_increased | provider=remote_http base_url=https://api.featherless.ai/v1 api_key=a3672be7 model=meta-llama/Llama-3.3-70B-Instruct from=1 to=2 successes=20
+2026-05-03T22:16:40+00:00 | START Running answer 1586 with meta-llama/Llama-3.3-70B-Instruct | answer_id=1586 question_id=132 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-03T22:16:40+00:00 | START Running answer 1597 with meta-llama/Llama-3.3-70B-Instruct | answer_id=1597 question_id=133 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-03T22:16:41+00:00 | FAIL Running answer 1586 with meta-llama/Llama-3.3-70B-Instruct | answer_id=1586 question_id=132 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel error=Remote judge returned HTTP 429: Concurrency limit exceeded. Your account details:
+
+**Current Usage:**
+- Active concurrent requests: 4 units
+- This request requires: 4 units
+- Total needed: 8 units
+- Your plan limit: 4 units
+- Over limit by: 4 units
+
+**Model Details:**
+- Model: meta-llama/Llama-3.3-70B-Instruct
+- Model class: llama elapsed_ms=709
+2026-05-03T22:16:41+00:00 | adaptive_concurrency_reduced | provider=remote_http base_url=https://api.featherless.ai/v1 api_key=a3672be7 model=meta-llama/Llama-3.3-70B-Instruct from=2 to=1 reason=http_429
+2026-05-03T22:16:41+00:00 | adaptive_task_requeued | provider=remote_http base_url=https://api.featherless.ai/v1 api_key=a3672be7 model=meta-llama/Llama-3.3-70B-Instruct answer_id=1586 role=controle attempt=1 backoff_seconds=2.734 error=Remote judge returned HTTP 429: Concurrency limit exceeded. Your account details:
+
+**Current Usage:**
+- Active concurrent requests: 4 units
+- This request requires: 4 units
+- Total needed: 8 units
+- Your plan limit: 4 units
+- Over limit by: 4 units
+
+**Model Details:**
+- Model: meta-llama/Llama-3.3-70B-Instruct
+- Model class: llama
+2026-05-03T22:16:51+00:00 | DONE Running answer 1597 with meta-llama/Llama-3.3-70B-Instruct | answer_id=1597 question_id=133 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel elapsed_ms=11154
+2026-05-03T22:16:51+00:00 | START Parsing judge response for answer 1597 | answer_id=1597 question_id=133 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-03T22:16:51+00:00 | DONE Parsing judge response for answer 1597 | answer_id=1597 question_id=133 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel elapsed_ms=0
+2026-05-03T22:16:51+00:00 | evaluation_parsed | answer_id=1597 question_id=133 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel score=2 latency_ms=11154 status_code=200
+2026-05-03T22:16:51+00:00 | START Running answer 1607 with meta-llama/Llama-3.3-70B-Instruct | answer_id=1607 question_id=133 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-03T22:17:02+00:00 | DONE Running answer 1607 with meta-llama/Llama-3.3-70B-Instruct | answer_id=1607 question_id=133 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel elapsed_ms=10822
+2026-05-03T22:17:02+00:00 | START Parsing judge response for answer 1607 | answer_id=1607 question_id=133 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-03T22:17:02+00:00 | DONE Parsing judge response for answer 1607 | answer_id=1607 question_id=133 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel elapsed_ms=0
+2026-05-03T22:17:02+00:00 | evaluation_parsed | answer_id=1607 question_id=133 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel score=2 latency_ms=10822 status_code=200
+2026-05-03T22:17:02+00:00 | START Running answer 1587 with meta-llama/Llama-3.3-70B-Instruct | answer_id=1587 question_id=133 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-03T22:17:12+00:00 | DONE Running answer 1587 with meta-llama/Llama-3.3-70B-Instruct | answer_id=1587 question_id=133 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel elapsed_ms=10467
+2026-05-03T22:17:12+00:00 | START Parsing judge response for answer 1587 | answer_id=1587 question_id=133 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-03T22:17:12+00:00 | DONE Parsing judge response for answer 1587 | answer_id=1587 question_id=133 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel elapsed_ms=0
+2026-05-03T22:17:12+00:00 | evaluation_parsed | answer_id=1587 question_id=133 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel score=2 latency_ms=10467 status_code=200
+2026-05-03T22:17:12+00:00 | START Running answer 1598 with meta-llama/Llama-3.3-70B-Instruct | answer_id=1598 question_id=134 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-03T22:17:24+00:00 | DONE Running answer 1598 with meta-llama/Llama-3.3-70B-Instruct | answer_id=1598 question_id=134 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel elapsed_ms=11977
+2026-05-03T22:17:24+00:00 | START Parsing judge response for answer 1598 | answer_id=1598 question_id=134 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-03T22:17:24+00:00 | DONE Parsing judge response for answer 1598 | answer_id=1598 question_id=134 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel elapsed_ms=0
+2026-05-03T22:17:24+00:00 | evaluation_parsed | answer_id=1598 question_id=134 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel score=4 latency_ms=11977 status_code=200
+2026-05-03T22:17:24+00:00 | START Running answer 1608 with meta-llama/Llama-3.3-70B-Instruct | answer_id=1608 question_id=134 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-03T22:17:33+00:00 | DONE Running answer 1608 with meta-llama/Llama-3.3-70B-Instruct | answer_id=1608 question_id=134 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel elapsed_ms=8322
+2026-05-03T22:17:33+00:00 | START Parsing judge response for answer 1608 | answer_id=1608 question_id=134 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-03T22:17:33+00:00 | DONE Parsing judge response for answer 1608 | answer_id=1608 question_id=134 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel elapsed_ms=0
+2026-05-03T22:17:33+00:00 | evaluation_parsed | answer_id=1608 question_id=134 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel score=2 latency_ms=8321 status_code=200
+2026-05-03T22:17:33+00:00 | adaptive_concurrency_increased | provider=remote_http base_url=https://api.featherless.ai/v1 api_key=a3672be7 model=meta-llama/Llama-3.3-70B-Instruct from=1 to=2 successes=25
+2026-05-03T22:17:33+00:00 | START Running answer 1588 with meta-llama/Llama-3.3-70B-Instruct | answer_id=1588 question_id=134 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-03T22:17:33+00:00 | START Running answer 1599 with meta-llama/Llama-3.3-70B-Instruct | answer_id=1599 question_id=135 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-03T22:17:33+00:00 | FAIL Running answer 1599 with meta-llama/Llama-3.3-70B-Instruct | answer_id=1599 question_id=135 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel error=Remote judge returned HTTP 429: Concurrency limit exceeded. Your account details:
+
+**Current Usage:**
+- Active concurrent requests: 4 units
+- This request requires: 4 units
+- Total needed: 8 units
+- Your plan limit: 4 units
+- Over limit by: 4 units
+
+**Model Details:**
+- Model: meta-llama/Llama-3.3-70B-Instruct
+- Model class: llama elapsed_ms=573
+2026-05-03T22:17:33+00:00 | adaptive_concurrency_reduced | provider=remote_http base_url=https://api.featherless.ai/v1 api_key=a3672be7 model=meta-llama/Llama-3.3-70B-Instruct from=2 to=1 reason=http_429
+2026-05-03T22:17:33+00:00 | adaptive_task_requeued | provider=remote_http base_url=https://api.featherless.ai/v1 api_key=a3672be7 model=meta-llama/Llama-3.3-70B-Instruct answer_id=1599 role=controle attempt=1 backoff_seconds=2.144 error=Remote judge returned HTTP 429: Concurrency limit exceeded. Your account details:
+
+**Current Usage:**
+- Active concurrent requests: 4 units
+- This request requires: 4 units
+- Total needed: 8 units
+- Your plan limit: 4 units
+- Over limit by: 4 units
+
+**Model Details:**
+- Model: meta-llama/Llama-3.3-70B-Instruct
+- Model class: llama
+2026-05-03T22:17:43+00:00 | DONE Running answer 1588 with meta-llama/Llama-3.3-70B-Instruct | answer_id=1588 question_id=134 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel elapsed_ms=10507
+2026-05-03T22:17:43+00:00 | START Parsing judge response for answer 1588 | answer_id=1588 question_id=134 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-03T22:17:43+00:00 | DONE Parsing judge response for answer 1588 | answer_id=1588 question_id=134 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel elapsed_ms=0
+2026-05-03T22:17:43+00:00 | evaluation_parsed | answer_id=1588 question_id=134 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel score=2 latency_ms=10507 status_code=200
+2026-05-03T22:17:43+00:00 | START Running answer 1609 with meta-llama/Llama-3.3-70B-Instruct | answer_id=1609 question_id=135 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-03T22:17:53+00:00 | DONE Running answer 1609 with meta-llama/Llama-3.3-70B-Instruct | answer_id=1609 question_id=135 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel elapsed_ms=10031
+2026-05-03T22:17:53+00:00 | START Parsing judge response for answer 1609 | answer_id=1609 question_id=135 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-03T22:17:53+00:00 | DONE Parsing judge response for answer 1609 | answer_id=1609 question_id=135 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel elapsed_ms=0
+2026-05-03T22:17:53+00:00 | evaluation_parsed | answer_id=1609 question_id=135 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel score=3 latency_ms=10031 status_code=200
+2026-05-03T22:17:53+00:00 | START Running answer 1589 with meta-llama/Llama-3.3-70B-Instruct | answer_id=1589 question_id=135 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-03T22:18:04+00:00 | DONE Running answer 1589 with meta-llama/Llama-3.3-70B-Instruct | answer_id=1589 question_id=135 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel elapsed_ms=10336
+2026-05-03T22:18:04+00:00 | START Parsing judge response for answer 1589 | answer_id=1589 question_id=135 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-03T22:18:04+00:00 | DONE Parsing judge response for answer 1589 | answer_id=1589 question_id=135 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel elapsed_ms=0
+2026-05-03T22:18:04+00:00 | evaluation_parsed | answer_id=1589 question_id=135 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel score=2 latency_ms=10336 status_code=200
+2026-05-03T22:18:04+00:00 | START Running answer 1600 with meta-llama/Llama-3.3-70B-Instruct | answer_id=1600 question_id=136 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-03T22:18:17+00:00 | DONE Running answer 1600 with meta-llama/Llama-3.3-70B-Instruct | answer_id=1600 question_id=136 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel elapsed_ms=13821
+2026-05-03T22:18:17+00:00 | START Parsing judge response for answer 1600 | answer_id=1600 question_id=136 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-03T22:18:17+00:00 | DONE Parsing judge response for answer 1600 | answer_id=1600 question_id=136 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel elapsed_ms=0
+2026-05-03T22:18:17+00:00 | evaluation_parsed | answer_id=1600 question_id=136 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel score=3 latency_ms=13821 status_code=200
+2026-05-03T22:18:17+00:00 | START Running answer 1610 with meta-llama/Llama-3.3-70B-Instruct | answer_id=1610 question_id=136 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-03T22:18:30+00:00 | DONE Running answer 1610 with meta-llama/Llama-3.3-70B-Instruct | answer_id=1610 question_id=136 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel elapsed_ms=12693
+2026-05-03T22:18:30+00:00 | START Parsing judge response for answer 1610 | answer_id=1610 question_id=136 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-03T22:18:30+00:00 | DONE Parsing judge response for answer 1610 | answer_id=1610 question_id=136 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel elapsed_ms=0
+2026-05-03T22:18:30+00:00 | evaluation_parsed | answer_id=1610 question_id=136 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel score=3 latency_ms=12692 status_code=200
+2026-05-03T22:18:30+00:00 | adaptive_concurrency_increased | provider=remote_http base_url=https://api.featherless.ai/v1 api_key=a3672be7 model=meta-llama/Llama-3.3-70B-Instruct from=1 to=2 successes=30
+2026-05-03T22:18:30+00:00 | START Running answer 1590 with meta-llama/Llama-3.3-70B-Instruct | answer_id=1590 question_id=136 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-03T22:18:30+00:00 | START Running answer 1601 with meta-llama/Llama-3.3-70B-Instruct | answer_id=1601 question_id=137 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-03T22:18:31+00:00 | FAIL Running answer 1601 with meta-llama/Llama-3.3-70B-Instruct | answer_id=1601 question_id=137 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel error=Remote judge returned HTTP 429: Concurrency limit exceeded. Your account details:
+
+**Current Usage:**
+- Active concurrent requests: 4 units
+- This request requires: 4 units
+- Total needed: 8 units
+- Your plan limit: 4 units
+- Over limit by: 4 units
+
+**Model Details:**
+- Model: meta-llama/Llama-3.3-70B-Instruct
+- Model class: llama elapsed_ms=705
+2026-05-03T22:18:31+00:00 | adaptive_concurrency_reduced | provider=remote_http base_url=https://api.featherless.ai/v1 api_key=a3672be7 model=meta-llama/Llama-3.3-70B-Instruct from=2 to=1 reason=http_429
+2026-05-03T22:18:31+00:00 | adaptive_task_requeued | provider=remote_http base_url=https://api.featherless.ai/v1 api_key=a3672be7 model=meta-llama/Llama-3.3-70B-Instruct answer_id=1601 role=controle attempt=1 backoff_seconds=2.149 error=Remote judge returned HTTP 429: Concurrency limit exceeded. Your account details:
+
+**Current Usage:**
+- Active concurrent requests: 4 units
+- This request requires: 4 units
+- Total needed: 8 units
+- Your plan limit: 4 units
+- Over limit by: 4 units
+
+**Model Details:**
+- Model: meta-llama/Llama-3.3-70B-Instruct
+- Model class: llama
+2026-05-03T22:18:45+00:00 | DONE Running answer 1590 with meta-llama/Llama-3.3-70B-Instruct | answer_id=1590 question_id=136 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel elapsed_ms=14689
+2026-05-03T22:18:45+00:00 | START Parsing judge response for answer 1590 | answer_id=1590 question_id=136 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-03T22:18:45+00:00 | DONE Parsing judge response for answer 1590 | answer_id=1590 question_id=136 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel elapsed_ms=0
+2026-05-03T22:18:45+00:00 | evaluation_parsed | answer_id=1590 question_id=136 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel score=3 latency_ms=14689 status_code=200
+2026-05-03T22:18:45+00:00 | START Running answer 1611 with meta-llama/Llama-3.3-70B-Instruct | answer_id=1611 question_id=137 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-03T22:18:55+00:00 | DONE Running answer 1611 with meta-llama/Llama-3.3-70B-Instruct | answer_id=1611 question_id=137 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel elapsed_ms=10386
+2026-05-03T22:18:55+00:00 | START Parsing judge response for answer 1611 | answer_id=1611 question_id=137 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-03T22:18:55+00:00 | DONE Parsing judge response for answer 1611 | answer_id=1611 question_id=137 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel elapsed_ms=0
+2026-05-03T22:18:55+00:00 | evaluation_parsed | answer_id=1611 question_id=137 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel score=2 latency_ms=10386 status_code=200
+2026-05-03T22:18:55+00:00 | START Running answer 1591 with meta-llama/Llama-3.3-70B-Instruct | answer_id=1591 question_id=137 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-03T22:19:06+00:00 | DONE Running answer 1591 with meta-llama/Llama-3.3-70B-Instruct | answer_id=1591 question_id=137 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel elapsed_ms=10445
+2026-05-03T22:19:06+00:00 | START Parsing judge response for answer 1591 | answer_id=1591 question_id=137 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-03T22:19:06+00:00 | DONE Parsing judge response for answer 1591 | answer_id=1591 question_id=137 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel elapsed_ms=0
+2026-05-03T22:19:06+00:00 | evaluation_parsed | answer_id=1591 question_id=137 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel score=3 latency_ms=10445 status_code=200
+2026-05-03T22:19:06+00:00 | START Running answer 1602 with meta-llama/Llama-3.3-70B-Instruct | answer_id=1602 question_id=138 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-03T22:19:17+00:00 | DONE Running answer 1602 with meta-llama/Llama-3.3-70B-Instruct | answer_id=1602 question_id=138 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel elapsed_ms=11049
+2026-05-03T22:19:17+00:00 | START Parsing judge response for answer 1602 | answer_id=1602 question_id=138 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-03T22:19:17+00:00 | DONE Parsing judge response for answer 1602 | answer_id=1602 question_id=138 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel elapsed_ms=0
+2026-05-03T22:19:17+00:00 | evaluation_parsed | answer_id=1602 question_id=138 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel score=2 latency_ms=11049 status_code=200
+2026-05-03T22:19:17+00:00 | START Running answer 1612 with meta-llama/Llama-3.3-70B-Instruct | answer_id=1612 question_id=138 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-03T22:19:27+00:00 | DONE Running answer 1612 with meta-llama/Llama-3.3-70B-Instruct | answer_id=1612 question_id=138 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel elapsed_ms=10258
+2026-05-03T22:19:27+00:00 | START Parsing judge response for answer 1612 | answer_id=1612 question_id=138 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-03T22:19:27+00:00 | DONE Parsing judge response for answer 1612 | answer_id=1612 question_id=138 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel elapsed_ms=0
+2026-05-03T22:19:27+00:00 | evaluation_parsed | answer_id=1612 question_id=138 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel score=2 latency_ms=10258 status_code=200
+2026-05-03T22:19:27+00:00 | adaptive_concurrency_increased | provider=remote_http base_url=https://api.featherless.ai/v1 api_key=a3672be7 model=meta-llama/Llama-3.3-70B-Instruct from=1 to=2 successes=35
+2026-05-03T22:19:27+00:00 | START Running answer 1592 with meta-llama/Llama-3.3-70B-Instruct | answer_id=1592 question_id=138 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-03T22:19:27+00:00 | START Running answer 1603 with meta-llama/Llama-3.3-70B-Instruct | answer_id=1603 question_id=139 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-03T22:19:27+00:00 | FAIL Running answer 1592 with meta-llama/Llama-3.3-70B-Instruct | answer_id=1592 question_id=138 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel error=Remote judge returned HTTP 429: Concurrency limit exceeded. Your account details:
+
+**Current Usage:**
+- Active concurrent requests: 4 units
+- This request requires: 4 units
+- Total needed: 8 units
+- Your plan limit: 4 units
+- Over limit by: 4 units
+
+**Model Details:**
+- Model: meta-llama/Llama-3.3-70B-Instruct
+- Model class: llama elapsed_ms=590
+2026-05-03T22:19:27+00:00 | adaptive_concurrency_reduced | provider=remote_http base_url=https://api.featherless.ai/v1 api_key=a3672be7 model=meta-llama/Llama-3.3-70B-Instruct from=2 to=1 reason=http_429
+2026-05-03T22:19:27+00:00 | adaptive_task_requeued | provider=remote_http base_url=https://api.featherless.ai/v1 api_key=a3672be7 model=meta-llama/Llama-3.3-70B-Instruct answer_id=1592 role=controle attempt=1 backoff_seconds=2.537 error=Remote judge returned HTTP 429: Concurrency limit exceeded. Your account details:
+
+**Current Usage:**
+- Active concurrent requests: 4 units
+- This request requires: 4 units
+- Total needed: 8 units
+- Your plan limit: 4 units
+- Over limit by: 4 units
+
+**Model Details:**
+- Model: meta-llama/Llama-3.3-70B-Instruct
+- Model class: llama
+2026-05-03T22:19:41+00:00 | DONE Running answer 1603 with meta-llama/Llama-3.3-70B-Instruct | answer_id=1603 question_id=139 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel elapsed_ms=13987
+2026-05-03T22:19:41+00:00 | START Parsing judge response for answer 1603 | answer_id=1603 question_id=139 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-03T22:19:41+00:00 | DONE Parsing judge response for answer 1603 | answer_id=1603 question_id=139 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel elapsed_ms=0
+2026-05-03T22:19:41+00:00 | evaluation_parsed | answer_id=1603 question_id=139 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel score=2 latency_ms=13987 status_code=200
+2026-05-03T22:19:41+00:00 | START Running answer 1613 with meta-llama/Llama-3.3-70B-Instruct | answer_id=1613 question_id=139 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-03T22:19:51+00:00 | DONE Running answer 1613 with meta-llama/Llama-3.3-70B-Instruct | answer_id=1613 question_id=139 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel elapsed_ms=10432
+2026-05-03T22:19:51+00:00 | START Parsing judge response for answer 1613 | answer_id=1613 question_id=139 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-03T22:19:51+00:00 | DONE Parsing judge response for answer 1613 | answer_id=1613 question_id=139 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel elapsed_ms=0
+2026-05-03T22:19:51+00:00 | evaluation_parsed | answer_id=1613 question_id=139 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel score=3 latency_ms=10431 status_code=200
+2026-05-03T22:19:51+00:00 | START Running answer 1593 with meta-llama/Llama-3.3-70B-Instruct | answer_id=1593 question_id=139 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-03T22:20:01+00:00 | DONE Running answer 1593 with meta-llama/Llama-3.3-70B-Instruct | answer_id=1593 question_id=139 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel elapsed_ms=10025
+2026-05-03T22:20:01+00:00 | START Parsing judge response for answer 1593 | answer_id=1593 question_id=139 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-03T22:20:01+00:00 | DONE Parsing judge response for answer 1593 | answer_id=1593 question_id=139 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel elapsed_ms=0
+2026-05-03T22:20:01+00:00 | evaluation_parsed | answer_id=1593 question_id=139 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel score=2 latency_ms=10025 status_code=200
+2026-05-03T22:20:01+00:00 | START Running answer 1604 with meta-llama/Llama-3.3-70B-Instruct | answer_id=1604 question_id=140 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-03T22:20:11+00:00 | DONE Running answer 1604 with meta-llama/Llama-3.3-70B-Instruct | answer_id=1604 question_id=140 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel elapsed_ms=9139
+2026-05-03T22:20:11+00:00 | START Parsing judge response for answer 1604 | answer_id=1604 question_id=140 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-03T22:20:11+00:00 | DONE Parsing judge response for answer 1604 | answer_id=1604 question_id=140 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel elapsed_ms=0
+2026-05-03T22:20:11+00:00 | evaluation_parsed | answer_id=1604 question_id=140 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel score=3 latency_ms=9139 status_code=200
+2026-05-03T22:20:11+00:00 | START Running answer 1614 with meta-llama/Llama-3.3-70B-Instruct | answer_id=1614 question_id=140 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-03T22:20:20+00:00 | DONE Running answer 1614 with meta-llama/Llama-3.3-70B-Instruct | answer_id=1614 question_id=140 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel elapsed_ms=9178
+2026-05-03T22:20:20+00:00 | START Parsing judge response for answer 1614 | answer_id=1614 question_id=140 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-03T22:20:20+00:00 | DONE Parsing judge response for answer 1614 | answer_id=1614 question_id=140 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel elapsed_ms=0
+2026-05-03T22:20:20+00:00 | evaluation_parsed | answer_id=1614 question_id=140 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel score=3 latency_ms=9178 status_code=200
+2026-05-03T22:20:20+00:00 | adaptive_concurrency_increased | provider=remote_http base_url=https://api.featherless.ai/v1 api_key=a3672be7 model=meta-llama/Llama-3.3-70B-Instruct from=1 to=2 successes=40
+2026-05-03T22:20:20+00:00 | START Running answer 1594 with meta-llama/Llama-3.3-70B-Instruct | answer_id=1594 question_id=140 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-03T22:20:20+00:00 | START Running answer 2001 with meta-llama/Llama-3.3-70B-Instruct | answer_id=2001 question_id=124 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-03T22:20:20+00:00 | FAIL Running answer 2001 with meta-llama/Llama-3.3-70B-Instruct | answer_id=2001 question_id=124 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel error=Remote judge returned HTTP 429: Concurrency limit exceeded. Your account details:
+
+**Current Usage:**
+- Active concurrent requests: 4 units
+- This request requires: 4 units
+- Total needed: 8 units
+- Your plan limit: 4 units
+- Over limit by: 4 units
+
+**Model Details:**
+- Model: meta-llama/Llama-3.3-70B-Instruct
+- Model class: llama elapsed_ms=639
+2026-05-03T22:20:20+00:00 | adaptive_concurrency_reduced | provider=remote_http base_url=https://api.featherless.ai/v1 api_key=a3672be7 model=meta-llama/Llama-3.3-70B-Instruct from=2 to=1 reason=http_429
+2026-05-03T22:20:20+00:00 | adaptive_task_requeued | provider=remote_http base_url=https://api.featherless.ai/v1 api_key=a3672be7 model=meta-llama/Llama-3.3-70B-Instruct answer_id=2001 role=controle attempt=1 backoff_seconds=2.378 error=Remote judge returned HTTP 429: Concurrency limit exceeded. Your account details:
+
+**Current Usage:**
+- Active concurrent requests: 4 units
+- This request requires: 4 units
+- Total needed: 8 units
+- Your plan limit: 4 units
+- Over limit by: 4 units
+
+**Model Details:**
+- Model: meta-llama/Llama-3.3-70B-Instruct
+- Model class: llama
+2026-05-03T22:20:31+00:00 | DONE Running answer 1594 with meta-llama/Llama-3.3-70B-Instruct | answer_id=1594 question_id=140 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel elapsed_ms=11599
+2026-05-03T22:20:31+00:00 | START Parsing judge response for answer 1594 | answer_id=1594 question_id=140 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-03T22:20:31+00:00 | DONE Parsing judge response for answer 1594 | answer_id=1594 question_id=140 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel elapsed_ms=0
+2026-05-03T22:20:31+00:00 | evaluation_parsed | answer_id=1594 question_id=140 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel score=2 latency_ms=11599 status_code=200
+2026-05-03T22:20:31+00:00 | START Running answer 2007 with meta-llama/Llama-3.3-70B-Instruct | answer_id=2007 question_id=126 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-03T22:20:40+00:00 | DONE Running answer 2007 with meta-llama/Llama-3.3-70B-Instruct | answer_id=2007 question_id=126 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel elapsed_ms=9106
+2026-05-03T22:20:40+00:00 | START Parsing judge response for answer 2007 | answer_id=2007 question_id=126 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-03T22:20:40+00:00 | DONE Parsing judge response for answer 2007 | answer_id=2007 question_id=126 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel elapsed_ms=0
+2026-05-03T22:20:40+00:00 | evaluation_parsed | answer_id=2007 question_id=126 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel score=5 latency_ms=9106 status_code=200
+2026-05-03T22:20:40+00:00 | START Running answer 2013 with meta-llama/Llama-3.3-70B-Instruct | answer_id=2013 question_id=128 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-03T22:20:51+00:00 | DONE Running answer 2013 with meta-llama/Llama-3.3-70B-Instruct | answer_id=2013 question_id=128 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel elapsed_ms=10544
+2026-05-03T22:20:51+00:00 | START Parsing judge response for answer 2013 | answer_id=2013 question_id=128 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-03T22:20:51+00:00 | DONE Parsing judge response for answer 2013 | answer_id=2013 question_id=128 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel elapsed_ms=0
+2026-05-03T22:20:51+00:00 | evaluation_parsed | answer_id=2013 question_id=128 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel score=5 latency_ms=10544 status_code=200
+2026-05-03T22:20:51+00:00 | START Running answer 1595 with meta-llama/Llama-3.3-70B-Instruct | answer_id=1595 question_id=131 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-03T22:21:00+00:00 | DONE Running answer 1595 with meta-llama/Llama-3.3-70B-Instruct | answer_id=1595 question_id=131 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel elapsed_ms=9189
+2026-05-03T22:21:00+00:00 | START Parsing judge response for answer 1595 | answer_id=1595 question_id=131 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-03T22:21:00+00:00 | DONE Parsing judge response for answer 1595 | answer_id=1595 question_id=131 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel elapsed_ms=0
+2026-05-03T22:21:00+00:00 | evaluation_parsed | answer_id=1595 question_id=131 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel score=1 latency_ms=9189 status_code=200
+2026-05-03T22:21:00+00:00 | START Running answer 1586 with meta-llama/Llama-3.3-70B-Instruct | answer_id=1586 question_id=132 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-03T22:21:12+00:00 | DONE Running answer 1586 with meta-llama/Llama-3.3-70B-Instruct | answer_id=1586 question_id=132 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel elapsed_ms=12207
+2026-05-03T22:21:12+00:00 | START Parsing judge response for answer 1586 | answer_id=1586 question_id=132 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-03T22:21:12+00:00 | DONE Parsing judge response for answer 1586 | answer_id=1586 question_id=132 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel elapsed_ms=0
+2026-05-03T22:21:12+00:00 | evaluation_parsed | answer_id=1586 question_id=132 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel score=4 latency_ms=12207 status_code=200
+2026-05-03T22:21:12+00:00 | adaptive_concurrency_increased | provider=remote_http base_url=https://api.featherless.ai/v1 api_key=a3672be7 model=meta-llama/Llama-3.3-70B-Instruct from=1 to=2 successes=45
+2026-05-03T22:21:12+00:00 | START Running answer 1599 with meta-llama/Llama-3.3-70B-Instruct | answer_id=1599 question_id=135 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-03T22:21:12+00:00 | START Running answer 1601 with meta-llama/Llama-3.3-70B-Instruct | answer_id=1601 question_id=137 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-03T22:21:14+00:00 | FAIL Running answer 1601 with meta-llama/Llama-3.3-70B-Instruct | answer_id=1601 question_id=137 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel error=Remote judge returned HTTP 429: Concurrency limit exceeded. Your account details:
+
+**Current Usage:**
+- Active concurrent requests: 4 units
+- This request requires: 4 units
+- Total needed: 8 units
+- Your plan limit: 4 units
+- Over limit by: 4 units
+
+**Model Details:**
+- Model: meta-llama/Llama-3.3-70B-Instruct
+- Model class: llama elapsed_ms=1654
+2026-05-03T22:21:14+00:00 | adaptive_concurrency_reduced | provider=remote_http base_url=https://api.featherless.ai/v1 api_key=a3672be7 model=meta-llama/Llama-3.3-70B-Instruct from=2 to=1 reason=http_429
+2026-05-03T22:21:14+00:00 | adaptive_task_requeued | provider=remote_http base_url=https://api.featherless.ai/v1 api_key=a3672be7 model=meta-llama/Llama-3.3-70B-Instruct answer_id=1601 role=controle attempt=2 backoff_seconds=4.915 error=Remote judge returned HTTP 429: Concurrency limit exceeded. Your account details:
+
+**Current Usage:**
+- Active concurrent requests: 4 units
+- This request requires: 4 units
+- Total needed: 8 units
+- Your plan limit: 4 units
+- Over limit by: 4 units
+
+**Model Details:**
+- Model: meta-llama/Llama-3.3-70B-Instruct
+- Model class: llama
+2026-05-03T22:21:24+00:00 | DONE Running answer 1599 with meta-llama/Llama-3.3-70B-Instruct | answer_id=1599 question_id=135 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel elapsed_ms=12079
+2026-05-03T22:21:24+00:00 | START Parsing judge response for answer 1599 | answer_id=1599 question_id=135 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-03T22:21:24+00:00 | DONE Parsing judge response for answer 1599 | answer_id=1599 question_id=135 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel elapsed_ms=0
+2026-05-03T22:21:24+00:00 | evaluation_parsed | answer_id=1599 question_id=135 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel score=2 latency_ms=12079 status_code=200
+2026-05-03T22:21:24+00:00 | START Running answer 1592 with meta-llama/Llama-3.3-70B-Instruct | answer_id=1592 question_id=138 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-03T22:21:36+00:00 | DONE Running answer 1592 with meta-llama/Llama-3.3-70B-Instruct | answer_id=1592 question_id=138 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel elapsed_ms=11451
+2026-05-03T22:21:36+00:00 | START Parsing judge response for answer 1592 | answer_id=1592 question_id=138 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-03T22:21:36+00:00 | DONE Parsing judge response for answer 1592 | answer_id=1592 question_id=138 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel elapsed_ms=0
+2026-05-03T22:21:36+00:00 | evaluation_parsed | answer_id=1592 question_id=138 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel score=2 latency_ms=11450 status_code=200
+2026-05-03T22:21:36+00:00 | START Running answer 2001 with meta-llama/Llama-3.3-70B-Instruct | answer_id=2001 question_id=124 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-03T22:21:46+00:00 | DONE Running answer 2001 with meta-llama/Llama-3.3-70B-Instruct | answer_id=2001 question_id=124 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel elapsed_ms=9966
+2026-05-03T22:21:46+00:00 | START Parsing judge response for answer 2001 | answer_id=2001 question_id=124 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-03T22:21:46+00:00 | DONE Parsing judge response for answer 2001 | answer_id=2001 question_id=124 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel elapsed_ms=0
+2026-05-03T22:21:46+00:00 | evaluation_parsed | answer_id=2001 question_id=124 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel score=4 latency_ms=9966 status_code=200
+2026-05-03T22:21:46+00:00 | START Running answer 1601 with meta-llama/Llama-3.3-70B-Instruct | answer_id=1601 question_id=137 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-03T22:21:56+00:00 | DONE Running answer 1601 with meta-llama/Llama-3.3-70B-Instruct | answer_id=1601 question_id=137 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel elapsed_ms=9980
+2026-05-03T22:21:56+00:00 | START Parsing judge response for answer 1601 | answer_id=1601 question_id=137 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel
+2026-05-03T22:21:56+00:00 | DONE Parsing judge response for answer 1601 | answer_id=1601 question_id=137 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel elapsed_ms=0
+2026-05-03T22:21:56+00:00 | evaluation_parsed | answer_id=1601 question_id=137 model=meta-llama/Llama-3.3-70B-Instruct role=controle trigger=primary_panel score=3 latency_ms=9980 status_code=200
+2026-05-03T22:21:56+00:00 | START Persisting evaluation for answer 2002 | answer_id=2002 model=meta-llama/Llama-3.3-70B-Instruct role=controle score=4
+2026-05-03T22:21:56+00:00 | DONE Persisting evaluation for answer 2002 | answer_id=2002 model=meta-llama/Llama-3.3-70B-Instruct role=controle score=4 elapsed_ms=8
+2026-05-03T22:21:56+00:00 | batch_progress | current=13 total=61 percent=21 executed=1 skipped=12 arbiters=0
+2026-05-03T22:21:56+00:00 | eligibility_progress | missing=61 failed=0 successful=149 will_process=61
+2026-05-03T22:21:56+00:00 | START Persisting evaluation for answer 2003 | answer_id=2003 model=meta-llama/Llama-3.3-70B-Instruct role=controle score=4
+2026-05-03T22:21:56+00:00 | DONE Persisting evaluation for answer 2003 | answer_id=2003 model=meta-llama/Llama-3.3-70B-Instruct role=controle score=4 elapsed_ms=1
+2026-05-03T22:21:56+00:00 | batch_progress | current=14 total=61 percent=22 executed=2 skipped=12 arbiters=0
+2026-05-03T22:21:56+00:00 | eligibility_progress | missing=61 failed=0 successful=149 will_process=61
+2026-05-03T22:21:56+00:00 | START Persisting evaluation for answer 2004 | answer_id=2004 model=meta-llama/Llama-3.3-70B-Instruct role=controle score=4
+2026-05-03T22:21:56+00:00 | DONE Persisting evaluation for answer 2004 | answer_id=2004 model=meta-llama/Llama-3.3-70B-Instruct role=controle score=4 elapsed_ms=0
+2026-05-03T22:21:56+00:00 | batch_progress | current=15 total=61 percent=24 executed=3 skipped=12 arbiters=0
+2026-05-03T22:21:56+00:00 | eligibility_progress | missing=61 failed=0 successful=149 will_process=61
+2026-05-03T22:21:56+00:00 | START Persisting evaluation for answer 2005 | answer_id=2005 model=meta-llama/Llama-3.3-70B-Instruct role=controle score=4
+2026-05-03T22:21:56+00:00 | DONE Persisting evaluation for answer 2005 | answer_id=2005 model=meta-llama/Llama-3.3-70B-Instruct role=controle score=4 elapsed_ms=0
+2026-05-03T22:21:56+00:00 | batch_progress | current=16 total=61 percent=26 executed=4 skipped=12 arbiters=0
+2026-05-03T22:21:56+00:00 | eligibility_progress | missing=61 failed=0 successful=149 will_process=61
+2026-05-03T22:21:56+00:00 | START Persisting evaluation for answer 2006 | answer_id=2006 model=meta-llama/Llama-3.3-70B-Instruct role=controle score=4
+2026-05-03T22:21:56+00:00 | DONE Persisting evaluation for answer 2006 | answer_id=2006 model=meta-llama/Llama-3.3-70B-Instruct role=controle score=4 elapsed_ms=0
+2026-05-03T22:21:56+00:00 | batch_progress | current=17 total=61 percent=27 executed=5 skipped=12 arbiters=0
+2026-05-03T22:21:56+00:00 | eligibility_progress | missing=61 failed=0 successful=149 will_process=61
+2026-05-03T22:21:56+00:00 | START Persisting evaluation for answer 2008 | answer_id=2008 model=meta-llama/Llama-3.3-70B-Instruct role=controle score=4
+2026-05-03T22:21:56+00:00 | DONE Persisting evaluation for answer 2008 | answer_id=2008 model=meta-llama/Llama-3.3-70B-Instruct role=controle score=4 elapsed_ms=0
+2026-05-03T22:21:56+00:00 | batch_progress | current=18 total=61 percent=29 executed=6 skipped=12 arbiters=0
+2026-05-03T22:21:56+00:00 | eligibility_progress | missing=61 failed=0 successful=149 will_process=61
+2026-05-03T22:21:56+00:00 | START Persisting evaluation for answer 2009 | answer_id=2009 model=meta-llama/Llama-3.3-70B-Instruct role=controle score=4
+2026-05-03T22:21:56+00:00 | DONE Persisting evaluation for answer 2009 | answer_id=2009 model=meta-llama/Llama-3.3-70B-Instruct role=controle score=4 elapsed_ms=0
+2026-05-03T22:21:56+00:00 | batch_progress | current=19 total=61 percent=31 executed=7 skipped=12 arbiters=0
+2026-05-03T22:21:56+00:00 | eligibility_progress | missing=61 failed=0 successful=149 will_process=61
+2026-05-03T22:21:56+00:00 | START Persisting evaluation for answer 2010 | answer_id=2010 model=meta-llama/Llama-3.3-70B-Instruct role=controle score=4
+2026-05-03T22:21:56+00:00 | DONE Persisting evaluation for answer 2010 | answer_id=2010 model=meta-llama/Llama-3.3-70B-Instruct role=controle score=4 elapsed_ms=0
+2026-05-03T22:21:56+00:00 | batch_progress | current=20 total=61 percent=32 executed=8 skipped=12 arbiters=0
+2026-05-03T22:21:56+00:00 | eligibility_progress | missing=61 failed=0 successful=149 will_process=61
+2026-05-03T22:21:56+00:00 | START Persisting evaluation for answer 2011 | answer_id=2011 model=meta-llama/Llama-3.3-70B-Instruct role=controle score=4
+2026-05-03T22:21:56+00:00 | DONE Persisting evaluation for answer 2011 | answer_id=2011 model=meta-llama/Llama-3.3-70B-Instruct role=controle score=4 elapsed_ms=0
+2026-05-03T22:21:56+00:00 | batch_progress | current=21 total=61 percent=34 executed=9 skipped=12 arbiters=0
+2026-05-03T22:21:56+00:00 | eligibility_progress | missing=61 failed=0 successful=149 will_process=61
+2026-05-03T22:21:56+00:00 | START Persisting evaluation for answer 2012 | answer_id=2012 model=meta-llama/Llama-3.3-70B-Instruct role=controle score=4
+2026-05-03T22:21:56+00:00 | DONE Persisting evaluation for answer 2012 | answer_id=2012 model=meta-llama/Llama-3.3-70B-Instruct role=controle score=4 elapsed_ms=0
+2026-05-03T22:21:56+00:00 | batch_progress | current=22 total=61 percent=36 executed=10 skipped=12 arbiters=0
+2026-05-03T22:21:56+00:00 | eligibility_progress | missing=61 failed=0 successful=149 will_process=61
+2026-05-03T22:21:56+00:00 | START Persisting evaluation for answer 2014 | answer_id=2014 model=meta-llama/Llama-3.3-70B-Instruct role=controle score=4
+2026-05-03T22:21:56+00:00 | DONE Persisting evaluation for answer 2014 | answer_id=2014 model=meta-llama/Llama-3.3-70B-Instruct role=controle score=4 elapsed_ms=0
+2026-05-03T22:21:56+00:00 | batch_progress | current=23 total=61 percent=37 executed=11 skipped=12 arbiters=0
+2026-05-03T22:21:56+00:00 | eligibility_progress | missing=61 failed=0 successful=149 will_process=61
+2026-05-03T22:21:56+00:00 | START Persisting evaluation for answer 2015 | answer_id=2015 model=meta-llama/Llama-3.3-70B-Instruct role=controle score=4
+2026-05-03T22:21:56+00:00 | DONE Persisting evaluation for answer 2015 | answer_id=2015 model=meta-llama/Llama-3.3-70B-Instruct role=controle score=4 elapsed_ms=0
+2026-05-03T22:21:56+00:00 | batch_progress | current=24 total=61 percent=39 executed=12 skipped=12 arbiters=0
+2026-05-03T22:21:56+00:00 | eligibility_progress | missing=61 failed=0 successful=149 will_process=61
+2026-05-03T22:21:56+00:00 | START Persisting evaluation for answer 2016 | answer_id=2016 model=meta-llama/Llama-3.3-70B-Instruct role=controle score=5
+2026-05-03T22:21:56+00:00 | DONE Persisting evaluation for answer 2016 | answer_id=2016 model=meta-llama/Llama-3.3-70B-Instruct role=controle score=5 elapsed_ms=0
+2026-05-03T22:21:56+00:00 | batch_progress | current=25 total=61 percent=40 executed=13 skipped=12 arbiters=0
+2026-05-03T22:21:56+00:00 | eligibility_progress | missing=61 failed=0 successful=149 will_process=61
+2026-05-03T22:21:56+00:00 | START Persisting evaluation for answer 2017 | answer_id=2017 model=meta-llama/Llama-3.3-70B-Instruct role=controle score=4
+2026-05-03T22:21:56+00:00 | DONE Persisting evaluation for answer 2017 | answer_id=2017 model=meta-llama/Llama-3.3-70B-Instruct role=controle score=4 elapsed_ms=0
+2026-05-03T22:21:56+00:00 | batch_progress | current=26 total=61 percent=42 executed=14 skipped=12 arbiters=0
+2026-05-03T22:21:56+00:00 | eligibility_progress | missing=61 failed=0 successful=149 will_process=61
+2026-05-03T22:21:56+00:00 | START Persisting evaluation for answer 2018 | answer_id=2018 model=meta-llama/Llama-3.3-70B-Instruct role=controle score=4
+2026-05-03T22:21:56+00:00 | DONE Persisting evaluation for answer 2018 | answer_id=2018 model=meta-llama/Llama-3.3-70B-Instruct role=controle score=4 elapsed_ms=0
+2026-05-03T22:21:56+00:00 | batch_progress | current=27 total=61 percent=44 executed=15 skipped=12 arbiters=0
+2026-05-03T22:21:56+00:00 | eligibility_progress | missing=61 failed=0 successful=149 will_process=61
+2026-05-03T22:21:56+00:00 | START Persisting evaluation for answer 2019 | answer_id=2019 model=meta-llama/Llama-3.3-70B-Instruct role=controle score=4
+2026-05-03T22:21:56+00:00 | DONE Persisting evaluation for answer 2019 | answer_id=2019 model=meta-llama/Llama-3.3-70B-Instruct role=controle score=4 elapsed_ms=0
+2026-05-03T22:21:56+00:00 | batch_progress | current=28 total=61 percent=45 executed=16 skipped=12 arbiters=0
+2026-05-03T22:21:56+00:00 | eligibility_progress | missing=61 failed=0 successful=149 will_process=61
+2026-05-03T22:21:56+00:00 | START Persisting evaluation for answer 1605 | answer_id=1605 model=meta-llama/Llama-3.3-70B-Instruct role=controle score=2
+2026-05-03T22:21:56+00:00 | DONE Persisting evaluation for answer 1605 | answer_id=1605 model=meta-llama/Llama-3.3-70B-Instruct role=controle score=2 elapsed_ms=0
+2026-05-03T22:21:56+00:00 | batch_progress | current=29 total=61 percent=47 executed=17 skipped=12 arbiters=0
+2026-05-03T22:21:56+00:00 | eligibility_progress | missing=61 failed=0 successful=149 will_process=61
+2026-05-03T22:21:56+00:00 | START Persisting evaluation for answer 1585 | answer_id=1585 model=meta-llama/Llama-3.3-70B-Instruct role=controle score=2
+2026-05-03T22:21:56+00:00 | DONE Persisting evaluation for answer 1585 | answer_id=1585 model=meta-llama/Llama-3.3-70B-Instruct role=controle score=2 elapsed_ms=0
+2026-05-03T22:21:56+00:00 | batch_progress | current=30 total=61 percent=49 executed=18 skipped=12 arbiters=0
+2026-05-03T22:21:56+00:00 | eligibility_progress | missing=61 failed=0 successful=149 will_process=61
+2026-05-03T22:21:56+00:00 | START Persisting evaluation for answer 1596 | answer_id=1596 model=meta-llama/Llama-3.3-70B-Instruct role=controle score=4
+2026-05-03T22:21:56+00:00 | DONE Persisting evaluation for answer 1596 | answer_id=1596 model=meta-llama/Llama-3.3-70B-Instruct role=controle score=4 elapsed_ms=0
+2026-05-03T22:21:56+00:00 | batch_progress | current=31 total=61 percent=50 executed=19 skipped=12 arbiters=0
+2026-05-03T22:21:56+00:00 | eligibility_progress | missing=61 failed=0 successful=149 will_process=61
+2026-05-03T22:21:56+00:00 | START Persisting evaluation for answer 1606 | answer_id=1606 model=meta-llama/Llama-3.3-70B-Instruct role=controle score=4
+2026-05-03T22:21:56+00:00 | DONE Persisting evaluation for answer 1606 | answer_id=1606 model=meta-llama/Llama-3.3-70B-Instruct role=controle score=4 elapsed_ms=0
+2026-05-03T22:21:56+00:00 | batch_progress | current=32 total=61 percent=52 executed=20 skipped=12 arbiters=0
+2026-05-03T22:21:56+00:00 | eligibility_progress | missing=61 failed=0 successful=149 will_process=61
+2026-05-03T22:21:56+00:00 | START Persisting evaluation for answer 1597 | answer_id=1597 model=meta-llama/Llama-3.3-70B-Instruct role=controle score=2
+2026-05-03T22:21:56+00:00 | DONE Persisting evaluation for answer 1597 | answer_id=1597 model=meta-llama/Llama-3.3-70B-Instruct role=controle score=2 elapsed_ms=0
+2026-05-03T22:21:56+00:00 | batch_progress | current=33 total=61 percent=54 executed=21 skipped=12 arbiters=0
+2026-05-03T22:21:56+00:00 | eligibility_progress | missing=61 failed=0 successful=149 will_process=61
+2026-05-03T22:21:56+00:00 | START Persisting evaluation for answer 1607 | answer_id=1607 model=meta-llama/Llama-3.3-70B-Instruct role=controle score=2
+2026-05-03T22:21:56+00:00 | DONE Persisting evaluation for answer 1607 | answer_id=1607 model=meta-llama/Llama-3.3-70B-Instruct role=controle score=2 elapsed_ms=0
+2026-05-03T22:21:56+00:00 | batch_progress | current=34 total=61 percent=55 executed=22 skipped=12 arbiters=0
+2026-05-03T22:21:56+00:00 | eligibility_progress | missing=61 failed=0 successful=149 will_process=61
+2026-05-03T22:21:56+00:00 | START Persisting evaluation for answer 1587 | answer_id=1587 model=meta-llama/Llama-3.3-70B-Instruct role=controle score=2
+2026-05-03T22:21:56+00:00 | DONE Persisting evaluation for answer 1587 | answer_id=1587 model=meta-llama/Llama-3.3-70B-Instruct role=controle score=2 elapsed_ms=0
+2026-05-03T22:21:56+00:00 | batch_progress | current=35 total=61 percent=57 executed=23 skipped=12 arbiters=0
+2026-05-03T22:21:56+00:00 | eligibility_progress | missing=61 failed=0 successful=149 will_process=61
+2026-05-03T22:21:56+00:00 | START Persisting evaluation for answer 1598 | answer_id=1598 model=meta-llama/Llama-3.3-70B-Instruct role=controle score=4
+2026-05-03T22:21:56+00:00 | DONE Persisting evaluation for answer 1598 | answer_id=1598 model=meta-llama/Llama-3.3-70B-Instruct role=controle score=4 elapsed_ms=0
+2026-05-03T22:21:56+00:00 | batch_progress | current=36 total=61 percent=59 executed=24 skipped=12 arbiters=0
+2026-05-03T22:21:56+00:00 | eligibility_progress | missing=61 failed=0 successful=149 will_process=61
+2026-05-03T22:21:56+00:00 | START Persisting evaluation for answer 1608 | answer_id=1608 model=meta-llama/Llama-3.3-70B-Instruct role=controle score=2
+2026-05-03T22:21:56+00:00 | DONE Persisting evaluation for answer 1608 | answer_id=1608 model=meta-llama/Llama-3.3-70B-Instruct role=controle score=2 elapsed_ms=0
+2026-05-03T22:21:56+00:00 | batch_progress | current=37 total=61 percent=60 executed=25 skipped=12 arbiters=0
+2026-05-03T22:21:56+00:00 | eligibility_progress | missing=61 failed=0 successful=149 will_process=61
+2026-05-03T22:21:56+00:00 | START Persisting evaluation for answer 1588 | answer_id=1588 model=meta-llama/Llama-3.3-70B-Instruct role=controle score=2
+2026-05-03T22:21:56+00:00 | DONE Persisting evaluation for answer 1588 | answer_id=1588 model=meta-llama/Llama-3.3-70B-Instruct role=controle score=2 elapsed_ms=0
+2026-05-03T22:21:56+00:00 | batch_progress | current=38 total=61 percent=62 executed=26 skipped=12 arbiters=0
+2026-05-03T22:21:56+00:00 | eligibility_progress | missing=61 failed=0 successful=149 will_process=61
+2026-05-03T22:21:56+00:00 | START Persisting evaluation for answer 1609 | answer_id=1609 model=meta-llama/Llama-3.3-70B-Instruct role=controle score=3
+2026-05-03T22:21:56+00:00 | DONE Persisting evaluation for answer 1609 | answer_id=1609 model=meta-llama/Llama-3.3-70B-Instruct role=controle score=3 elapsed_ms=0
+2026-05-03T22:21:56+00:00 | batch_progress | current=39 total=61 percent=63 executed=27 skipped=12 arbiters=0
+2026-05-03T22:21:56+00:00 | eligibility_progress | missing=61 failed=0 successful=149 will_process=61
+2026-05-03T22:21:56+00:00 | START Persisting evaluation for answer 1589 | answer_id=1589 model=meta-llama/Llama-3.3-70B-Instruct role=controle score=2
+2026-05-03T22:21:56+00:00 | DONE Persisting evaluation for answer 1589 | answer_id=1589 model=meta-llama/Llama-3.3-70B-Instruct role=controle score=2 elapsed_ms=0
+2026-05-03T22:21:56+00:00 | batch_progress | current=40 total=61 percent=65 executed=28 skipped=12 arbiters=0
+2026-05-03T22:21:56+00:00 | eligibility_progress | missing=61 failed=0 successful=149 will_process=61
+2026-05-03T22:21:56+00:00 | START Persisting evaluation for answer 1600 | answer_id=1600 model=meta-llama/Llama-3.3-70B-Instruct role=controle score=3
+2026-05-03T22:21:56+00:00 | DONE Persisting evaluation for answer 1600 | answer_id=1600 model=meta-llama/Llama-3.3-70B-Instruct role=controle score=3 elapsed_ms=0
+2026-05-03T22:21:56+00:00 | batch_progress | current=41 total=61 percent=67 executed=29 skipped=12 arbiters=0
+2026-05-03T22:21:56+00:00 | eligibility_progress | missing=61 failed=0 successful=149 will_process=61
+2026-05-03T22:21:56+00:00 | START Persisting evaluation for answer 1610 | answer_id=1610 model=meta-llama/Llama-3.3-70B-Instruct role=controle score=3
+2026-05-03T22:21:56+00:00 | DONE Persisting evaluation for answer 1610 | answer_id=1610 model=meta-llama/Llama-3.3-70B-Instruct role=controle score=3 elapsed_ms=0
+2026-05-03T22:21:56+00:00 | batch_progress | current=42 total=61 percent=68 executed=30 skipped=12 arbiters=0
+2026-05-03T22:21:56+00:00 | eligibility_progress | missing=61 failed=0 successful=149 will_process=61
+2026-05-03T22:21:56+00:00 | START Persisting evaluation for answer 1590 | answer_id=1590 model=meta-llama/Llama-3.3-70B-Instruct role=controle score=3
+2026-05-03T22:21:56+00:00 | DONE Persisting evaluation for answer 1590 | answer_id=1590 model=meta-llama/Llama-3.3-70B-Instruct role=controle score=3 elapsed_ms=0
+2026-05-03T22:21:56+00:00 | batch_progress | current=43 total=61 percent=70 executed=31 skipped=12 arbiters=0
+2026-05-03T22:21:56+00:00 | eligibility_progress | missing=61 failed=0 successful=149 will_process=61
+2026-05-03T22:21:56+00:00 | START Persisting evaluation for answer 1611 | answer_id=1611 model=meta-llama/Llama-3.3-70B-Instruct role=controle score=2
+2026-05-03T22:21:56+00:00 | DONE Persisting evaluation for answer 1611 | answer_id=1611 model=meta-llama/Llama-3.3-70B-Instruct role=controle score=2 elapsed_ms=0
+2026-05-03T22:21:56+00:00 | batch_progress | current=44 total=61 percent=72 executed=32 skipped=12 arbiters=0
+2026-05-03T22:21:56+00:00 | eligibility_progress | missing=61 failed=0 successful=149 will_process=61
+2026-05-03T22:21:56+00:00 | START Persisting evaluation for answer 1591 | answer_id=1591 model=meta-llama/Llama-3.3-70B-Instruct role=controle score=3
+2026-05-03T22:21:56+00:00 | DONE Persisting evaluation for answer 1591 | answer_id=1591 model=meta-llama/Llama-3.3-70B-Instruct role=controle score=3 elapsed_ms=0
+2026-05-03T22:21:56+00:00 | batch_progress | current=45 total=61 percent=73 executed=33 skipped=12 arbiters=0
+2026-05-03T22:21:56+00:00 | eligibility_progress | missing=61 failed=0 successful=149 will_process=61
+2026-05-03T22:21:56+00:00 | START Persisting evaluation for answer 1602 | answer_id=1602 model=meta-llama/Llama-3.3-70B-Instruct role=controle score=2
+2026-05-03T22:21:56+00:00 | DONE Persisting evaluation for answer 1602 | answer_id=1602 model=meta-llama/Llama-3.3-70B-Instruct role=controle score=2 elapsed_ms=0
+2026-05-03T22:21:56+00:00 | batch_progress | current=46 total=61 percent=75 executed=34 skipped=12 arbiters=0
+2026-05-03T22:21:56+00:00 | eligibility_progress | missing=61 failed=0 successful=149 will_process=61
+2026-05-03T22:21:56+00:00 | START Persisting evaluation for answer 1612 | answer_id=1612 model=meta-llama/Llama-3.3-70B-Instruct role=controle score=2
+2026-05-03T22:21:56+00:00 | DONE Persisting evaluation for answer 1612 | answer_id=1612 model=meta-llama/Llama-3.3-70B-Instruct role=controle score=2 elapsed_ms=0
+2026-05-03T22:21:56+00:00 | batch_progress | current=47 total=61 percent=77 executed=35 skipped=12 arbiters=0
+2026-05-03T22:21:56+00:00 | eligibility_progress | missing=61 failed=0 successful=149 will_process=61
+2026-05-03T22:21:56+00:00 | START Persisting evaluation for answer 1603 | answer_id=1603 model=meta-llama/Llama-3.3-70B-Instruct role=controle score=2
+2026-05-03T22:21:56+00:00 | DONE Persisting evaluation for answer 1603 | answer_id=1603 model=meta-llama/Llama-3.3-70B-Instruct role=controle score=2 elapsed_ms=0
+2026-05-03T22:21:56+00:00 | batch_progress | current=48 total=61 percent=78 executed=36 skipped=12 arbiters=0
+2026-05-03T22:21:56+00:00 | eligibility_progress | missing=61 failed=0 successful=149 will_process=61
+2026-05-03T22:21:56+00:00 | START Persisting evaluation for answer 1613 | answer_id=1613 model=meta-llama/Llama-3.3-70B-Instruct role=controle score=3
+2026-05-03T22:21:56+00:00 | DONE Persisting evaluation for answer 1613 | answer_id=1613 model=meta-llama/Llama-3.3-70B-Instruct role=controle score=3 elapsed_ms=0
+2026-05-03T22:21:56+00:00 | batch_progress | current=49 total=61 percent=80 executed=37 skipped=12 arbiters=0
+2026-05-03T22:21:56+00:00 | eligibility_progress | missing=61 failed=0 successful=149 will_process=61
+2026-05-03T22:21:56+00:00 | START Persisting evaluation for answer 1593 | answer_id=1593 model=meta-llama/Llama-3.3-70B-Instruct role=controle score=2
+2026-05-03T22:21:56+00:00 | DONE Persisting evaluation for answer 1593 | answer_id=1593 model=meta-llama/Llama-3.3-70B-Instruct role=controle score=2 elapsed_ms=0
+2026-05-03T22:21:56+00:00 | batch_progress | current=50 total=61 percent=81 executed=38 skipped=12 arbiters=0
+2026-05-03T22:21:56+00:00 | eligibility_progress | missing=61 failed=0 successful=149 will_process=61
+2026-05-03T22:21:56+00:00 | START Persisting evaluation for answer 1604 | answer_id=1604 model=meta-llama/Llama-3.3-70B-Instruct role=controle score=3
+2026-05-03T22:21:56+00:00 | DONE Persisting evaluation for answer 1604 | answer_id=1604 model=meta-llama/Llama-3.3-70B-Instruct role=controle score=3 elapsed_ms=0
+2026-05-03T22:21:56+00:00 | batch_progress | current=51 total=61 percent=83 executed=39 skipped=12 arbiters=0
+2026-05-03T22:21:56+00:00 | eligibility_progress | missing=61 failed=0 successful=149 will_process=61
+2026-05-03T22:21:56+00:00 | START Persisting evaluation for answer 1614 | answer_id=1614 model=meta-llama/Llama-3.3-70B-Instruct role=controle score=3
+2026-05-03T22:21:56+00:00 | DONE Persisting evaluation for answer 1614 | answer_id=1614 model=meta-llama/Llama-3.3-70B-Instruct role=controle score=3 elapsed_ms=0
+2026-05-03T22:21:56+00:00 | batch_progress | current=52 total=61 percent=85 executed=40 skipped=12 arbiters=0
+2026-05-03T22:21:56+00:00 | eligibility_progress | missing=61 failed=0 successful=149 will_process=61
+2026-05-03T22:21:56+00:00 | START Persisting evaluation for answer 1594 | answer_id=1594 model=meta-llama/Llama-3.3-70B-Instruct role=controle score=2
+2026-05-03T22:21:56+00:00 | DONE Persisting evaluation for answer 1594 | answer_id=1594 model=meta-llama/Llama-3.3-70B-Instruct role=controle score=2 elapsed_ms=0
+2026-05-03T22:21:56+00:00 | batch_progress | current=53 total=61 percent=86 executed=41 skipped=12 arbiters=0
+2026-05-03T22:21:56+00:00 | eligibility_progress | missing=61 failed=0 successful=149 will_process=61
+2026-05-03T22:21:56+00:00 | START Persisting evaluation for answer 2007 | answer_id=2007 model=meta-llama/Llama-3.3-70B-Instruct role=controle score=5
+2026-05-03T22:21:56+00:00 | DONE Persisting evaluation for answer 2007 | answer_id=2007 model=meta-llama/Llama-3.3-70B-Instruct role=controle score=5 elapsed_ms=0
+2026-05-03T22:21:56+00:00 | batch_progress | current=54 total=61 percent=88 executed=42 skipped=12 arbiters=0
+2026-05-03T22:21:56+00:00 | eligibility_progress | missing=61 failed=0 successful=149 will_process=61
+2026-05-03T22:21:56+00:00 | START Persisting evaluation for answer 2013 | answer_id=2013 model=meta-llama/Llama-3.3-70B-Instruct role=controle score=5
+2026-05-03T22:21:56+00:00 | DONE Persisting evaluation for answer 2013 | answer_id=2013 model=meta-llama/Llama-3.3-70B-Instruct role=controle score=5 elapsed_ms=0
+2026-05-03T22:21:56+00:00 | batch_progress | current=55 total=61 percent=90 executed=43 skipped=12 arbiters=0
+2026-05-03T22:21:56+00:00 | eligibility_progress | missing=61 failed=0 successful=149 will_process=61
+2026-05-03T22:21:56+00:00 | START Persisting evaluation for answer 1595 | answer_id=1595 model=meta-llama/Llama-3.3-70B-Instruct role=controle score=1
+2026-05-03T22:21:56+00:00 | DONE Persisting evaluation for answer 1595 | answer_id=1595 model=meta-llama/Llama-3.3-70B-Instruct role=controle score=1 elapsed_ms=0
+2026-05-03T22:21:56+00:00 | batch_progress | current=56 total=61 percent=91 executed=44 skipped=12 arbiters=0
+2026-05-03T22:21:56+00:00 | eligibility_progress | missing=61 failed=0 successful=149 will_process=61
+2026-05-03T22:21:56+00:00 | START Persisting evaluation for answer 1586 | answer_id=1586 model=meta-llama/Llama-3.3-70B-Instruct role=controle score=4
+2026-05-03T22:21:56+00:00 | DONE Persisting evaluation for answer 1586 | answer_id=1586 model=meta-llama/Llama-3.3-70B-Instruct role=controle score=4 elapsed_ms=0
+2026-05-03T22:21:56+00:00 | batch_progress | current=57 total=61 percent=93 executed=45 skipped=12 arbiters=0
+2026-05-03T22:21:56+00:00 | eligibility_progress | missing=61 failed=0 successful=149 will_process=61
+2026-05-03T22:21:56+00:00 | START Persisting evaluation for answer 1599 | answer_id=1599 model=meta-llama/Llama-3.3-70B-Instruct role=controle score=2
+2026-05-03T22:21:56+00:00 | DONE Persisting evaluation for answer 1599 | answer_id=1599 model=meta-llama/Llama-3.3-70B-Instruct role=controle score=2 elapsed_ms=0
+2026-05-03T22:21:56+00:00 | batch_progress | current=58 total=61 percent=95 executed=46 skipped=12 arbiters=0
+2026-05-03T22:21:56+00:00 | eligibility_progress | missing=61 failed=0 successful=149 will_process=61
+2026-05-03T22:21:56+00:00 | START Persisting evaluation for answer 1592 | answer_id=1592 model=meta-llama/Llama-3.3-70B-Instruct role=controle score=2
+2026-05-03T22:21:56+00:00 | DONE Persisting evaluation for answer 1592 | answer_id=1592 model=meta-llama/Llama-3.3-70B-Instruct role=controle score=2 elapsed_ms=0
+2026-05-03T22:21:56+00:00 | batch_progress | current=59 total=61 percent=96 executed=47 skipped=12 arbiters=0
+2026-05-03T22:21:56+00:00 | eligibility_progress | missing=61 failed=0 successful=149 will_process=61
+2026-05-03T22:21:56+00:00 | START Persisting evaluation for answer 2001 | answer_id=2001 model=meta-llama/Llama-3.3-70B-Instruct role=controle score=4
+2026-05-03T22:21:56+00:00 | DONE Persisting evaluation for answer 2001 | answer_id=2001 model=meta-llama/Llama-3.3-70B-Instruct role=controle score=4 elapsed_ms=0
+2026-05-03T22:21:56+00:00 | batch_progress | current=60 total=61 percent=98 executed=48 skipped=12 arbiters=0
+2026-05-03T22:21:56+00:00 | eligibility_progress | missing=61 failed=0 successful=149 will_process=61
+2026-05-03T22:21:56+00:00 | START Persisting evaluation for answer 1601 | answer_id=1601 model=meta-llama/Llama-3.3-70B-Instruct role=controle score=3
+2026-05-03T22:21:56+00:00 | DONE Persisting evaluation for answer 1601 | answer_id=1601 model=meta-llama/Llama-3.3-70B-Instruct role=controle score=3 elapsed_ms=0
+2026-05-03T22:21:56+00:00 | batch_progress | current=61 total=61 percent=100 executed=49 skipped=12 arbiters=0
+2026-05-03T22:21:56+00:00 | eligibility_progress | missing=61 failed=0 successful=149 will_process=61
+2026-05-03T22:21:56+00:00 | batch_progress | current=61 total=61 percent=100 executed=49 skipped=12 arbiters=0
+2026-05-03T22:21:56+00:00 | eligibility_progress | missing=61 failed=0 successful=149 will_process=61
+2026-05-03T22:21:56+00:00 | adaptive_concurrency_final | provider=remote_http base_url=https://api.featherless.ai/v1 api_key=a3672be7 model=Unbabel/M-Prometheus-14B final_concurrency=1 successes=0 failures=1 timeouts=0 rate_limits=0 retries=0 requeued=0 disabled=True
+2026-05-03T22:21:56+00:00 | adaptive_concurrency_final | provider=remote_http base_url=https://api.featherless.ai/v1 api_key=a3672be7 model=meta-llama/Llama-3.3-70B-Instruct final_concurrency=1 successes=49 failures=10 timeouts=0 rate_limits=10 retries=9 requeued=9 disabled=False
+2026-05-03T22:21:56+00:00 | DONE Running judge pipeline | answers=61 mode=2plus1 elapsed_ms=578324
+2026-05-03T22:21:56+00:00 | eligibility_final | missing=61 failed=0 successful=149 will_process=61
+2026-05-03T22:21:56+00:00 | START Closing PostgreSQL connection
+2026-05-03T22:21:56+00:00 | DONE Closing PostgreSQL connection | elapsed_ms=0
+2026-05-03T22:21:56+00:00 | execution_result | selected=61 executed=49 skipped=12 arbiters=0
+2026-05-03T22:21:56+00:00 | audit_log_finished
