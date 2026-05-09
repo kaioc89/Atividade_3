@@ -1005,7 +1005,10 @@ def test_web_index_contains_meta_evaluation_tab() -> None:
 
     assert response.status_code == 200
     assert 'data-tab="meta-panel">Meta-Avaliacao</button>' in response.text
-    assert 'id="meta_evaluation_select"' in response.text
+    assert '<input id="meta_evaluation_select" autocomplete="off"' in response.text
+    assert 'id="meta_evaluation_clear" class="meta-clear-button"' in response.text
+    assert 'id="meta_evaluation_options" class="meta-options-list" role="listbox" hidden' in response.text
+    assert "function renderMetaEvaluationOptions" in response.text
     assert 'id="meta_save"' in response.text
     assert 'id="meta_cancel_edit"' in response.text
     assert 'id="meta_subject_chain_of_thought"' in response.text
