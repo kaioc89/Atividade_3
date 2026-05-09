@@ -101,17 +101,23 @@ def parse_prod_logs_manifest(manifest_path: Path | str = DEFAULT_PROD_LOGS_MANIF
     log_paths = _read_manifest(manifest)
     logs: list[ParsedAuditLog] = []
     missing_logs: list[str] = []
+    problems: list[str] = []
     for raw_path in log_paths:
         log_path = raw_path if raw_path.is_absolute() else manifest.parent.parent.parent / raw_path
         if not log_path.exists() or not log_path.is_file():
             missing_logs.append(str(raw_path))
             continue
-        logs.append(parse_audit_log(log_path))
+        try:
+            logs.append(parse_audit_log(log_path))
+        except OSError as error:
+            missing_logs.append(str(raw_path))
+            problems.append(f"{raw_path}: read failed: {error}")
 
     return AuditParseReport(
         manifest_path=str(manifest),
         logs=tuple(logs),
         missing_logs=tuple(missing_logs),
+        problems=tuple(problems),
     )
 
 

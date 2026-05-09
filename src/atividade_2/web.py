@@ -19,6 +19,7 @@ from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse, Response
 from pydantic import BaseModel, Field
 
+from .audit_log_service import AuditLogSummaryService
 from .config import ConfigurationError
 from .contracts import BatchProgress, EligibilitySummary, EvaluationProgress, PipelineSummary
 from .dashboard import DashboardService, parse_dashboard_filters
@@ -265,6 +266,7 @@ def create_app(
     database_reset_service: DatabaseResetService | None = None,
     judge_prompt_service: JudgePromptConfigService | None = None,
     meta_evaluation_service: MetaEvaluationService | None = None,
+    audit_log_summary_service: AuditLogSummaryService | None = None,
 ) -> FastAPI:
     app = FastAPI(title="Atividade 2 Judge Console")
     startup_schema_mode = os.environ.get("ENSURE_SCHEMA_ON_STARTUP", "").strip().lower()
@@ -278,6 +280,7 @@ def create_app(
     app.state.database_reset_service = database_reset_service or DatabaseResetService()
     app.state.judge_prompt_service = judge_prompt_service or JudgePromptConfigService()
     app.state.meta_evaluation_service = meta_evaluation_service or MetaEvaluationService()
+    app.state.audit_log_summary_service = audit_log_summary_service or AuditLogSummaryService()
 
     @app.on_event("startup")
     def ensure_runtime_schema() -> None:
@@ -376,6 +379,10 @@ def create_app(
             return request.app.state.meta_evaluation_service.history()
         except (RuntimeError, ValueError) as error:
             raise HTTPException(status_code=503, detail=str(error)) from error
+
+    @app.get("/api/operational-log-summary")
+    def get_operational_log_summary(request: Request) -> dict:
+        return request.app.state.audit_log_summary_service.load()
 
     @app.put("/api/meta-evaluations", dependencies=[Depends(_require_csrf)])
     def save_meta_evaluation(payload: MetaEvaluationPayload, request: Request) -> dict:

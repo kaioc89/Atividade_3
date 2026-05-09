@@ -122,6 +122,18 @@ class FakeRunJudgeService:
         )
 
 
+class FakeAuditLogSummaryService:
+    def load(self) -> dict:
+        return {
+            "source": "prod_logs_manifest",
+            "available": True,
+            "totals": {"logs": 1, "events": 1},
+            "logs": [{"run_id": "judge_run_1", "events": []}],
+            "missing_logs": [],
+            "problems": [],
+        }
+
+
 class BlockingRunJudgeService(FakeRunJudgeService):
     def __init__(self) -> None:
         super().__init__()
@@ -1167,6 +1179,22 @@ def test_dashboard_endpoint_returns_filtered_audit_payload() -> None:
     assert dashboard.filters[0].dataset == "J2"
     assert dashboard.filters[0].candidate_models == ("modelo-candidato",)
     assert dashboard.filters[0].status == "sucesso"
+
+
+def test_operational_log_summary_endpoint_uses_internal_service() -> None:
+    client = TestClient(
+        create_app(
+            FakeRunJudgeService(),
+            audit_log_summary_service=FakeAuditLogSummaryService(),
+        )
+    )
+
+    response = client.get("/api/operational-log-summary")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["source"] == "prod_logs_manifest"
+    assert data["logs"][0]["run_id"] == "judge_run_1"
 
 
 def test_database_dump_endpoint_requires_csrf_token() -> None:
