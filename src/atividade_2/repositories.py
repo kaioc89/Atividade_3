@@ -12,6 +12,7 @@ from .contracts import (
     EvaluationRecord,
     JudgePromptConfigRecord,
     JudgePromptTemplate,
+    MetaEvaluationHistoryRecord,
     MetaEvaluationRecord,
     MetaEvaluationSubject,
     ModelSpec,
@@ -1250,6 +1251,66 @@ class JudgeRepository:
                 score=int(row[3]),
                 rationale=row[4],
                 created_at=row[5].isoformat() if row[5] is not None else None,
+            )
+            for row in rows
+        ]
+
+    def list_meta_evaluation_history(self, *, dataset: str = "J1") -> list[MetaEvaluationHistoryRecord]:
+        dataset_name = _resolve_prompt_dataset_name(dataset)
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT
+                    ma.id_meta_avaliacao,
+                    ma.id_avaliacao,
+                    ma.nm_avaliador,
+                    ma.vl_nota,
+                    ma.ds_justificativa,
+                    ma.created_at,
+                    d.nome_dataset,
+                    p.id_pergunta,
+                    r.id_resposta,
+                    cm.nome_modelo,
+                    jm.nome_modelo,
+                    a.nota_atribuida,
+                    a.chain_of_thought,
+                    p.enunciado,
+                    p.resposta_ouro,
+                    r.texto_resposta,
+                    a.data_avaliacao
+                FROM meta_avaliacoes ma
+                JOIN avaliacoes_juiz a ON a.id_avaliacao = ma.id_avaliacao
+                JOIN respostas_atividade_1 r ON r.id_resposta = a.id_resposta_ativa1
+                JOIN perguntas p ON p.id_pergunta = r.id_pergunta
+                JOIN datasets d ON d.id_dataset = p.id_dataset
+                JOIN modelos cm ON cm.id_modelo = r.id_modelo
+                JOIN modelos jm ON jm.id_modelo = a.id_modelo_juiz
+                WHERE d.nome_dataset = %s
+                ORDER BY ma.created_at DESC, ma.id_meta_avaliacao DESC;
+                """,
+                (dataset_name,),
+            )
+            rows = cursor.fetchall()
+        return [
+            MetaEvaluationHistoryRecord(
+                meta_evaluation_id=int(row[0]),
+                evaluation_id=int(row[1]),
+                evaluator_name=row[2],
+                score=int(row[3]),
+                rationale=row[4],
+                created_at=row[5].isoformat() if row[5] is not None else None,
+                dataset=_dataset_label(row[6]),
+                question_id=int(row[7]),
+                answer_id=int(row[8]),
+                candidate_model=row[9],
+                judge_model=row[10],
+                judge_score=int(row[11]),
+                judge_rationale=row[12],
+                judge_chain_of_thought=row[12],
+                question_text=row[13],
+                reference_answer=row[14],
+                candidate_answer=row[15],
+                evaluated_at=row[16].isoformat() if row[16] is not None else None,
             )
             for row in rows
         ]

@@ -370,6 +370,13 @@ def create_app(
         except (RuntimeError, ValueError) as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
 
+    @app.get("/api/meta-evaluations/history")
+    def get_meta_evaluation_history(request: Request) -> dict:
+        try:
+            return request.app.state.meta_evaluation_service.history()
+        except (RuntimeError, ValueError) as error:
+            raise HTTPException(status_code=503, detail=str(error)) from error
+
     @app.put("/api/meta-evaluations", dependencies=[Depends(_require_csrf)])
     def save_meta_evaluation(payload: MetaEvaluationPayload, request: Request) -> dict:
         try:
@@ -924,6 +931,16 @@ _INDEX_HTML = """
     .prompt-preview-card { border:1px solid var(--line); border-radius:8px; background:#fff; padding:12px; }
     .prompt-preview-card h3 { margin:0 0 8px; font-size:13px; }
     .prompt-preview-card pre { margin:0; white-space:pre-wrap; word-break:break-word; max-height:320px; overflow:auto; }
+    .meta-mode-switch { width:min(100%, 1440px); margin:0 auto; padding:20px 20px 0; display:flex; gap:8px; }
+    .meta-mode-button { min-height:34px; border-color:var(--line); background:#fff; color:var(--muted); }
+    .meta-mode-button.active { border-color:var(--accent); color:#fff; background:var(--accent); }
+    .meta-mode-panel[hidden] { display:none; }
+    .meta-history-table table { min-width:980px; }
+    .meta-history-table th button { width:100%; min-height:auto; padding:0; border:0; background:transparent; color:var(--ink); text-align:left; font:inherit; cursor:pointer; }
+    .meta-history-table tr.selected { background:#eef7ff; }
+    .meta-history-table tbody tr { cursor:pointer; }
+    .meta-detail-actions { display:flex; gap:8px; margin-top:10px; }
+    .meta-detail-actions button { flex:1; }
     .meta-evaluation-field { position:relative; }
     .meta-evaluation-input-wrap { position:relative; }
     .meta-evaluation-input-wrap input { padding-right:40px; }
@@ -1562,8 +1579,13 @@ _INDEX_HTML = """
         </div>
       </section>
     </div>
-    <div id="meta-panel" class="prompt-layout tab-panel" hidden>
-      <aside>
+    <div id="meta-panel" class="tab-panel" hidden>
+      <div class="meta-mode-switch" role="tablist" aria-label="Modos da meta-avaliacao">
+        <button class="meta-mode-button active" id="meta_mode_new" type="button" data-meta-mode="new" role="tab" aria-selected="true">Nova auditoria</button>
+        <button class="meta-mode-button" id="meta_mode_history" type="button" data-meta-mode="history" role="tab" aria-selected="false">Auditorias realizadas</button>
+      </div>
+      <div id="meta_new_panel" class="prompt-layout meta-mode-panel">
+        <aside>
         <h2>Meta-Avaliacao</h2>
         <label class="meta-evaluation-field">Avaliacao J1
           <span class="meta-evaluation-input-wrap">
@@ -1578,11 +1600,11 @@ _INDEX_HTML = """
         <input id="meta_editing_id" type="hidden">
         <label>Nota da Meta-Avaliacao (1 a 5)
           <select id="meta_score">
-            <option value="1">1</option>
-            <option value="2">2</option>
-            <option value="3">3</option>
-            <option value="4">4</option>
-            <option value="5">5</option>
+            <option value="1">1 - Totalmente equivocada</option>
+            <option value="2">2 - Excessivamente subestimada/superestimada</option>
+            <option value="3">3 - Muito subestimada/superestimada</option>
+            <option value="4">4 - Pouco subestimada/superestimada</option>
+            <option value="5">5 - Justo</option>
           </select>
         </label>
         <label>Justificativa
@@ -1645,7 +1667,77 @@ _INDEX_HTML = """
             <pre id="meta_subject_chain_of_thought">Selecione uma avaliacao para ver o Chain of Thoughts.</pre>
           </div>
         </div>
-      </section>
+        </section>
+      </div>
+      <div id="meta_history_panel" class="prompt-layout meta-mode-panel" hidden>
+        <aside>
+          <h2>Auditorias realizadas</h2>
+          <label>Avaliador
+            <select id="meta_history_evaluator"></select>
+          </label>
+          <div id="meta_history_count" class="status">0 auditorias encontradas</div>
+          <div class="actions">
+            <button class="secondary" id="meta_history_reload" type="button">Recarregar</button>
+          </div>
+        </aside>
+        <section>
+          <h2>Historico de auditorias</h2>
+          <div class="table-wrap meta-history-table">
+            <table aria-label="Auditorias realizadas">
+              <thead>
+                <tr>
+                  <th><button type="button" data-meta-history-sort="created_at">Quando</button></th>
+                  <th><button type="button" data-meta-history-sort="evaluator_name">Avaliador</button></th>
+                  <th><button type="button" data-meta-history-sort="score">Nota meta</button></th>
+                  <th><button type="button" data-meta-history-sort="judge_model">Modelo juiz</button></th>
+                  <th><button type="button" data-meta-history-sort="judge_score">Nota juiz</button></th>
+                  <th><button type="button" data-meta-history-sort="candidate_model">Modelo candidato</button></th>
+                  <th><button type="button" data-meta-history-sort="question_id">Questao</button></th>
+                </tr>
+              </thead>
+              <tbody id="meta_history_body">
+                <tr><td colspan="7" class="muted">Nenhuma auditoria carregada.</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="prompt-preview">
+            <div class="prompt-preview-card">
+              <h3>Auditoria selecionada</h3>
+              <div class="muted" id="meta_history_detail_meta">Selecione uma auditoria para ver os detalhes.</div>
+              <table aria-label="Resumo da auditoria selecionada">
+                <tbody>
+                  <tr><th>Avaliador</th><td id="meta_history_detail_evaluator" class="muted">-</td></tr>
+                  <tr><th>Nota meta</th><td id="meta_history_detail_score" class="muted">-</td></tr>
+                  <tr><th>Justificativa</th><td id="meta_history_detail_rationale" class="muted">-</td></tr>
+                  <tr><th>Modelo candidato</th><td id="meta_history_detail_candidate_model" class="muted">-</td></tr>
+                  <tr><th>Modelo juiz</th><td id="meta_history_detail_judge_model" class="muted">-</td></tr>
+                  <tr><th>Nota juiz</th><td id="meta_history_detail_judge_score" class="muted">-</td></tr>
+                </tbody>
+              </table>
+              <div class="meta-detail-actions">
+                <button class="secondary" id="meta_history_previous" type="button">Anterior</button>
+                <button class="secondary" id="meta_history_next" type="button">Proxima</button>
+              </div>
+            </div>
+            <div class="prompt-preview-card">
+              <h3>Questao</h3>
+              <pre id="meta_history_detail_question">Selecione uma auditoria para ver o enunciado.</pre>
+            </div>
+            <div class="prompt-preview-card">
+              <h3>Gabarito</h3>
+              <pre id="meta_history_detail_reference">Selecione uma auditoria para ver o gabarito.</pre>
+            </div>
+            <div class="prompt-preview-card">
+              <h3>Resposta do candidato</h3>
+              <pre id="meta_history_detail_candidate_answer">Selecione uma auditoria para ver a resposta candidata.</pre>
+            </div>
+            <div class="prompt-preview-card">
+              <h3>Chain of Thoughts</h3>
+              <pre id="meta_history_detail_chain_of_thought">Selecione uma auditoria para ver o Chain of Thoughts.</pre>
+            </div>
+          </div>
+        </section>
+      </div>
     </div>
   <dialog id="details-dialog">
     <div class="dialog-head">
@@ -1717,6 +1809,11 @@ _INDEX_HTML = """
     let historyLoaded = false;
     let promptOptionsLoaded = false;
     let metaOptionsLoaded = false;
+    let metaHistoryLoaded = false;
+    let metaHistoryRecords = [];
+    let metaHistoryFilteredRecords = [];
+    let selectedMetaHistoryId = null;
+    let metaHistorySort = {key: "created_at", direction: "desc"};
     let metaEvaluationOptions = [];
     let selectedMetaEvaluationId = "";
     let dashboardLoaded = false;
@@ -3044,6 +3141,10 @@ _INDEX_HTML = """
       row.appendChild(cell);
     }
 
+    function confirmAction(message) {
+      return window["confirm"](message);
+    }
+
     function appendStatusCell(row, status) {
       const cell = document.createElement("td");
       const badge = document.createElement("span");
@@ -3242,6 +3343,7 @@ _INDEX_HTML = """
         await loadMetaOptions();
         renderMetaEvaluationState(data.subject, data.records || []);
         resetMetaForm();
+        if (metaHistoryLoaded) await loadMetaHistory();
         setText(
           "meta_status",
           data.action === "updated"
@@ -3360,10 +3462,180 @@ _INDEX_HTML = """
         await loadMetaOptions();
         renderMetaEvaluationState(data.subject, data.records || []);
         resetMetaForm();
+        if (metaHistoryLoaded) await loadMetaHistory();
         setText("meta_status", "Meta-avaliacao excluida.");
       } catch (error) {
         setText("meta_status", friendlyErrorMessage(error.message));
       }
+    }
+
+    function switchMetaMode(mode) {
+      const isHistory = mode === "history";
+      document.getElementById("meta_new_panel").hidden = isHistory;
+      document.getElementById("meta_history_panel").hidden = !isHistory;
+      for (const button of document.querySelectorAll("[data-meta-mode]")) {
+        const active = button.dataset.metaMode === mode;
+        button.classList.toggle("active", active);
+        button.setAttribute("aria-selected", String(active));
+      }
+      if (isHistory && !metaHistoryLoaded) loadMetaHistory();
+    }
+
+    async function loadMetaHistory() {
+      try {
+        const response = await fetch("/api/meta-evaluations/history");
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.detail || "Falha ao carregar auditorias.");
+        metaHistoryRecords = data.records || [];
+        metaHistoryLoaded = true;
+        renderMetaHistoryEvaluatorOptions();
+        renderMetaHistory();
+      } catch (error) {
+        metaHistoryLoaded = false;
+        setText("meta_history_count", friendlyErrorMessage(error.message));
+      }
+    }
+
+    function renderMetaHistoryEvaluatorOptions() {
+      const select = document.getElementById("meta_history_evaluator");
+      const current = select.value;
+      const evaluators = Array.from(new Set(metaHistoryRecords.map((entry) => entry.evaluator_name).filter(Boolean)))
+        .sort((a, b) => a.localeCompare(b));
+      select.textContent = "";
+      const allOption = document.createElement("option");
+      allOption.value = "";
+      allOption.textContent = "Todos";
+      select.appendChild(allOption);
+      for (const evaluator of evaluators) {
+        const option = document.createElement("option");
+        option.value = evaluator;
+        option.textContent = evaluator;
+        select.appendChild(option);
+      }
+      if (current && evaluators.includes(current)) select.value = current;
+    }
+
+    function sortedMetaHistoryRecords(records) {
+      const direction = metaHistorySort.direction === "asc" ? 1 : -1;
+      const key = metaHistorySort.key;
+      return [...records].sort((left, right) => {
+        const leftValue = left[key];
+        const rightValue = right[key];
+        const leftNumber = Number(leftValue);
+        const rightNumber = Number(rightValue);
+        if (Number.isFinite(leftNumber) && Number.isFinite(rightNumber)) {
+          return (leftNumber - rightNumber) * direction;
+        }
+        return String(leftValue || "").localeCompare(String(rightValue || "")) * direction;
+      });
+    }
+
+    function currentMetaHistoryRows() {
+      const evaluator = value("meta_history_evaluator");
+      const filtered = evaluator
+        ? metaHistoryRecords.filter((entry) => entry.evaluator_name === evaluator)
+        : metaHistoryRecords;
+      return sortedMetaHistoryRecords(filtered);
+    }
+
+    function renderMetaHistory() {
+      metaHistoryFilteredRecords = currentMetaHistoryRows();
+      if (
+        selectedMetaHistoryId !== null
+        && !metaHistoryFilteredRecords.some((entry) => entry.meta_evaluation_id === selectedMetaHistoryId)
+      ) {
+        selectedMetaHistoryId = null;
+      }
+      renderMetaHistoryTable();
+      renderMetaHistoryDetail();
+    }
+
+    function renderMetaHistoryTable() {
+      const body = document.getElementById("meta_history_body");
+      body.textContent = "";
+      const total = metaHistoryFilteredRecords.length;
+      setText("meta_history_count", `${total} ${total === 1 ? "auditoria encontrada" : "auditorias encontradas"}`);
+      if (!total) {
+        const row = document.createElement("tr");
+        const cell = document.createElement("td");
+        cell.colSpan = 7;
+        cell.className = "muted";
+        cell.textContent = "Nenhuma auditoria encontrada para o filtro atual.";
+        row.appendChild(cell);
+        body.appendChild(row);
+        return;
+      }
+      for (const entry of metaHistoryFilteredRecords) {
+        const row = document.createElement("tr");
+        row.className = "meta-history-row";
+        if (entry.meta_evaluation_id === selectedMetaHistoryId) row.classList.add("selected");
+        row.onclick = () => {
+          selectedMetaHistoryId = entry.meta_evaluation_id;
+          renderMetaHistory();
+        };
+        appendCell(row, formatDateTime(entry.created_at));
+        appendCell(row, display(entry.evaluator_name));
+        appendCell(row, display(entry.score));
+        appendCell(row, display(entry.judge_model));
+        appendCell(row, display(entry.judge_score));
+        appendCell(row, display(entry.candidate_model));
+        appendCell(row, display(entry.question_id));
+        body.appendChild(row);
+      }
+    }
+
+    function renderMetaHistoryDetail() {
+      const entry = metaHistoryFilteredRecords.find((record) => record.meta_evaluation_id === selectedMetaHistoryId);
+      const index = metaHistoryFilteredRecords.findIndex((record) => record.meta_evaluation_id === selectedMetaHistoryId);
+      const previous = document.getElementById("meta_history_previous");
+      const next = document.getElementById("meta_history_next");
+      previous.disabled = index <= 0;
+      next.disabled = index < 0 || index >= metaHistoryFilteredRecords.length - 1;
+      if (!entry) {
+        setText("meta_history_detail_meta", "Selecione uma auditoria para ver os detalhes.");
+        setText("meta_history_detail_evaluator", "-");
+        setText("meta_history_detail_score", "-");
+        setText("meta_history_detail_rationale", "-");
+        setText("meta_history_detail_candidate_model", "-");
+        setText("meta_history_detail_judge_model", "-");
+        setText("meta_history_detail_judge_score", "-");
+        setText("meta_history_detail_question", "Selecione uma auditoria para ver o enunciado.");
+        setText("meta_history_detail_reference", "Selecione uma auditoria para ver o gabarito.");
+        setText("meta_history_detail_candidate_answer", "Selecione uma auditoria para ver a resposta candidata.");
+        setText("meta_history_detail_chain_of_thought", "Selecione uma auditoria para ver o Chain of Thoughts.");
+        return;
+      }
+      setText(
+        "meta_history_detail_meta",
+        `Dataset ${display(entry.dataset)} | auditoria ${display(entry.meta_evaluation_id)} | avaliacao ${display(entry.evaluation_id)} | questao ${display(entry.question_id)} | resposta ${display(entry.answer_id)}`
+      );
+      setText("meta_history_detail_evaluator", display(entry.evaluator_name));
+      setText("meta_history_detail_score", display(entry.score));
+      setText("meta_history_detail_rationale", display(entry.rationale));
+      setText("meta_history_detail_candidate_model", display(entry.candidate_model));
+      setText("meta_history_detail_judge_model", display(entry.judge_model));
+      setText("meta_history_detail_judge_score", display(entry.judge_score));
+      setText("meta_history_detail_question", entry.question_text || "-");
+      setText("meta_history_detail_reference", entry.reference_answer || "-");
+      setText("meta_history_detail_candidate_answer", entry.candidate_answer || "-");
+      setText("meta_history_detail_chain_of_thought", entry.judge_chain_of_thought || "-");
+    }
+
+    function sortMetaHistory(key) {
+      if (metaHistorySort.key === key) {
+        metaHistorySort.direction = metaHistorySort.direction === "asc" ? "desc" : "asc";
+      } else {
+        metaHistorySort = {key, direction: "asc"};
+      }
+      renderMetaHistory();
+    }
+
+    function navigateMetaHistory(offset) {
+      const currentIndex = metaHistoryFilteredRecords.findIndex((entry) => entry.meta_evaluation_id === selectedMetaHistoryId);
+      const nextIndex = currentIndex + offset;
+      if (nextIndex < 0 || nextIndex >= metaHistoryFilteredRecords.length) return;
+      selectedMetaHistoryId = metaHistoryFilteredRecords[nextIndex].meta_evaluation_id;
+      renderMetaHistory();
     }
 
     async function savePromptConfig() {
@@ -3781,6 +4053,15 @@ _INDEX_HTML = """
       setText("meta_status", `Avaliacao ${display(getMetaEvaluationId())} carregada para meta-avaliacao.`);
     };
     document.getElementById("meta_save").onclick = () => saveMetaEvaluation();
+    document.getElementById("meta_mode_new").onclick = () => switchMetaMode("new");
+    document.getElementById("meta_mode_history").onclick = () => switchMetaMode("history");
+    document.getElementById("meta_history_reload").onclick = () => loadMetaHistory();
+    document.getElementById("meta_history_evaluator").onchange = () => renderMetaHistory();
+    document.getElementById("meta_history_previous").onclick = () => navigateMetaHistory(-1);
+    document.getElementById("meta_history_next").onclick = () => navigateMetaHistory(1);
+    for (const button of document.querySelectorAll("[data-meta-history-sort]")) {
+      button.onclick = () => sortMetaHistory(button.dataset.metaHistorySort);
+    }
     document.getElementById("dashboard-refresh").onclick = loadDashboard;
     document.getElementById("dashboard-model-carousel-prev").onclick = () => moveCarousel(-1);
     document.getElementById("dashboard-model-carousel-next").onclick = () => moveCarousel(1);

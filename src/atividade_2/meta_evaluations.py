@@ -45,6 +45,15 @@ class MetaEvaluationService:
             "records": [asdict(record) for record in records],
         }
 
+    def history(self) -> dict[str, list[dict[str, Any]]]:
+        connection = self._connect(self._settings_loader().database_url)
+        try:
+            repository = self._make_repository(connection)
+            records = repository.list_meta_evaluation_history(dataset="J1")
+        finally:
+            connection.close()
+        return {"records": [asdict(record) for record in records]}
+
     def save(
         self,
         *,
