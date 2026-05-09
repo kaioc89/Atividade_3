@@ -776,6 +776,32 @@ class FakeMetaEvaluationService:
             ],
         }
 
+    def history(self) -> dict:
+        return {
+            "records": [
+                {
+                    "meta_evaluation_id": 1,
+                    "evaluation_id": 101,
+                    "evaluator_name": "Ana",
+                    "score": 5,
+                    "rationale": "O juiz foi consistente.",
+                    "created_at": "2026-05-04T11:00:00",
+                    "dataset": "J1",
+                    "question_id": 71,
+                    "answer_id": 1,
+                    "candidate_model": "modelo-candidato",
+                    "judge_model": "modelo-juiz",
+                    "judge_score": 4,
+                    "judge_rationale": "Justificativa do juiz",
+                    "judge_chain_of_thought": "Chain of thoughts do juiz",
+                    "question_text": "Enunciado da questao",
+                    "reference_answer": "Gabarito oficial",
+                    "candidate_answer": "Resposta do candidato",
+                    "evaluated_at": "2026-05-04T10:00:00",
+                }
+            ]
+        }
+
     def save(self, *, meta_evaluation_id: int | None, evaluation_id: int, evaluator_name: str, score: int, rationale: str) -> dict:
         self.saved.append((meta_evaluation_id, evaluation_id, evaluator_name, score, rationale))
         return {
@@ -1005,23 +1031,24 @@ def test_web_index_contains_meta_evaluation_tab() -> None:
 
     assert response.status_code == 200
     assert 'data-tab="meta-panel">Meta-Avaliacao</button>' in response.text
-<<<<<<< Updated upstream
     assert 'id="meta_evaluation_select"' in response.text
-=======
-    assert '<input id="meta_evaluation_select" autocomplete="off"' in response.text
-    assert 'id="meta_evaluation_clear" class="meta-clear-button"' in response.text
-    assert 'id="meta_evaluation_options" class="meta-options-list" role="listbox" hidden' in response.text
-    assert "function renderMetaEvaluationOptions" in response.text
     assert '<option value="1">1 - Totalmente equivocada</option>' in response.text
     assert '<option value="2">2 - Excessivamente subestimada/superestimada</option>' in response.text
     assert '<option value="3">3 - Muito subestimada/superestimada</option>' in response.text
     assert '<option value="4">4 - Pouco subestimada/superestimada</option>' in response.text
     assert '<option value="5">5 - Justo</option>' in response.text
->>>>>>> Stashed changes
     assert 'id="meta_save"' in response.text
     assert 'id="meta_cancel_edit"' in response.text
     assert 'id="meta_subject_chain_of_thought"' in response.text
     assert 'id="meta_records_body"' in response.text
+    assert 'id="meta_mode_new"' in response.text
+    assert 'id="meta_mode_history"' in response.text
+    assert 'id="meta_history_evaluator"' in response.text
+    assert 'id="meta_history_count"' in response.text
+    assert 'id="meta_history_body"' in response.text
+    assert 'id="meta_history_previous"' in response.text
+    assert 'id="meta_history_next"' in response.text
+    assert 'data-meta-history-sort="created_at"' in response.text
     assert response.text.index("Meta-avaliacoes registradas") < response.text.index("Avaliacao selecionada")
 
 
@@ -1038,6 +1065,14 @@ def test_meta_evaluation_endpoints_return_options_and_allow_save() -> None:
     current = client.get("/api/meta-evaluations", params={"evaluation_id": 101})
     assert current.status_code == 200
     assert current.json()["subject"]["dataset"] == "J1"
+
+    history = client.get("/api/meta-evaluations/history")
+    assert history.status_code == 200
+    assert history.json()["records"][0]["meta_evaluation_id"] == 1
+    assert history.json()["records"][0]["evaluator_name"] == "Ana"
+    assert history.json()["records"][0]["judge_model"] == "modelo-juiz"
+    assert history.json()["records"][0]["candidate_model"] == "modelo-candidato"
+    assert history.json()["records"][0]["question_text"] == "Enunciado da questao"
 
     saved = client.put(
         "/api/meta-evaluations",
