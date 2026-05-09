@@ -1564,11 +1564,11 @@ _INDEX_HTML = """
         <input id="meta_editing_id" type="hidden">
         <label>Nota da Meta-Avaliacao (1 a 5)
           <select id="meta_score">
-            <option value="1">1</option>
-            <option value="2">2</option>
-            <option value="3">3</option>
-            <option value="4">4</option>
-            <option value="5">5</option>
+            <option value="1">1 - Totalmente equivocada</option>
+            <option value="2">2 - Excessivamente subestimada/superestimada</option>
+            <option value="3">3 - Muito subestimada/superestimada</option>
+            <option value="4">4 - Pouco subestimada/superestimada</option>
+            <option value="5">5 - Justo</option>
           </select>
         </label>
         <label>Justificativa
