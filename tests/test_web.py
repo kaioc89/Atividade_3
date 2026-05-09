@@ -594,6 +594,7 @@ class FakeDashboardService:
                 ],
                 "critical_error_analysis": [
                     {
+                        "evaluation_id": 101,
                         "question_id": 20,
                         "candidate_model": "modelo-candidato",
                         "judge_model": "openai/gpt-oss-120b",
@@ -884,7 +885,7 @@ def test_web_index_contains_progress_element() -> None:
     assert "Categorias de erro" in response.text
     assert 'id="dashboard-critical-error-chart"' in response.text
     assert 'id="dashboard-critical-error-body"' in response.text
-    assert "Link para log" in response.text
+    assert "Link para log" not in response.text
     assert "function renderModelDistributionChart" in response.text
     assert "rho Spearman" in response.text
     assert "p-value" in response.text

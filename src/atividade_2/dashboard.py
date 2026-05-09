@@ -1090,6 +1090,7 @@ def _critical_error_analysis(
 
 def _critical_error_case(row: dict[str, Any], error_type: str, justification: str) -> dict[str, Any]:
     return {
+        "evaluation_id": row.get("evaluation_id"),
         "question_id": row.get("question_id"),
         "candidate_model": row.get("candidate_model"),
         "judge_model": row.get("judge_model"),

@@ -1211,7 +1211,7 @@ _INDEX_HTML = """
                       <th>Nota</th>
                       <th>Tipo de erro</th>
                       <th>Justificativa curta</th>
-                      <th>Link para log</th>
+                      <th>Auditar</th>
                     </tr>
                   </thead>
                   <tbody id="dashboard-critical-error-body">
@@ -2361,18 +2361,7 @@ _INDEX_HTML = """
           item.error_type,
           item.short_justification
         ]) appendCell(row, display(value));
-        const logCell = document.createElement("td");
-        if (item.log_url) {
-          const link = document.createElement("a");
-          link.href = item.log_url;
-          link.target = "_blank";
-          link.rel = "noopener";
-          link.textContent = "Abrir log";
-          logCell.appendChild(link);
-        } else {
-          logCell.textContent = "-";
-        }
-        row.appendChild(logCell);
+        appendAuditCell(row, item.evaluation_id);
         body.appendChild(row);
       });
     }

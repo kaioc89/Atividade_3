@@ -418,6 +418,7 @@ def test_dashboard_reports_critical_error_analysis_categories_and_table() -> Non
     ]
     table = payload["tables"]["critical_error_analysis"]
     assert {
+        "evaluation_id": 1,
         "question_id": 101,
         "candidate_model": "modelo-a",
         "judge_model": "juiz-a",
