@@ -1178,10 +1178,11 @@ _INDEX_HTML = """
                       <th>papel</th>
                       <th>nota</th>
                       <th>status</th>
+                      <th>Auditar</th>
                     </tr>
                   </thead>
                   <tbody id="dashboard-cases-body">
-                    <tr><td colspan="9" class="muted">Carregando dashboard.</td></tr>
+                    <tr><td colspan="10" class="muted">Carregando dashboard.</td></tr>
                   </tbody>
                 </table>
               </div>
@@ -1210,7 +1211,7 @@ _INDEX_HTML = """
                       <th>Nota</th>
                       <th>Tipo de erro</th>
                       <th>Justificativa curta</th>
-                      <th>Link para log</th>
+                      <th>Auditar</th>
                     </tr>
                   </thead>
                   <tbody id="dashboard-critical-error-body">
@@ -1743,7 +1744,7 @@ _INDEX_HTML = """
 
     async function loadDashboard() {
       const body = document.getElementById("dashboard-cases-body");
-      body.innerHTML = '<tr><td colspan="9" class="muted">Carregando dashboard.</td></tr>';
+      body.innerHTML = '<tr><td colspan="10" class="muted">Carregando dashboard.</td></tr>';
       document.getElementById("dashboard-judge-agreement-body").innerHTML = '<tr><td colspan="8" class="muted">Carregando concordancia.</td></tr>';
       try {
         const response = await fetch(`/api/dashboard?${dashboardQuery()}`);
@@ -1755,7 +1756,7 @@ _INDEX_HTML = """
         body.innerHTML = "";
         const row = document.createElement("tr");
         const cell = document.createElement("td");
-        cell.colSpan = 9;
+        cell.colSpan = 10;
         cell.className = "muted";
         cell.textContent = friendlyErrorMessage(error.message);
         row.appendChild(cell);
@@ -2360,18 +2361,7 @@ _INDEX_HTML = """
           item.error_type,
           item.short_justification
         ]) appendCell(row, display(value));
-        const logCell = document.createElement("td");
-        if (item.log_url) {
-          const link = document.createElement("a");
-          link.href = item.log_url;
-          link.target = "_blank";
-          link.rel = "noopener";
-          link.textContent = "Abrir log";
-          logCell.appendChild(link);
-        } else {
-          logCell.textContent = "-";
-        }
-        row.appendChild(logCell);
+        appendAuditCell(row, item.evaluation_id);
         body.appendChild(row);
       });
     }
@@ -2553,7 +2543,7 @@ _INDEX_HTML = """
       if (!cases.length) {
         const row = document.createElement("tr");
         const cell = document.createElement("td");
-        cell.colSpan = 9;
+        cell.colSpan = 10;
         cell.className = "muted";
         cell.textContent = "Sem casos criticos ou divergencias no filtro atual.";
         row.appendChild(cell);
@@ -2573,8 +2563,35 @@ _INDEX_HTML = """
           item.score,
           item.status
         ]) appendCell(row, display(value));
+        appendAuditCell(row, item.evaluation_id);
         body.appendChild(row);
       });
+    }
+
+    function appendAuditCell(row, evaluationId) {
+      const cell = document.createElement("td");
+      if (!evaluationId) {
+        cell.textContent = "-";
+        row.appendChild(cell);
+        return;
+      }
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "secondary";
+      button.textContent = "Auditar";
+      button.onclick = () => openMetaEvaluation(evaluationId);
+      cell.appendChild(button);
+      row.appendChild(cell);
+    }
+
+    async function openMetaEvaluation(evaluationId) {
+      activateTab("meta-panel");
+      if (!metaOptionsLoaded) {
+        await loadMetaOptions(evaluationId);
+        return;
+      }
+      document.getElementById("meta_evaluation_select").value = String(evaluationId);
+      await loadMetaEvaluation();
     }
 
     function displayPercent(value) {
@@ -3122,10 +3139,11 @@ _INDEX_HTML = """
       }
     }
 
-    async function loadMetaOptions() {
+    async function loadMetaOptions(selectedEvaluationId = null) {
       const response = await fetch("/api/meta-evaluations/options");
       const data = await response.json();
       populateSelect("meta_evaluation_select", data.evaluations || [], "value", "label");
+      if (selectedEvaluationId) document.getElementById("meta_evaluation_select").value = String(selectedEvaluationId);
       metaOptionsLoaded = true;
       if (value("meta_evaluation_select")) await loadMetaEvaluation();
       else renderMetaEvaluationState(null, []);
@@ -3448,7 +3466,7 @@ _INDEX_HTML = """
       }
     }
 
-    function switchTab(targetId) {
+    function activateTab(targetId) {
       for (const button of document.querySelectorAll(".tab-button")) {
         const active = button.dataset.tab === targetId;
         button.classList.toggle("active", active);
@@ -3457,6 +3475,13 @@ _INDEX_HTML = """
       for (const panel of document.querySelectorAll(".tab-panel")) {
         panel.hidden = panel.id !== targetId;
       }
+      if (targetId === "meta-panel") {
+        window.scrollTo({top: 0, left: 0, behavior: "auto"});
+      }
+    }
+
+    function switchTab(targetId) {
+      activateTab(targetId);
       if (targetId === "dashboard-panel") loadDashboard();
       if (targetId === "history-panel" && !historyLoaded) loadHistory();
       if (targetId === "prompt-panel" && !promptOptionsLoaded) loadPromptOptions();
