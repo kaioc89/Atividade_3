@@ -924,6 +924,16 @@ _INDEX_HTML = """
     .prompt-preview-card { border:1px solid var(--line); border-radius:8px; background:#fff; padding:12px; }
     .prompt-preview-card h3 { margin:0 0 8px; font-size:13px; }
     .prompt-preview-card pre { margin:0; white-space:pre-wrap; word-break:break-word; max-height:320px; overflow:auto; }
+    .meta-evaluation-field { position:relative; }
+    .meta-evaluation-input-wrap { position:relative; }
+    .meta-evaluation-input-wrap input { padding-right:40px; }
+    .meta-clear-button { position:absolute; top:50%; right:8px; transform:translateY(-50%); display:grid; place-items:center; width:26px; height:26px; min-height:26px; padding:0; border-color:transparent; border-radius:50%; background:#eef2f7; color:var(--muted); font-size:18px; font-weight:800; line-height:1; }
+    .meta-clear-button:hover, .meta-clear-button:focus { background:#dbeafe; color:var(--accent); outline:none; }
+    .meta-options-list { position:absolute; top:100%; left:0; z-index:30; display:grid; gap:2px; width:min(760px, calc(100vw - 56px)); max-height:420px; overflow:auto; margin-top:4px; padding:6px; border:1px solid var(--line); border-radius:8px; background:#fff; box-shadow:0 14px 32px rgba(16,24,40,.18); }
+    .meta-options-list[hidden] { display:none; }
+    .meta-option { width:100%; min-height:34px; padding:8px 10px; border-color:transparent; background:#fff; color:var(--ink); text-align:left; font-size:13px; font-weight:600; line-height:1.35; overflow-wrap:anywhere; }
+    .meta-option:hover, .meta-option:focus { background:#f2f8fd; color:var(--accent); outline:none; }
+    .meta-option-empty { padding:8px 10px; color:var(--muted); font-size:13px; }
     .dashboard-filters select[multiple] { min-height:92px; }
     .dashboard-filter-actions { display:flex; gap:8px; margin-top:12px; }
     .dashboard-filter-actions button { flex:1; }
@@ -1555,8 +1565,12 @@ _INDEX_HTML = """
     <div id="meta-panel" class="prompt-layout tab-panel" hidden>
       <aside>
         <h2>Meta-Avaliacao</h2>
-        <label>Avaliacao J1
-          <select id="meta_evaluation_select"></select>
+        <label class="meta-evaluation-field">Avaliacao J1
+          <span class="meta-evaluation-input-wrap">
+            <input id="meta_evaluation_select" autocomplete="off" placeholder="Digite o id ou filtre as avaliacoes" aria-controls="meta_evaluation_options">
+            <button id="meta_evaluation_clear" class="meta-clear-button" type="button" title="Limpar avaliacao" aria-label="Limpar avaliacao">x</button>
+          </span>
+          <div id="meta_evaluation_options" class="meta-options-list" role="listbox" hidden></div>
         </label>
         <label>Avaliador
           <input id="meta_evaluator_name" autocomplete="off" placeholder="Nome de quem esta auditando">
@@ -1685,12 +1699,26 @@ _INDEX_HTML = """
       </table>
     </div>
   </dialog>
+  <dialog id="meta-delete-dialog" class="confirm-dialog">
+    <div class="dialog-head">
+      <strong>Excluir meta-avaliacao</strong>
+    </div>
+    <div class="dialog-body">
+      <p>Excluir esta meta-avaliacao?</p>
+    </div>
+    <div class="confirm-actions">
+      <button id="meta-delete-cancel" class="secondary" type="button">Cancelar</button>
+      <button id="meta-delete-confirm" class="danger-button" type="button">Excluir</button>
+    </div>
+  </dialog>
   <script>
     let csrfToken = "";
     let pollTimer = null;
     let historyLoaded = false;
     let promptOptionsLoaded = false;
     let metaOptionsLoaded = false;
+    let metaEvaluationOptions = [];
+    let selectedMetaEvaluationId = "";
     let dashboardLoaded = false;
     let currentAuditLogUrl = null;
     let activeRunId = null;
@@ -2590,7 +2618,7 @@ _INDEX_HTML = """
         await loadMetaOptions(evaluationId);
         return;
       }
-      document.getElementById("meta_evaluation_select").value = String(evaluationId);
+      selectMetaEvaluationById(evaluationId);
       await loadMetaEvaluation();
     }
 
@@ -3142,18 +3170,24 @@ _INDEX_HTML = """
     async function loadMetaOptions(selectedEvaluationId = null) {
       const response = await fetch("/api/meta-evaluations/options");
       const data = await response.json();
-      populateSelect("meta_evaluation_select", data.evaluations || [], "value", "label");
-      if (selectedEvaluationId) document.getElementById("meta_evaluation_select").value = String(selectedEvaluationId);
+      metaEvaluationOptions = data.evaluations || [];
+      if (selectedEvaluationId) selectMetaEvaluationById(selectedEvaluationId);
+      renderMetaEvaluationOptions(false);
       metaOptionsLoaded = true;
-      if (value("meta_evaluation_select")) await loadMetaEvaluation();
+      if (getMetaEvaluationId()) await loadMetaEvaluation();
       else renderMetaEvaluationState(null, []);
     }
 
     async function loadMetaEvaluation() {
-      const evaluationId = value("meta_evaluation_select");
+      const evaluationId = getMetaEvaluationId();
       if (!evaluationId) {
         renderMetaEvaluationState(null, []);
         setText("meta_status", "Nenhuma avaliacao J1 disponivel para meta-avaliacao.");
+        return;
+      }
+      if (!isValidMetaEvaluationId(evaluationId)) {
+        renderMetaEvaluationState(null, []);
+        setText("meta_status", "Digite um id numerico de avaliacao J1 valido.");
         return;
       }
       setText("meta_status", "Carregando avaliacao...");
@@ -3178,10 +3212,15 @@ _INDEX_HTML = """
     async function saveMetaEvaluation() {
       const evaluatorName = value("meta_evaluator_name").trim();
       const rationale = value("meta_rationale").trim();
-      const evaluationId = Number(value("meta_evaluation_select"));
+      const evaluationIdValue = getMetaEvaluationId();
+      const evaluationId = Number(evaluationIdValue);
       const metaEvaluationId = value("meta_editing_id") ? Number(value("meta_editing_id")) : null;
-      if (!evaluationId) {
+      if (!evaluationIdValue) {
         setText("meta_status", "Selecione uma avaliacao J1.");
+        return;
+      }
+      if (!isValidMetaEvaluationId(evaluationIdValue)) {
+        setText("meta_status", "Digite um id numerico de avaliacao J1 valido.");
         return;
       }
       if (!evaluatorName) {
@@ -3308,9 +3347,9 @@ _INDEX_HTML = """
     }
 
     async function deleteMetaEvaluation(metaEvaluationId) {
-      const evaluationId = Number(value("meta_evaluation_select"));
+      const evaluationId = Number(getMetaEvaluationId());
       if (!evaluationId || !metaEvaluationId) return;
-      if (!window.confirm("Excluir esta meta-avaliacao?")) return;
+      if (!(await requestMetaDelete())) return;
       try {
         const response = await fetch(`/api/meta-evaluations/${metaEvaluationId}?evaluation_id=${encodeURIComponent(evaluationId)}`, {
           method: "DELETE",
@@ -3556,6 +3595,69 @@ _INDEX_HTML = """
       }
     }
 
+    function isValidMetaEvaluationId(value) {
+      return /^[1-9]\\d*$/.test(String(value).trim());
+    }
+
+    function getMetaEvaluationId() {
+      const typedValue = value("meta_evaluation_select").trim();
+      if (selectedMetaEvaluationId) {
+        const selectedOption = metaEvaluationOptions.find((option) => String(option.value) === String(selectedMetaEvaluationId));
+        const selectedLabel = selectedOption ? String(selectedOption.label || selectedOption.value) : "";
+        if (typedValue === String(selectedMetaEvaluationId) || typedValue === selectedLabel) return String(selectedMetaEvaluationId);
+      }
+      return typedValue;
+    }
+
+    function selectMetaEvaluationById(evaluationId) {
+      const option = metaEvaluationOptions.find((item) => String(item.value) === String(evaluationId));
+      selectedMetaEvaluationId = String(evaluationId);
+      document.getElementById("meta_evaluation_select").value = option ? String(option.label || option.value) : String(evaluationId);
+    }
+
+    function clearMetaEvaluationSelection() {
+      selectedMetaEvaluationId = "";
+      document.getElementById("meta_evaluation_select").value = "";
+      document.getElementById("meta_evaluation_options").hidden = true;
+      resetMetaForm();
+      renderMetaEvaluationState(null, []);
+      setText("meta_status", "Selecione uma avaliacao J1 para iniciar a meta-avaliacao.");
+    }
+
+    function renderMetaEvaluationOptions(show = true) {
+      const list = document.getElementById("meta_evaluation_options");
+      const query = value("meta_evaluation_select").trim().toLowerCase();
+      const matches = metaEvaluationOptions.filter((option) => {
+        const optionValue = String(option.value || "");
+        const optionLabel = String(option.label || "");
+        return !query || optionValue.includes(query) || optionLabel.toLowerCase().includes(query);
+      }).slice(0, 40);
+      list.textContent = "";
+      if (!matches.length) {
+        const empty = document.createElement("div");
+        empty.className = "meta-option-empty";
+        empty.textContent = "Nenhuma avaliacao encontrada.";
+        list.appendChild(empty);
+        list.hidden = !show;
+        return;
+      }
+      for (const option of matches) {
+        const button = document.createElement("button");
+        button.className = "meta-option";
+        button.type = "button";
+        button.setAttribute("role", "option");
+        button.dataset.value = option.value;
+        button.textContent = option.label || option.value;
+        button.onclick = async () => {
+          selectMetaEvaluationById(option.value);
+          list.hidden = true;
+          await loadMetaEvaluation();
+        };
+        list.appendChild(button);
+      }
+      list.hidden = !show;
+    }
+
     async function putJson(url, body) {
       const response = await fetch(url, {
         method: "PUT",
@@ -3634,22 +3736,59 @@ _INDEX_HTML = """
         dialog.showModal();
       });
     }
+    function requestMetaDelete() {
+      const dialog = document.getElementById("meta-delete-dialog");
+      return new Promise((resolve) => {
+        const cancel = document.getElementById("meta-delete-cancel");
+        const deleteButton = document.getElementById("meta-delete-confirm");
+        let settled = false;
+        const cleanup = (accepted) => {
+          if (settled) return;
+          settled = true;
+          cancel.onclick = null;
+          deleteButton.onclick = null;
+          dialog.oncancel = null;
+          dialog.onclose = null;
+          if (dialog.open) dialog.close();
+          resolve(accepted);
+        };
+        cancel.onclick = () => cleanup(false);
+        deleteButton.onclick = () => cleanup(true);
+        dialog.oncancel = (event) => {
+          event.preventDefault();
+          cleanup(false);
+        };
+        dialog.onclose = () => cleanup(false);
+        dialog.showModal();
+      });
+    }
     for (const button of document.querySelectorAll(".tab-button")) {
       button.onclick = () => switchTab(button.dataset.tab);
     }
     document.getElementById("prompt_dataset").onchange = () => loadPromptConfig();
     document.getElementById("prompt_reload").onclick = () => loadPromptConfig();
     document.getElementById("prompt_save").onclick = () => savePromptConfig();
+    document.getElementById("meta_evaluation_select").onfocus = () => renderMetaEvaluationOptions();
+    document.getElementById("meta_evaluation_select").oninput = () => {
+      selectedMetaEvaluationId = "";
+      renderMetaEvaluationOptions();
+    };
     document.getElementById("meta_evaluation_select").onchange = () => loadMetaEvaluation();
+    document.getElementById("meta_evaluation_clear").onclick = () => clearMetaEvaluationSelection();
     document.getElementById("meta_reload").onclick = () => loadMetaEvaluation();
     document.getElementById("meta_cancel_edit").onclick = () => {
       resetMetaForm();
-      setText("meta_status", `Avaliacao ${display(value("meta_evaluation_select"))} carregada para meta-avaliacao.`);
+      setText("meta_status", `Avaliacao ${display(getMetaEvaluationId())} carregada para meta-avaliacao.`);
     };
     document.getElementById("meta_save").onclick = () => saveMetaEvaluation();
     document.getElementById("dashboard-refresh").onclick = loadDashboard;
     document.getElementById("dashboard-model-carousel-prev").onclick = () => moveCarousel(-1);
     document.getElementById("dashboard-model-carousel-next").onclick = () => moveCarousel(1);
+    document.addEventListener("click", (event) => {
+      if (!event.target.closest(".meta-evaluation-field")) {
+        document.getElementById("meta_evaluation_options").hidden = true;
+      }
+    });
     for (const tab of document.querySelectorAll("[data-carousel-index]")) {
       tab.onclick = () => goToCarouselPage(Number(tab.dataset.carouselIndex));
     }
