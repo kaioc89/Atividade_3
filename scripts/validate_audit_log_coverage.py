@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import re
 import sys
-from collections import Counter, defaultdict
+from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -91,8 +91,6 @@ class BackupEvaluation:
 
 @dataclass(frozen=True)
 class LogEvaluation:
-    run_id: str
-    timestamp: datetime
     answer_id: int
     judge_model: str
     role: str
@@ -101,17 +99,15 @@ class LogEvaluation:
 
 def main() -> int:
     errors: list[str] = []
-    missing_files = [name for name in PROD_LOG_NAMES if not (AUDIT_DIR / name).is_file()]
+    log_paths = [AUDIT_DIR / name for name in PROD_LOG_NAMES]
+    missing_files = [path.name for path in log_paths if not path.is_file()]
     if missing_files:
         errors.append(f"Missing production audit logs: {', '.join(missing_files)}")
 
-    secret_hits = _scan_for_secrets(AUDIT_DIR / name for name in PROD_LOG_NAMES if (AUDIT_DIR / name).is_file())
-    if secret_hits:
-        errors.append("Potential secret material found in versioned audit logs:")
-        errors.extend(f"  {hit}" for hit in secret_hits[:20])
-
+    existing_log_paths = [path for path in log_paths if path.is_file()]
+    secret_hits = _scan_for_secrets(existing_log_paths)
     evaluations = _load_backup_evaluations()
-    log_events = _load_log_evaluations(AUDIT_DIR / name for name in PROD_LOG_NAMES if (AUDIT_DIR / name).is_file())
+    log_events = _load_log_evaluations(existing_log_paths)
     missing_evaluations, extra_events = _match_evaluations(evaluations, log_events)
 
     if len(evaluations) != EXPECTED_EVALUATIONS:
@@ -119,6 +115,9 @@ def main() -> int:
     if missing_evaluations:
         errors.append(f"{len(missing_evaluations)} final evaluations were not found in production logs.")
         errors.extend(_format_missing(row) for row in missing_evaluations[:20])
+    if secret_hits:
+        errors.append("Potential secret material found in versioned audit logs:")
+        errors.extend(f"  {hit}" for hit in secret_hits[:20])
 
     print("Audit log coverage validation")
     print(f"- backup evaluations: {len(evaluations)}")
@@ -157,10 +156,9 @@ def _copy_rows(table_name: str) -> list[list[str]]:
 def _load_backup_evaluations() -> list[BackupEvaluation]:
     models: dict[int, tuple[str, str]] = {}
     for row in _copy_rows("modelos"):
-        model_id = int(row[0])
         name = row[1]
         version = row[2] if row[2] != r"\N" else name
-        models[model_id] = (name, version)
+        models[int(row[0])] = (name, version)
 
     evaluations: list[BackupEvaluation] = []
     for row in _copy_rows("avaliacoes_juiz"):
@@ -190,8 +188,6 @@ def _load_log_evaluations(paths: Iterable[Path]) -> list[LogEvaluation]:
             if {"answer_id", "model", "role", "score"} <= values.keys():
                 events.append(
                     LogEvaluation(
-                        run_id=path.stem,
-                        timestamp=datetime.fromisoformat(match.group("ts").strip()).replace(tzinfo=None),
                         answer_id=int(values["answer_id"]),
                         judge_model=values["model"].strip(),
                         role=values["role"].strip(),
@@ -224,10 +220,8 @@ def _scan_for_secrets(paths: Iterable[Path]) -> list[str]:
     findings: list[str] = []
     for path in paths:
         for line_number, line in enumerate(path.read_text(encoding="utf-8", errors="replace").splitlines(), start=1):
-            for pattern in SECRET_PATTERNS:
-                if pattern.search(line):
-                    findings.append(f"{path.relative_to(ROOT)}:{line_number}")
-                    break
+            if any(pattern.search(line) for pattern in SECRET_PATTERNS):
+                findings.append(f"{path.relative_to(ROOT)}:{line_number}")
     return findings
 
 
