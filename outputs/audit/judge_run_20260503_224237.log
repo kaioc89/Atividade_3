@@ -1,0 +1,42 @@
+2026-05-03T22:42:37+00:00 | audit_log_started | path=outputs/audit/judge_run_20260503_224237.log
+2026-05-03T22:42:37+00:00 | START Loading configuration
+2026-05-03T22:42:37+00:00 | DONE Loading configuration | elapsed_ms=0
+2026-05-03T22:42:37+00:00 | START Resolving judge mode and models | panel_mode_cli=provided judge_model_cli=provided secondary_judge_cli=provided arbiter_cli=provided execution_strategy_cli=provided
+2026-05-03T22:42:37+00:00 | DONE Resolving judge mode and models | panel_mode_cli=provided judge_model_cli=provided secondary_judge_cli=provided arbiter_cli=provided execution_strategy_cli=provided elapsed_ms=0
+2026-05-03T22:42:37+00:00 | execution_summary | Judge provider: remote_http | Judge mode: 2plus1 | Judge execution strategy: adaptive | Primary judges: | - Unbabel/M-Prometheus-14B | endpoint=api.featherless.ai | - meta-llama/Llama-3.3-70B-Instruct | endpoint=api.featherless.ai | Arbiter: | - openai/gpt-oss-120b | endpoint=api.featherless.ai | Arbitration min delta: 2 | Always run arbiter: false | Model source: CLI --judge-model / CLI --secondary-judge-model / CLI --arbiter-judge-model
+2026-05-03T22:42:37+00:00 | command_preview | .venv/bin/python -m atividade_2.cli run-judge --panel-mode 2plus1 --dataset J1 --batch-size 1 --judge-execution-strategy adaptive --judge-model Unbabel/M-Prometheus-14B --secondary-judge-model meta-llama/Llama-3.3-70B-Instruct --arbiter-judge-model openai/gpt-oss-120b
+2026-05-03T22:42:37+00:00 | START Connecting to local PostgreSQL | DATABASE_URL=<redacted>
+2026-05-03T22:42:37+00:00 | DONE Connecting to local PostgreSQL | DATABASE_URL=<redacted> elapsed_ms=9
+2026-05-03T22:42:37+00:00 | START Ensuring judge metadata schema
+2026-05-03T22:42:37+00:00 | DONE Ensuring judge metadata schema | elapsed_ms=15
+2026-05-03T22:42:37+00:00 | START Counting eligible answers for J1 | dataset=J1 batch_size=1
+2026-05-03T22:42:37+00:00 | DONE Counting eligible answers for J1 | dataset=J1 batch_size=1 elapsed_ms=3
+2026-05-03T22:42:37+00:00 | eligibility_summary | missing=1 failed=0 successful=209 will_process=1
+2026-05-03T22:42:37+00:00 | START Selecting pending candidate answers for J1 | dataset=J1 batch_size=1
+2026-05-03T22:42:37+00:00 | DONE Selecting pending candidate answers for J1 | dataset=J1 batch_size=1 elapsed_ms=5
+2026-05-03T22:42:37+00:00 | answers_selected | count=1
+2026-05-03T22:42:37+00:00 | START Running judge pipeline | answers=1 mode=2plus1
+2026-05-03T22:42:37+00:00 | evaluation_skipped | answer_id=1499 model=meta-llama/Llama-3.3-70B-Instruct role=controle mode=2plus1 existing_score=2
+2026-05-03T22:42:37+00:00 | adaptive_concurrency_initial | provider=remote_http base_url=https://api.featherless.ai/v1 api_key=a3672be7 model=Unbabel/M-Prometheus-14B initial_concurrency=1 max_concurrency=4
+2026-05-03T22:42:37+00:00 | START Running answer 1499 with Unbabel/M-Prometheus-14B | answer_id=1499 question_id=77 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:42:55+00:00 | FAIL Running answer 1499 with Unbabel/M-Prometheus-14B | answer_id=1499 question_id=77 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel error=Remote judge returned HTTP 503: Unbabel/M-Prometheus-14B is temporarily at capacity. Please try again shortly. elapsed_ms=17674
+2026-05-03T22:42:55+00:00 | adaptive_task_requeued | provider=remote_http base_url=https://api.featherless.ai/v1 api_key=a3672be7 model=Unbabel/M-Prometheus-14B answer_id=1499 role=principal attempt=1 backoff_seconds=2.982 error=Remote judge returned HTTP 503: Unbabel/M-Prometheus-14B is temporarily at capacity. Please try again shortly.
+2026-05-03T22:42:58+00:00 | START Running answer 1499 with Unbabel/M-Prometheus-14B | answer_id=1499 question_id=77 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:43:29+00:00 | DONE Running answer 1499 with Unbabel/M-Prometheus-14B | answer_id=1499 question_id=77 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=31547
+2026-05-03T22:43:29+00:00 | START Parsing judge response for answer 1499 | answer_id=1499 question_id=77 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:43:29+00:00 | DONE Parsing judge response for answer 1499 | answer_id=1499 question_id=77 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=0
+2026-05-03T22:43:29+00:00 | evaluation_parsed | answer_id=1499 question_id=77 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel score=1 latency_ms=31547 status_code=200
+2026-05-03T22:43:29+00:00 | START Persisting evaluation for answer 1499 | answer_id=1499 model=Unbabel/M-Prometheus-14B role=principal score=1
+2026-05-03T22:43:29+00:00 | DONE Persisting evaluation for answer 1499 | answer_id=1499 model=Unbabel/M-Prometheus-14B role=principal score=1 elapsed_ms=4
+2026-05-03T22:43:29+00:00 | batch_progress | current=1 total=1 percent=100 executed=1 skipped=1 arbiters=0
+2026-05-03T22:43:29+00:00 | eligibility_progress | missing=0 failed=0 successful=210 will_process=0
+2026-05-03T22:43:29+00:00 | arbiter_skipped | answer_id=1499 score_delta=1 threshold=2
+2026-05-03T22:43:29+00:00 | batch_progress | current=1 total=1 percent=100 executed=1 skipped=1 arbiters=0
+2026-05-03T22:43:29+00:00 | eligibility_progress | missing=0 failed=0 successful=210 will_process=0
+2026-05-03T22:43:29+00:00 | adaptive_concurrency_final | provider=remote_http base_url=https://api.featherless.ai/v1 api_key=a3672be7 model=Unbabel/M-Prometheus-14B final_concurrency=1 successes=1 failures=1 timeouts=0 rate_limits=0 retries=1 requeued=1 disabled=False
+2026-05-03T22:43:29+00:00 | DONE Running judge pipeline | answers=1 mode=2plus1 elapsed_ms=52234
+2026-05-03T22:43:29+00:00 | eligibility_final | missing=0 failed=0 successful=210 will_process=0
+2026-05-03T22:43:29+00:00 | START Closing PostgreSQL connection
+2026-05-03T22:43:29+00:00 | DONE Closing PostgreSQL connection | elapsed_ms=0
+2026-05-03T22:43:29+00:00 | execution_result | selected=1 executed=1 skipped=1 arbiters=0
+2026-05-03T22:43:29+00:00 | audit_log_finished

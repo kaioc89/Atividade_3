@@ -1,0 +1,120 @@
+2026-05-03T22:22:41+00:00 | audit_log_started | path=outputs/audit/judge_run_20260503_222241.log
+2026-05-03T22:22:41+00:00 | START Loading configuration
+2026-05-03T22:22:41+00:00 | DONE Loading configuration | elapsed_ms=0
+2026-05-03T22:22:41+00:00 | START Resolving judge mode and models | panel_mode_cli=provided judge_model_cli=provided secondary_judge_cli=provided arbiter_cli=provided execution_strategy_cli=provided
+2026-05-03T22:22:41+00:00 | DONE Resolving judge mode and models | panel_mode_cli=provided judge_model_cli=provided secondary_judge_cli=provided arbiter_cli=provided execution_strategy_cli=provided elapsed_ms=0
+2026-05-03T22:22:41+00:00 | execution_summary | Judge provider: remote_http | Judge mode: 2plus1 | Judge execution strategy: adaptive | Primary judges: | - Unbabel/M-Prometheus-14B | endpoint=api.featherless.ai | - meta-llama/Llama-3.3-70B-Instruct | endpoint=api.featherless.ai | Arbiter: | - openai/gpt-oss-120b | endpoint=api.featherless.ai | Arbitration min delta: 2 | Always run arbiter: false | Model source: CLI --judge-model / CLI --secondary-judge-model / CLI --arbiter-judge-model
+2026-05-03T22:22:41+00:00 | command_preview | .venv/bin/python -m atividade_2.cli run-judge --panel-mode 2plus1 --dataset J1 --batch-size 10 --judge-execution-strategy adaptive --judge-model Unbabel/M-Prometheus-14B --secondary-judge-model meta-llama/Llama-3.3-70B-Instruct --arbiter-judge-model openai/gpt-oss-120b
+2026-05-03T22:22:41+00:00 | START Connecting to local PostgreSQL | DATABASE_URL=<redacted>
+2026-05-03T22:22:41+00:00 | DONE Connecting to local PostgreSQL | DATABASE_URL=<redacted> elapsed_ms=10
+2026-05-03T22:22:41+00:00 | START Ensuring judge metadata schema
+2026-05-03T22:22:41+00:00 | DONE Ensuring judge metadata schema | elapsed_ms=15
+2026-05-03T22:22:41+00:00 | START Counting eligible answers for J1 | dataset=J1 batch_size=10
+2026-05-03T22:22:41+00:00 | DONE Counting eligible answers for J1 | dataset=J1 batch_size=10 elapsed_ms=3
+2026-05-03T22:22:41+00:00 | eligibility_summary | missing=61 failed=0 successful=149 will_process=10
+2026-05-03T22:22:41+00:00 | START Selecting pending candidate answers for J1 | dataset=J1 batch_size=10
+2026-05-03T22:22:41+00:00 | DONE Selecting pending candidate answers for J1 | dataset=J1 batch_size=10 elapsed_ms=6
+2026-05-03T22:22:41+00:00 | answers_selected | count=10
+2026-05-03T22:22:41+00:00 | START Running judge pipeline | answers=10 mode=2plus1
+2026-05-03T22:22:41+00:00 | evaluation_skipped | answer_id=1499 model=meta-llama/Llama-3.3-70B-Instruct role=controle mode=2plus1 existing_score=2
+2026-05-03T22:22:41+00:00 | evaluation_skipped | answer_id=1990 model=meta-llama/Llama-3.3-70B-Instruct role=controle mode=2plus1 existing_score=4
+2026-05-03T22:22:41+00:00 | evaluation_skipped | answer_id=1991 model=meta-llama/Llama-3.3-70B-Instruct role=controle mode=2plus1 existing_score=4
+2026-05-03T22:22:41+00:00 | evaluation_skipped | answer_id=1992 model=meta-llama/Llama-3.3-70B-Instruct role=controle mode=2plus1 existing_score=4
+2026-05-03T22:22:41+00:00 | evaluation_skipped | answer_id=1993 model=meta-llama/Llama-3.3-70B-Instruct role=controle mode=2plus1 existing_score=4
+2026-05-03T22:22:41+00:00 | evaluation_skipped | answer_id=1994 model=meta-llama/Llama-3.3-70B-Instruct role=controle mode=2plus1 existing_score=4
+2026-05-03T22:22:41+00:00 | evaluation_skipped | answer_id=1995 model=meta-llama/Llama-3.3-70B-Instruct role=controle mode=2plus1 existing_score=4
+2026-05-03T22:22:41+00:00 | evaluation_skipped | answer_id=1996 model=meta-llama/Llama-3.3-70B-Instruct role=controle mode=2plus1 existing_score=4
+2026-05-03T22:22:41+00:00 | evaluation_skipped | answer_id=1997 model=meta-llama/Llama-3.3-70B-Instruct role=controle mode=2plus1 existing_score=4
+2026-05-03T22:22:41+00:00 | evaluation_skipped | answer_id=1998 model=meta-llama/Llama-3.3-70B-Instruct role=controle mode=2plus1 existing_score=5
+2026-05-03T22:22:41+00:00 | adaptive_concurrency_initial | provider=remote_http base_url=https://api.featherless.ai/v1 api_key=a3672be7 model=Unbabel/M-Prometheus-14B initial_concurrency=1 max_concurrency=4
+2026-05-03T22:22:41+00:00 | START Running answer 1499 with Unbabel/M-Prometheus-14B | answer_id=1499 question_id=77 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:22:58+00:00 | FAIL Running answer 1499 with Unbabel/M-Prometheus-14B | answer_id=1499 question_id=77 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel error=Remote judge returned HTTP 503: Unbabel/M-Prometheus-14B is temporarily at capacity. Please try again shortly. elapsed_ms=17118
+2026-05-03T22:22:58+00:00 | adaptive_task_requeued | provider=remote_http base_url=https://api.featherless.ai/v1 api_key=a3672be7 model=Unbabel/M-Prometheus-14B answer_id=1499 role=principal attempt=1 backoff_seconds=2.212 error=Remote judge returned HTTP 503: Unbabel/M-Prometheus-14B is temporarily at capacity. Please try again shortly.
+2026-05-03T22:23:00+00:00 | START Running answer 1990 with Unbabel/M-Prometheus-14B | answer_id=1990 question_id=121 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:23:17+00:00 | FAIL Running answer 1990 with Unbabel/M-Prometheus-14B | answer_id=1990 question_id=121 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel error=Remote judge returned HTTP 503: Unbabel/M-Prometheus-14B is temporarily at capacity. Please try again shortly. elapsed_ms=17146
+2026-05-03T22:23:17+00:00 | adaptive_task_requeued | provider=remote_http base_url=https://api.featherless.ai/v1 api_key=a3672be7 model=Unbabel/M-Prometheus-14B answer_id=1990 role=principal attempt=1 backoff_seconds=2.736 error=Remote judge returned HTTP 503: Unbabel/M-Prometheus-14B is temporarily at capacity. Please try again shortly.
+2026-05-03T22:23:20+00:00 | START Running answer 1991 with Unbabel/M-Prometheus-14B | answer_id=1991 question_id=121 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:23:38+00:00 | FAIL Running answer 1991 with Unbabel/M-Prometheus-14B | answer_id=1991 question_id=121 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel error=Remote judge returned HTTP 503: Unbabel/M-Prometheus-14B is temporarily at capacity. Please try again shortly. elapsed_ms=17534
+2026-05-03T22:23:38+00:00 | adaptive_task_requeued | provider=remote_http base_url=https://api.featherless.ai/v1 api_key=a3672be7 model=Unbabel/M-Prometheus-14B answer_id=1991 role=principal attempt=1 backoff_seconds=2.034 error=Remote judge returned HTTP 503: Unbabel/M-Prometheus-14B is temporarily at capacity. Please try again shortly.
+2026-05-03T22:23:40+00:00 | START Running answer 1992 with Unbabel/M-Prometheus-14B | answer_id=1992 question_id=121 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:23:57+00:00 | FAIL Running answer 1992 with Unbabel/M-Prometheus-14B | answer_id=1992 question_id=121 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel error=Remote judge returned HTTP 503: Unbabel/M-Prometheus-14B is temporarily at capacity. Please try again shortly. elapsed_ms=17205
+2026-05-03T22:23:57+00:00 | adaptive_task_requeued | provider=remote_http base_url=https://api.featherless.ai/v1 api_key=a3672be7 model=Unbabel/M-Prometheus-14B answer_id=1992 role=principal attempt=1 backoff_seconds=2.377 error=Remote judge returned HTTP 503: Unbabel/M-Prometheus-14B is temporarily at capacity. Please try again shortly.
+2026-05-03T22:23:59+00:00 | START Running answer 1993 with Unbabel/M-Prometheus-14B | answer_id=1993 question_id=122 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:24:17+00:00 | FAIL Running answer 1993 with Unbabel/M-Prometheus-14B | answer_id=1993 question_id=122 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel error=Remote judge returned HTTP 503: Unbabel/M-Prometheus-14B is temporarily at capacity. Please try again shortly. elapsed_ms=17504
+2026-05-03T22:24:17+00:00 | adaptive_task_requeued | provider=remote_http base_url=https://api.featherless.ai/v1 api_key=a3672be7 model=Unbabel/M-Prometheus-14B answer_id=1993 role=principal attempt=1 backoff_seconds=2.727 error=Remote judge returned HTTP 503: Unbabel/M-Prometheus-14B is temporarily at capacity. Please try again shortly.
+2026-05-03T22:24:20+00:00 | START Running answer 1994 with Unbabel/M-Prometheus-14B | answer_id=1994 question_id=122 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:24:51+00:00 | DONE Running answer 1994 with Unbabel/M-Prometheus-14B | answer_id=1994 question_id=122 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=31209
+2026-05-03T22:24:51+00:00 | START Parsing judge response for answer 1994 | answer_id=1994 question_id=122 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:24:51+00:00 | DONE Parsing judge response for answer 1994 | answer_id=1994 question_id=122 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=0
+2026-05-03T22:24:51+00:00 | evaluation_parsed | answer_id=1994 question_id=122 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel score=4 latency_ms=31209 status_code=200
+2026-05-03T22:24:51+00:00 | START Running answer 1995 with Unbabel/M-Prometheus-14B | answer_id=1995 question_id=122 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:25:02+00:00 | DONE Running answer 1995 with Unbabel/M-Prometheus-14B | answer_id=1995 question_id=122 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=11494
+2026-05-03T22:25:02+00:00 | START Parsing judge response for answer 1995 | answer_id=1995 question_id=122 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:25:02+00:00 | DONE Parsing judge response for answer 1995 | answer_id=1995 question_id=122 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=0
+2026-05-03T22:25:02+00:00 | evaluation_parsed | answer_id=1995 question_id=122 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel score=4 latency_ms=11494 status_code=200
+2026-05-03T22:25:02+00:00 | START Running answer 1996 with Unbabel/M-Prometheus-14B | answer_id=1996 question_id=123 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:25:17+00:00 | DONE Running answer 1996 with Unbabel/M-Prometheus-14B | answer_id=1996 question_id=123 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=14181
+2026-05-03T22:25:17+00:00 | START Parsing judge response for answer 1996 | answer_id=1996 question_id=123 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:25:17+00:00 | DONE Parsing judge response for answer 1996 | answer_id=1996 question_id=123 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=0
+2026-05-03T22:25:17+00:00 | evaluation_parsed | answer_id=1996 question_id=123 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel score=4 latency_ms=14180 status_code=200
+2026-05-03T22:25:17+00:00 | START Running answer 1997 with Unbabel/M-Prometheus-14B | answer_id=1997 question_id=123 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:25:29+00:00 | DONE Running answer 1997 with Unbabel/M-Prometheus-14B | answer_id=1997 question_id=123 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=12640
+2026-05-03T22:25:29+00:00 | START Parsing judge response for answer 1997 | answer_id=1997 question_id=123 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:25:29+00:00 | DONE Parsing judge response for answer 1997 | answer_id=1997 question_id=123 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=0
+2026-05-03T22:25:29+00:00 | evaluation_parsed | answer_id=1997 question_id=123 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel score=4 latency_ms=12640 status_code=200
+2026-05-03T22:25:29+00:00 | START Running answer 1998 with Unbabel/M-Prometheus-14B | answer_id=1998 question_id=123 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:25:40+00:00 | DONE Running answer 1998 with Unbabel/M-Prometheus-14B | answer_id=1998 question_id=123 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=11159
+2026-05-03T22:25:40+00:00 | START Parsing judge response for answer 1998 | answer_id=1998 question_id=123 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:25:40+00:00 | DONE Parsing judge response for answer 1998 | answer_id=1998 question_id=123 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=0
+2026-05-03T22:25:40+00:00 | evaluation_parsed | answer_id=1998 question_id=123 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel score=4 latency_ms=11159 status_code=200
+2026-05-03T22:25:40+00:00 | adaptive_concurrency_increased | provider=remote_http base_url=https://api.featherless.ai/v1 api_key=a3672be7 model=Unbabel/M-Prometheus-14B from=1 to=2 successes=5
+2026-05-03T22:25:40+00:00 | START Running answer 1499 with Unbabel/M-Prometheus-14B | answer_id=1499 question_id=77 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:25:40+00:00 | START Running answer 1990 with Unbabel/M-Prometheus-14B | answer_id=1990 question_id=121 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:25:53+00:00 | DONE Running answer 1499 with Unbabel/M-Prometheus-14B | answer_id=1499 question_id=77 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=12475
+2026-05-03T22:25:53+00:00 | START Parsing judge response for answer 1499 | answer_id=1499 question_id=77 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:25:53+00:00 | FAIL Parsing judge response for answer 1499 | answer_id=1499 question_id=77 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel error=Judge response does not contain a JSON object. Preview: { "score": 1, "rationale": "A resposta apresenta graves erros conceituais e normativos. Inventa artigos inexistentes como 'artigo nº 186 ("Empujonar")' e 'Decre elapsed_ms=0
+2026-05-03T22:25:53+00:00 | adaptive_task_failed | provider=remote_http base_url=https://api.featherless.ai/v1 api_key=a3672be7 model=Unbabel/M-Prometheus-14B answer_id=1499 role=principal attempts=2 discarded_pending=3 error=Judge response does not contain a JSON object. Preview: { "score": 1, "rationale": "A resposta apresenta graves erros conceituais e normativos. Inventa artigos inexistentes como 'artigo nº 186 ("Empujonar")' e 'Decre
+2026-05-03T22:25:53+00:00 | adaptive_group_disabled | provider=remote_http base_url=https://api.featherless.ai/v1 api_key=a3672be7 model=Unbabel/M-Prometheus-14B discarded_pending=3 error=Judge response does not contain a JSON object. Preview: { "score": 1, "rationale": "A resposta apresenta graves erros conceituais e normativos. Inventa artigos inexistentes como 'artigo nº 186 ("Empujonar")' e 'Decre
+2026-05-03T22:25:53+00:00 | DONE Running answer 1990 with Unbabel/M-Prometheus-14B | answer_id=1990 question_id=121 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=13096
+2026-05-03T22:25:53+00:00 | START Parsing judge response for answer 1990 | answer_id=1990 question_id=121 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel
+2026-05-03T22:25:53+00:00 | DONE Parsing judge response for answer 1990 | answer_id=1990 question_id=121 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel elapsed_ms=0
+2026-05-03T22:25:53+00:00 | evaluation_parsed | answer_id=1990 question_id=121 model=Unbabel/M-Prometheus-14B role=principal trigger=primary_panel score=4 latency_ms=13096 status_code=200
+2026-05-03T22:25:53+00:00 | START Persisting evaluation for answer 1994 | answer_id=1994 model=Unbabel/M-Prometheus-14B role=principal score=4
+2026-05-03T22:25:53+00:00 | DONE Persisting evaluation for answer 1994 | answer_id=1994 model=Unbabel/M-Prometheus-14B role=principal score=4 elapsed_ms=5
+2026-05-03T22:25:53+00:00 | batch_progress | current=10 total=10 percent=100 executed=1 skipped=10 arbiters=0
+2026-05-03T22:25:53+00:00 | eligibility_progress | missing=60 failed=0 successful=150 will_process=10
+2026-05-03T22:25:53+00:00 | START Persisting evaluation for answer 1995 | answer_id=1995 model=Unbabel/M-Prometheus-14B role=principal score=4
+2026-05-03T22:25:53+00:00 | DONE Persisting evaluation for answer 1995 | answer_id=1995 model=Unbabel/M-Prometheus-14B role=principal score=4 elapsed_ms=1
+2026-05-03T22:25:53+00:00 | batch_progress | current=10 total=10 percent=100 executed=2 skipped=10 arbiters=0
+2026-05-03T22:25:53+00:00 | eligibility_progress | missing=59 failed=0 successful=151 will_process=10
+2026-05-03T22:25:53+00:00 | START Persisting evaluation for answer 1996 | answer_id=1996 model=Unbabel/M-Prometheus-14B role=principal score=4
+2026-05-03T22:25:53+00:00 | DONE Persisting evaluation for answer 1996 | answer_id=1996 model=Unbabel/M-Prometheus-14B role=principal score=4 elapsed_ms=1
+2026-05-03T22:25:53+00:00 | batch_progress | current=10 total=10 percent=100 executed=3 skipped=10 arbiters=0
+2026-05-03T22:25:53+00:00 | eligibility_progress | missing=58 failed=0 successful=152 will_process=10
+2026-05-03T22:25:53+00:00 | START Persisting evaluation for answer 1997 | answer_id=1997 model=Unbabel/M-Prometheus-14B role=principal score=4
+2026-05-03T22:25:53+00:00 | DONE Persisting evaluation for answer 1997 | answer_id=1997 model=Unbabel/M-Prometheus-14B role=principal score=4 elapsed_ms=1
+2026-05-03T22:25:53+00:00 | batch_progress | current=10 total=10 percent=100 executed=4 skipped=10 arbiters=0
+2026-05-03T22:25:53+00:00 | eligibility_progress | missing=57 failed=0 successful=153 will_process=10
+2026-05-03T22:25:53+00:00 | START Persisting evaluation for answer 1998 | answer_id=1998 model=Unbabel/M-Prometheus-14B role=principal score=4
+2026-05-03T22:25:53+00:00 | DONE Persisting evaluation for answer 1998 | answer_id=1998 model=Unbabel/M-Prometheus-14B role=principal score=4 elapsed_ms=0
+2026-05-03T22:25:53+00:00 | batch_progress | current=10 total=10 percent=100 executed=5 skipped=10 arbiters=0
+2026-05-03T22:25:53+00:00 | eligibility_progress | missing=56 failed=0 successful=154 will_process=10
+2026-05-03T22:25:53+00:00 | START Persisting evaluation for answer 1990 | answer_id=1990 model=Unbabel/M-Prometheus-14B role=principal score=4
+2026-05-03T22:25:53+00:00 | DONE Persisting evaluation for answer 1990 | answer_id=1990 model=Unbabel/M-Prometheus-14B role=principal score=4 elapsed_ms=1
+2026-05-03T22:25:53+00:00 | batch_progress | current=10 total=10 percent=100 executed=6 skipped=10 arbiters=0
+2026-05-03T22:25:53+00:00 | eligibility_progress | missing=55 failed=0 successful=155 will_process=10
+2026-05-03T22:25:53+00:00 | arbiter_skipped | answer_id=1990 score_delta=0 threshold=2
+2026-05-03T22:25:53+00:00 | arbiter_skipped | answer_id=1994 score_delta=0 threshold=2
+2026-05-03T22:25:53+00:00 | arbiter_skipped | answer_id=1995 score_delta=0 threshold=2
+2026-05-03T22:25:53+00:00 | arbiter_skipped | answer_id=1996 score_delta=0 threshold=2
+2026-05-03T22:25:53+00:00 | arbiter_skipped | answer_id=1997 score_delta=0 threshold=2
+2026-05-03T22:25:53+00:00 | arbiter_skipped | answer_id=1998 score_delta=1 threshold=2
+2026-05-03T22:25:53+00:00 | batch_progress | current=10 total=10 percent=100 executed=6 skipped=10 arbiters=0
+2026-05-03T22:25:53+00:00 | eligibility_progress | missing=55 failed=0 successful=155 will_process=10
+2026-05-03T22:25:53+00:00 | adaptive_concurrency_final | provider=remote_http base_url=https://api.featherless.ai/v1 api_key=a3672be7 model=Unbabel/M-Prometheus-14B final_concurrency=2 successes=6 failures=6 timeouts=0 rate_limits=0 retries=5 requeued=5 disabled=True
+2026-05-03T22:25:53+00:00 | DONE Running judge pipeline | answers=10 mode=2plus1 elapsed_ms=192489
+2026-05-03T22:25:53+00:00 | eligibility_final | missing=55 failed=0 successful=155 will_process=10
+2026-05-03T22:25:53+00:00 | START Closing PostgreSQL connection
+2026-05-03T22:25:53+00:00 | DONE Closing PostgreSQL connection | elapsed_ms=0
+2026-05-03T22:25:53+00:00 | execution_result | selected=10 executed=6 skipped=10 arbiters=0
+2026-05-03T22:25:53+00:00 | audit_log_finished
