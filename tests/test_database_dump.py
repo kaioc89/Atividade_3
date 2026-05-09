@@ -5,7 +5,7 @@ from atividade_2 import database_dump
 from atividade_2.database_dump import DatabaseDumpService, DatabaseResetService
 
 
-def test_create_dump_writes_only_history_outside_prod(monkeypatch, tmp_path) -> None:
+def test_create_dump_updates_root_backup_outside_prod(monkeypatch, tmp_path) -> None:
     output_dir = tmp_path / "outputs" / "backup"
     root_backup = tmp_path / "backup_atividade_2.sql"
 
@@ -24,6 +24,7 @@ def test_create_dump_writes_only_history_outside_prod(monkeypatch, tmp_path) -> 
         settings_loader=lambda: SimpleNamespace(
             app_env="dev",
             database_url="postgresql://postgres:postgres@localhost:5432/app_dev",
+            backup_root_file=str(root_backup),
         ),
         now=lambda: database_dump.datetime(2026, 5, 2, 9, 30, 0),
     )
@@ -32,12 +33,13 @@ def test_create_dump_writes_only_history_outside_prod(monkeypatch, tmp_path) -> 
 
     history_backup = output_dir / "atividade_2_20260502_093000.sql"
     assert history_backup.read_text(encoding="utf-8") == "SELECT 1;\n"
-    assert not root_backup.exists()
+    assert root_backup.read_text(encoding="utf-8") == "SELECT 1;\n"
     assert result.path == str(history_backup.resolve())
     assert result.filename == "atividade_2_20260502_093000.sql"
+    assert result.delivery == "local"
 
 
-def test_create_dump_updates_root_backup_in_prod(monkeypatch, tmp_path) -> None:
+def test_create_dump_uses_browser_download_in_prod(monkeypatch, tmp_path) -> None:
     output_dir = tmp_path / "outputs" / "backup"
     root_backup = tmp_path / "backup_atividade_2.sql"
 
@@ -60,9 +62,11 @@ def test_create_dump_updates_root_backup_in_prod(monkeypatch, tmp_path) -> None:
         now=lambda: database_dump.datetime(2026, 5, 2, 9, 30, 0),
     )
 
-    service.create_dump()
+    result = service.create_dump()
 
-    assert root_backup.read_text(encoding="utf-8") == "SELECT 1;\n"
+    assert not root_backup.exists()
+    assert result.delivery == "browser_download"
+    assert result.download_url == "/api/database-dumps/atividade_2_20260502_093000.sql"
 
 
 def test_restore_backup_adds_dashboard_compatibility_columns(monkeypatch, tmp_path) -> None:

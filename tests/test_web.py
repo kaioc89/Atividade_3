@@ -619,6 +619,7 @@ class FakeDumpService:
             size_bytes=2048,
             created_at="2026-04-30T12:00:00",
             download_url="/api/database-dumps/atividade_2_20260430_120000.sql",
+            delivery="browser_download",
         )
 
 
@@ -1127,6 +1128,7 @@ def test_database_dump_endpoint_returns_download_metadata() -> None:
     data = response.json()
     assert data["filename"] == "atividade_2_20260430_120000.sql"
     assert data["download_url"] == "/api/database-dumps/atividade_2_20260430_120000.sql"
+    assert data["delivery"] == "browser_download"
     assert dump_service.calls == 1
 
 
