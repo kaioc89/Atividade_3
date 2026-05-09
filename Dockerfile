@@ -17,6 +17,7 @@ RUN apt-get update \
 
 COPY pyproject.toml README.md backup_atividade_2_reset.sql ./
 COPY src ./src
+COPY outputs/audit ./outputs/audit
 
 RUN python -m pip install --no-cache-dir --upgrade pip \
     && python -m pip install --no-cache-dir -e .
