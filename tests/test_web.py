@@ -568,6 +568,7 @@ class FakeDashboardService:
                 "critical_cases": [
                     {
                         "reason": "nota 1",
+                        "evaluation_id": 101,
                         "dataset": "J1",
                         "answer_id": 10,
                         "question_id": 20,
@@ -928,6 +929,21 @@ def test_dashboard_tab_selection_always_refreshes_dashboard_data() -> None:
     assert response.status_code == 200
     assert 'if (targetId === "dashboard-panel") loadDashboard();' in response.text
     assert 'if (targetId === "dashboard-panel" && !dashboardLoaded) loadDashboard();' not in response.text
+
+
+def test_web_dashboard_cases_include_audit_action_for_meta_evaluation() -> None:
+    client = TestClient(create_app(FakeRunJudgeService(), dashboard_service=FakeDashboardService()))
+
+    response = client.get("/")
+
+    assert response.status_code == 200
+    assert "<th>Auditar</th>" in response.text
+    assert "function appendAuditCell" in response.text
+    assert "function openMetaEvaluation" in response.text
+    assert 'button.textContent = "Auditar";' in response.text
+    assert 'activateTab("meta-panel");' in response.text
+    assert 'window.scrollTo({top: 0, left: 0, behavior: "auto"});' in response.text
+    assert "await loadMetaOptions(evaluationId);" in response.text
 
 
 def test_web_index_contains_prompt_judges_tab() -> None:
