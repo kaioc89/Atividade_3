@@ -25,6 +25,7 @@ class DatabaseDumpResult:
     size_bytes: int
     created_at: str
     download_url: str
+    delivery: str
 
 
 class DatabaseDumpService:
@@ -68,7 +69,8 @@ class DatabaseDumpService:
 
         configured_root_backup_file = Path(getattr(settings, "backup_root_file", self.root_backup_file))
         root_backup_path = configured_root_backup_file.resolve()
-        if settings.app_env == "prod" and output_path != root_backup_path:
+        delivery = "browser_download" if settings.app_env == "prod" else "local"
+        if delivery == "local" and output_path != root_backup_path:
             shutil.copy2(output_path, root_backup_path)
 
         return DatabaseDumpResult(
@@ -77,6 +79,7 @@ class DatabaseDumpService:
             size_bytes=output_path.stat().st_size,
             created_at=created_at.isoformat(),
             download_url=f"/api/database-dumps/{filename}",
+            delivery=delivery,
         )
 
 

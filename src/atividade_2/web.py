@@ -3576,6 +3576,13 @@ _INDEX_HTML = """
       setText("database-dump-size", `${Math.round((data.size_bytes || 0) / 1024)} KB`);
       document.getElementById("database-dump-dialog").showModal();
     }
+    function handleDatabaseDumpResult(data) {
+      if (data.delivery === "browser_download" && data.download_url) {
+        window.open(data.download_url, "_blank", "noopener");
+        return;
+      }
+      showDatabaseDumpDialog(data);
+    }
     function confirmDatabaseClean() {
       const dialog = document.getElementById("database-clean-dialog");
       return new Promise((resolve) => {
@@ -3657,7 +3664,7 @@ _INDEX_HTML = """
       try {
         status.textContent = "Gerando dump antes de limpar...";
         const dumpData = await postJson("/api/database-dumps", {});
-        showDatabaseDumpDialog(dumpData);
+        handleDatabaseDumpResult(dumpData);
         status.textContent = "Restaurando banco para o estado inicial...";
         const data = await postJson("/api/database-reset", {});
         status.textContent = data.message || "Banco restaurado para o estado inicial.";
@@ -3702,7 +3709,7 @@ _INDEX_HTML = """
       try {
         const data = await postJson("/api/database-dumps", {});
         status.textContent = "";
-        showDatabaseDumpDialog(data);
+        handleDatabaseDumpResult(data);
       } catch (error) {
         status.textContent = friendlyErrorMessage(error.message);
       } finally {
