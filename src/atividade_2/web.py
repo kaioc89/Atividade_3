@@ -19,6 +19,7 @@ from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse, Response
 from pydantic import BaseModel, Field
 
+from .assistant import AssistantService
 from .audit_log_service import AuditLogSummaryService
 from .config import ConfigurationError
 from .contracts import BatchProgress, EligibilitySummary, EvaluationProgress, PipelineSummary
@@ -115,6 +116,10 @@ class MetaEvaluationPayload(BaseModel):
     evaluator_name: str
     score: int = Field(ge=1, le=5)
     rationale: str
+
+
+class AssistantPayload(BaseModel):
+    message: str = Field(min_length=1)
 
 
 @dataclass
@@ -267,6 +272,7 @@ def create_app(
     judge_prompt_service: JudgePromptConfigService | None = None,
     meta_evaluation_service: MetaEvaluationService | None = None,
     audit_log_summary_service: AuditLogSummaryService | None = None,
+    assistant_service: AssistantService | None = None,
 ) -> FastAPI:
     app = FastAPI(title="Atividade 2 Judge Console")
     startup_schema_mode = os.environ.get("ENSURE_SCHEMA_ON_STARTUP", "").strip().lower()
@@ -281,6 +287,10 @@ def create_app(
     app.state.judge_prompt_service = judge_prompt_service or JudgePromptConfigService()
     app.state.meta_evaluation_service = meta_evaluation_service or MetaEvaluationService()
     app.state.audit_log_summary_service = audit_log_summary_service or AuditLogSummaryService()
+    app.state.assistant_service = assistant_service or AssistantService(
+        dashboard_service=app.state.dashboard,
+        audit_log_summary_service=app.state.audit_log_summary_service,
+    )
 
     @app.on_event("startup")
     def ensure_runtime_schema() -> None:
@@ -383,6 +393,13 @@ def create_app(
     @app.get("/api/operational-log-summary")
     def get_operational_log_summary(request: Request) -> dict:
         return request.app.state.audit_log_summary_service.load()
+
+    @app.post("/api/assistant/chat", dependencies=[Depends(_require_csrf)])
+    def assistant_chat(payload: AssistantPayload, request: Request) -> dict:
+        try:
+            return request.app.state.assistant_service.answer(payload.message)
+        except RuntimeError as error:
+            raise HTTPException(status_code=503, detail=str(error)) from error
 
     @app.put("/api/meta-evaluations", dependencies=[Depends(_require_csrf)])
     def save_meta_evaluation(payload: MetaEvaluationPayload, request: Request) -> dict:
