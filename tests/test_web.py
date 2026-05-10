@@ -1140,9 +1140,19 @@ def test_web_index_contains_controlled_operational_log_enrichment() -> None:
     assert "prefetchOperationalLogSummary();" in response.text
     assert "prefetchRunHistory();" in response.text
     assert "let operationalLogSummaryPromise = null;" in response.text
+    assert "let operationalLogSummaryLoading = false;" in response.text
     assert "let runHistoryPromise = null;" in response.text
+    assert "let runHistoryLoading = false;" in response.text
     assert "function refreshOperationalLogConsumers(summary)" in response.text
     assert "if (historyLoaded) getRunHistory().then(renderHistory);" in response.text
+    assert "function renderDashboardOperationalLogState()" in response.text
+    assert "renderDashboardOperationalLoading();" in response.text
+    assert "function renderDashboardOperationalLoading()" in response.text
+    assert "Carregando metadados operacionais." in response.text
+    assert "function renderMetaOperationalLoading(subject)" in response.text
+    assert "Carregando logs operacionais..." in response.text
+    assert "function renderHistoryLoading()" in response.text
+    assert "Carregando historico de execucoes." in response.text
     assert 'fetch("/api/run-history")' in response.text
     assert 'fetch("/api/operational-log-summary", {cache: "no-store"})' in response.text
     assert "renderDashboardOperationalSummary" in response.text

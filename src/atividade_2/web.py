@@ -1897,6 +1897,7 @@ _INDEX_HTML = """
     let csrfToken = "";
     let pollTimer = null;
     let historyLoaded = false;
+    let runHistoryLoading = false;
     let runHistoryPromise = null;
     let promptOptionsLoaded = false;
     let metaOptionsLoaded = false;
@@ -1910,6 +1911,7 @@ _INDEX_HTML = """
     let selectedHistoryRunId = null;
     let dashboardLoaded = false;
     let operationalLogSummary = null;
+    let operationalLogSummaryLoading = false;
     let operationalLogSummaryPromise = null;
     let currentMetaSubject = null;
     let currentAuditLogUrl = null;
@@ -1972,7 +1974,7 @@ _INDEX_HTML = """
         if (!response.ok) throw new Error(data.detail || "Dashboard indisponivel.");
         dashboardLoaded = true;
         renderDashboard(data);
-        getOperationalLogSummary().then(renderDashboardOperationalSummary);
+        renderDashboardOperationalLogState();
       } catch (error) {
         body.innerHTML = "";
         const row = document.createElement("tr");
@@ -1983,8 +1985,15 @@ _INDEX_HTML = """
         row.appendChild(cell);
         body.appendChild(row);
         renderJudgeAgreement({}, [], friendlyErrorMessage(error.message));
-        getOperationalLogSummary().then(renderDashboardOperationalSummary);
+        renderDashboardOperationalLogState();
       }
+    }
+
+    function renderDashboardOperationalLogState() {
+      if (operationalLogSummaryLoading && !operationalLogSummary) {
+        renderDashboardOperationalLoading();
+      }
+      getOperationalLogSummary().then(renderDashboardOperationalSummary);
     }
 
     function getOperationalLogSummary() {
@@ -2004,15 +2013,19 @@ _INDEX_HTML = """
     }
 
     async function loadOperationalLogSummary() {
+      operationalLogSummaryLoading = true;
+      renderOperationalLogLoading();
       try {
         const response = await fetch("/api/operational-log-summary", {cache: "no-store"});
         const data = await response.json();
         if (!response.ok) throw new Error(data.detail || "Metadados operacionais indisponiveis.");
         operationalLogSummary = data;
+        operationalLogSummaryLoading = false;
         refreshOperationalLogConsumers(data);
         return data;
       } catch (error) {
         operationalLogSummary = null;
+        operationalLogSummaryLoading = false;
         refreshOperationalLogConsumers(null);
         return null;
       }
@@ -2022,6 +2035,11 @@ _INDEX_HTML = """
       if (dashboardLoaded) renderDashboardOperationalSummary(summary);
       if (currentMetaSubject) renderMetaOperationalMetadata(currentMetaSubject, summary);
       if (historyLoaded) getRunHistory().then(renderHistory);
+    }
+
+    function renderOperationalLogLoading() {
+      if (dashboardLoaded) renderDashboardOperationalLoading();
+      if (currentMetaSubject) renderMetaOperationalLoading(currentMetaSubject);
     }
 
     function renderDashboard(data) {
@@ -2129,6 +2147,10 @@ _INDEX_HTML = """
     }
 
     function renderDashboardOperationalSummary(summary) {
+      if (operationalLogSummaryLoading && !summary) {
+        renderDashboardOperationalLoading();
+        return;
+      }
       const section = document.getElementById("dashboard-operational-section");
       const empty = document.getElementById("dashboard-operational-empty");
       const cardsRoot = document.getElementById("dashboard-operational-cards");
@@ -2176,6 +2198,37 @@ _INDEX_HTML = """
       renderOperationalLatencyRows(latencyBody, events);
       renderOperationalCategoryRows(categoriesBody, incidentEvents);
       renderOperationalPartialRows(partialBody, partialRuns);
+    }
+
+    function renderDashboardOperationalLoading() {
+      const section = document.getElementById("dashboard-operational-section");
+      const empty = document.getElementById("dashboard-operational-empty");
+      const cardsRoot = document.getElementById("dashboard-operational-cards");
+      const latencyBody = document.getElementById("dashboard-operational-latency-body");
+      const categoriesBody = document.getElementById("dashboard-operational-categories-body");
+      const partialBody = document.getElementById("dashboard-operational-partial-body");
+      section.hidden = false;
+      empty.hidden = true;
+      cardsRoot.textContent = "";
+      latencyBody.textContent = "";
+      categoriesBody.textContent = "";
+      partialBody.textContent = "";
+      for (const labelText of ["Logs operacionais", "Retries", "Falhas", "Sucesso parcial"]) {
+        const card = document.createElement("div");
+        card.className = "metric-card operational-card";
+        const value = document.createElement("span");
+        value.className = "metric-value";
+        value.textContent = "-";
+        const label = document.createElement("span");
+        label.className = "metric-label";
+        label.textContent = `Carregando ${labelText.toLowerCase()}`;
+        card.appendChild(value);
+        card.appendChild(label);
+        cardsRoot.appendChild(card);
+      }
+      appendTableMessage(latencyBody, 4, "Carregando metadados operacionais.");
+      appendTableMessage(categoriesBody, 2, "Carregando falhas por categoria.");
+      appendTableMessage(partialBody, 6, "Carregando logs com sucesso parcial.");
     }
 
     function safeOperationalLogs(summary) {
@@ -3621,6 +3674,7 @@ _INDEX_HTML = """
         const data = await response.json();
         if (!response.ok) throw new Error(data.detail || "Falha ao carregar meta-avaliacao.");
         renderMetaEvaluationState(data.subject, data.records || []);
+        renderMetaOperationalLoading(data.subject);
         getOperationalLogSummary().then((summary) => renderMetaOperationalMetadata(data.subject, summary));
         if (data.subject) {
           setText(
@@ -3721,6 +3775,10 @@ _INDEX_HTML = """
     }
 
     function renderMetaOperationalMetadata(subject, summary) {
+      if (operationalLogSummaryLoading && subject && !summary) {
+        renderMetaOperationalLoading(subject);
+        return;
+      }
       const card = document.getElementById("meta_operational_card");
       if (!subject || !summary || !summary.available) {
         card.hidden = true;
@@ -3734,6 +3792,17 @@ _INDEX_HTML = """
       card.hidden = false;
       renderMetaOperationalLogLink(match.log);
       setText("meta_operational_latency", formatLatency(match.event.latency_ms));
+    }
+
+    function renderMetaOperationalLoading(subject) {
+      const card = document.getElementById("meta_operational_card");
+      if (!subject) {
+        card.hidden = true;
+        return;
+      }
+      card.hidden = false;
+      setText("meta_operational_run", "Carregando logs operacionais...");
+      setText("meta_operational_latency", "Carregando...");
     }
 
     function renderMetaOperationalLogLink(log) {
@@ -4197,11 +4266,34 @@ _INDEX_HTML = """
     }
 
     async function loadHistoryRows() {
-      const response = await fetch("/api/run-history");
-      const rows = await response.json();
-      renderHistory(rows);
-      historyLoaded = true;
-      return rows;
+      runHistoryLoading = true;
+      renderHistoryLoading();
+      try {
+        const response = await fetch("/api/run-history");
+        const rows = await response.json();
+        if (!response.ok) throw new Error(rows.detail || "Historico indisponivel.");
+        renderHistory(rows);
+        historyLoaded = true;
+        return rows;
+      } catch (error) {
+        runHistoryPromise = null;
+        renderHistoryError(friendlyErrorMessage(error.message));
+        return [];
+      } finally {
+        runHistoryLoading = false;
+      }
+    }
+
+    function renderHistoryLoading() {
+      const body = document.getElementById("history-table-body");
+      body.textContent = "";
+      appendTableMessage(body, 10, "Carregando historico de execucoes.");
+    }
+
+    function renderHistoryError(message) {
+      const body = document.getElementById("history-table-body");
+      body.textContent = "";
+      appendTableMessage(body, 10, message);
     }
 
     function activateTab(targetId) {
