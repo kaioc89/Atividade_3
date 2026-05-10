@@ -111,7 +111,30 @@ CREATE TABLE avaliacoes_juiz (
 );
 
 -- =========================
--- 7. Human meta-evaluations
+-- 7. Auxiliary judge evaluation details
+-- =========================
+CREATE TABLE avaliacao_juiz_detalhes (
+    id_detalhe SERIAL PRIMARY KEY,
+
+    id_avaliacao INTEGER NOT NULL UNIQUE
+        REFERENCES avaliacoes_juiz(id_avaliacao)
+        ON DELETE CASCADE,
+
+    legal_accuracy TEXT,
+    hallucination_risk TEXT,
+    rubric_alignment TEXT,
+    requires_human_review BOOLEAN,
+    criteria JSONB NOT NULL DEFAULT '{}'::jsonb,
+    raw_output_jsonb JSONB,
+    source_log_path TEXT,
+    run_id TEXT,
+
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- =========================
+-- 8. Human meta-evaluations
 -- =========================
 CREATE TABLE meta_avaliacoes (
     id_meta_avaliacao SERIAL PRIMARY KEY,

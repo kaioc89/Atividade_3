@@ -31,6 +31,13 @@ def test_save_default_prompt_help_exits_successfully() -> None:
     assert exit_error.value.code == 0
 
 
+def test_import_evaluation_details_help_exits_successfully() -> None:
+    with pytest.raises(SystemExit) as exit_error:
+        cli.main(["import-evaluation-details", "--help"])
+
+    assert exit_error.value.code == 0
+
+
 def test_run_judge_help_exposes_batch_size(capsys: pytest.CaptureFixture[str]) -> None:
     with pytest.raises(SystemExit) as exit_error:
         cli.main(["run-judge", "--help"])

@@ -428,6 +428,7 @@ class JudgePipeline:
             rationale=parsed.rationale,
             latency_ms=raw_response.latency_ms,
             raw_response=raw_response,
+            parsed_evaluation=parsed,
         )
 
     def _execute_primary_judges(

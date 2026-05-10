@@ -1897,6 +1897,7 @@ _INDEX_HTML = """
     let csrfToken = "";
     let pollTimer = null;
     let historyLoaded = false;
+    let runHistoryPromise = null;
     let promptOptionsLoaded = false;
     let metaOptionsLoaded = false;
     let metaHistoryLoaded = false;
@@ -1909,6 +1910,8 @@ _INDEX_HTML = """
     let selectedHistoryRunId = null;
     let dashboardLoaded = false;
     let operationalLogSummary = null;
+    let operationalLogSummaryPromise = null;
+    let currentMetaSubject = null;
     let currentAuditLogUrl = null;
     let activeRunId = null;
     let judgeModelOptions = [];
@@ -1969,7 +1972,7 @@ _INDEX_HTML = """
         if (!response.ok) throw new Error(data.detail || "Dashboard indisponivel.");
         dashboardLoaded = true;
         renderDashboard(data);
-        loadOperationalLogSummary().then(renderDashboardOperationalSummary);
+        getOperationalLogSummary().then(renderDashboardOperationalSummary);
       } catch (error) {
         body.innerHTML = "";
         const row = document.createElement("tr");
@@ -1980,8 +1983,24 @@ _INDEX_HTML = """
         row.appendChild(cell);
         body.appendChild(row);
         renderJudgeAgreement({}, [], friendlyErrorMessage(error.message));
-        loadOperationalLogSummary().then(renderDashboardOperationalSummary);
+        getOperationalLogSummary().then(renderDashboardOperationalSummary);
       }
+    }
+
+    function getOperationalLogSummary() {
+      if (!operationalLogSummaryPromise) {
+        operationalLogSummaryPromise = loadOperationalLogSummary();
+      }
+      return operationalLogSummaryPromise;
+    }
+
+    function prefetchOperationalLogSummary() {
+      getOperationalLogSummary();
+    }
+
+    async function refreshOperationalLogSummary() {
+      operationalLogSummaryPromise = loadOperationalLogSummary();
+      return operationalLogSummaryPromise;
     }
 
     async function loadOperationalLogSummary() {
@@ -1990,11 +2009,19 @@ _INDEX_HTML = """
         const data = await response.json();
         if (!response.ok) throw new Error(data.detail || "Metadados operacionais indisponiveis.");
         operationalLogSummary = data;
+        refreshOperationalLogConsumers(data);
         return data;
       } catch (error) {
         operationalLogSummary = null;
+        refreshOperationalLogConsumers(null);
         return null;
       }
+    }
+
+    function refreshOperationalLogConsumers(summary) {
+      if (dashboardLoaded) renderDashboardOperationalSummary(summary);
+      if (currentMetaSubject) renderMetaOperationalMetadata(currentMetaSubject, summary);
+      if (historyLoaded) getRunHistory().then(renderHistory);
     }
 
     function renderDashboard(data) {
@@ -3526,11 +3553,13 @@ _INDEX_HTML = """
         clearInterval(pollTimer);
         pollTimer = null;
         activeRunId = null;
+        refreshRunHistory();
+        refreshOperationalLogSummary();
       }
     }
 
     async function loadHistory() {
-      await loadHistoryRows();
+      await getRunHistory();
     }
 
     async function loadPromptOptions() {
@@ -3592,7 +3621,7 @@ _INDEX_HTML = """
         const data = await response.json();
         if (!response.ok) throw new Error(data.detail || "Falha ao carregar meta-avaliacao.");
         renderMetaEvaluationState(data.subject, data.records || []);
-        loadOperationalLogSummary().then((summary) => renderMetaOperationalMetadata(data.subject, summary));
+        getOperationalLogSummary().then((summary) => renderMetaOperationalMetadata(data.subject, summary));
         if (data.subject) {
           setText(
             "meta_status",
@@ -3658,6 +3687,7 @@ _INDEX_HTML = """
     }
 
     function renderMetaSubject(subject) {
+      currentMetaSubject = subject || null;
       if (!subject) {
         setText("meta_subject_meta", "Nenhuma avaliacao carregada.");
         setText("meta_subject_candidate_model", "-");
@@ -4140,7 +4170,7 @@ _INDEX_HTML = """
 
     async function openHistoryLogFromMeta(runId, logPath) {
       activateTab("history-panel");
-      const rows = historyLoaded ? (window.latestRunHistoryRows || []) : await loadHistoryRows();
+      const rows = await getRunHistory();
       const entry = rows.find((item) => String(item.run_id) === String(runId))
         || {
           run_id: runId,
@@ -4148,6 +4178,22 @@ _INDEX_HTML = """
           log_url: `/api/run-history/${encodeURIComponent(runId)}/audit-log`,
         };
       await openHistoryLog(entry);
+    }
+
+    function getRunHistory() {
+      if (!runHistoryPromise) {
+        runHistoryPromise = loadHistoryRows();
+      }
+      return runHistoryPromise;
+    }
+
+    function prefetchRunHistory() {
+      getRunHistory();
+    }
+
+    async function refreshRunHistory() {
+      runHistoryPromise = loadHistoryRows();
+      return runHistoryPromise;
     }
 
     async function loadHistoryRows() {
@@ -4175,7 +4221,7 @@ _INDEX_HTML = """
     function switchTab(targetId) {
       activateTab(targetId);
       if (targetId === "dashboard-panel") loadDashboard();
-      if (targetId === "history-panel" && !historyLoaded) loadHistory();
+      if (targetId === "history-panel") loadHistory();
       if (targetId === "prompt-panel" && !promptOptionsLoaded) loadPromptOptions();
       if (targetId === "meta-panel" && !metaOptionsLoaded) loadMetaOptions();
     }
@@ -4574,6 +4620,8 @@ _INDEX_HTML = """
         setText("output", friendlyErrorMessage(error.message));
       }
     };
+    prefetchOperationalLogSummary();
+    prefetchRunHistory();
     loadConfig();
   </script>
 </body>

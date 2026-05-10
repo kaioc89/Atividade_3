@@ -68,6 +68,34 @@ def test_parser_recovers_unescaped_quotes_inside_text_fields() -> None:
     assert parsed.legal_accuracy == 'Baixa por citar ("norma") inexistente.'
 
 
+def test_parser_merges_explicit_criteria_extras_and_sanitizes_raw_output() -> None:
+    parsed = parse_judge_output(
+        "{"
+        '"score": 5, '
+        '"rationale": "ok", '
+        '"legal_accuracy": "alta", '
+        '"hallucination_risk": "baixo", '
+        '"rubric_alignment": "aderente", '
+        '"requires_human_review": false, '
+        '"criteria": {"citation_quality": "boa"}, '
+        '"answer_completeness": "completa", '
+        '"api_key": "sk-test-secret"'
+        "}"
+    )
+
+    assert parsed.legal_accuracy == "alta"
+    assert parsed.hallucination_risk == "baixo"
+    assert parsed.rubric_alignment == "aderente"
+    assert parsed.requires_human_review is False
+    assert parsed.criteria == {
+        "citation_quality": "boa",
+        "answer_completeness": "completa",
+        "api_key": "<redacted>",
+    }
+    assert parsed.raw_output_jsonb is not None
+    assert parsed.raw_output_jsonb["api_key"] == "<redacted>"
+
+
 def test_parser_rejects_out_of_range_score() -> None:
     with pytest.raises(JudgeParseError, match="between 1 and 5"):
         parse_judge_output('{"score": 6, "rationale": "fora da escala"}')

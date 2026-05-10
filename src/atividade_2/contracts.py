@@ -207,6 +207,7 @@ class ParsedJudgeEvaluation:
     rubric_alignment: str | None = None
     requires_human_review: bool = False
     criteria: dict[str, Any] = field(default_factory=dict)
+    raw_output_jsonb: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True)
@@ -223,6 +224,7 @@ class EvaluationRecord:
     rationale: str
     latency_ms: int
     raw_response: JudgeRawResponse | None = None
+    parsed_evaluation: ParsedJudgeEvaluation | None = None
 
 
 @dataclass(frozen=True)
