@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 from collections.abc import Sequence
 
+from .audit_log_parser import DEFAULT_PROD_LOGS_MANIFEST, format_audit_parse_report, parse_prod_logs_manifest
 from .config import ConfigurationError
 from .judge_clients.remote_http import RemoteJudgeError
 from .parser import JudgeParseError
@@ -93,6 +94,17 @@ def build_parser() -> argparse.ArgumentParser:
         help="Value stored as created_by for the new prompt version.",
     )
     save_prompt.set_defaults(handler=save_default_prompt_command)
+
+    parse_logs = subparsers.add_parser(
+        "parse-prod-logs",
+        help="Read-only parse of production audit logs listed in the manifest.",
+    )
+    parse_logs.add_argument(
+        "--manifest",
+        default=str(DEFAULT_PROD_LOGS_MANIFEST),
+        help="Manifest file listing production audit logs to parse.",
+    )
+    parse_logs.set_defaults(handler=parse_prod_logs_command)
     return parser
 
 
@@ -168,6 +180,13 @@ def save_default_prompt_command(args: argparse.Namespace) -> int:
     print(f"- version: {record.version}")
     print(f"- created_by: {record.created_by}")
     return 0
+
+
+def parse_prod_logs_command(args: argparse.Namespace) -> int:
+    """Parse whitelisted production audit logs without side effects."""
+    report = parse_prod_logs_manifest(args.manifest)
+    print(format_audit_parse_report(report))
+    return 1 if report.problems or report.missing_logs else 0
 
 
 def _print_resolved_run(resolved: ResolvedRun) -> None:
