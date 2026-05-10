@@ -105,6 +105,23 @@ def build_parser() -> argparse.ArgumentParser:
         help="Manifest file listing production audit logs to parse.",
     )
     parse_logs.set_defaults(handler=parse_prod_logs_command)
+
+    import_details = subparsers.add_parser(
+        "import-evaluation-details",
+        help="Import auxiliary judge output metadata from explicit historical sources.",
+    )
+    import_details.add_argument(
+        "--manifest",
+        default=str(DEFAULT_PROD_LOGS_MANIFEST),
+        help="Manifest file listing production audit logs to inspect for raw judge outputs.",
+    )
+    import_details.add_argument(
+        "--raw-output-dir",
+        action="append",
+        default=[],
+        help="Directory or JSON/JSONL file with historical parsed/raw judge outputs. May be repeated.",
+    )
+    import_details.set_defaults(handler=import_evaluation_details_command)
     return parser
 
 
@@ -187,6 +204,33 @@ def parse_prod_logs_command(args: argparse.Namespace) -> int:
     report = parse_prod_logs_manifest(args.manifest)
     print(format_audit_parse_report(report))
     return 1 if report.problems or report.missing_logs else 0
+
+
+def import_evaluation_details_command(args: argparse.Namespace) -> int:
+    """Import auxiliary judge metadata without reprocessing evaluations."""
+    from .evaluation_details_import import EvaluationDetailsImporter
+    from .repositories import JudgeRepository
+
+    settings = load_settings()
+    connection = connect(settings.database_url)
+    try:
+        repository = JudgeRepository(connection)
+        repository.ensure_schema()
+        report = EvaluationDetailsImporter(repository).import_sources(
+            manifest_path=args.manifest,
+            raw_output_dirs=tuple(args.raw_output_dir),
+        )
+    finally:
+        connection.close()
+
+    print("Evaluation details import report")
+    print(f"Processed: {report.processed}")
+    print(f"Imported: {report.imported}")
+    print(f"Skipped: {report.skipped}")
+    print(f"Problems: {len(report.problems)}")
+    for problem in report.problems:
+        print(f"- {problem}")
+    return 1 if report.problems else 0
 
 
 def _print_resolved_run(resolved: ResolvedRun) -> None:

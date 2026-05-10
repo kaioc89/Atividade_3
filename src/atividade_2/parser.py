@@ -8,6 +8,7 @@ from collections.abc import Collection
 from typing import Any
 
 from .contracts import ParsedJudgeEvaluation
+from .evaluation_details import build_criteria, sanitize_json_value
 from .validators import ValidationError, validate_parsed_evaluation
 
 
@@ -28,22 +29,8 @@ def parse_judge_output(text: str, *, allowed_scores: Collection[int] | None = No
         hallucination_risk=_optional_string(payload, "hallucination_risk"),
         rubric_alignment=_optional_string(payload, "rubric_alignment"),
         requires_human_review=bool(payload.get("requires_human_review", False)),
-        criteria={
-            key: value
-            for key, value in payload.items()
-            if key
-            not in {
-                "score",
-                "nota",
-                "rationale",
-                "justificativa",
-                "explanation",
-                "legal_accuracy",
-                "hallucination_risk",
-                "rubric_alignment",
-                "requires_human_review",
-            }
-        },
+        criteria=build_criteria(payload),
+        raw_output_jsonb=sanitize_json_value(payload),
     )
     try:
         return validate_parsed_evaluation(evaluation)

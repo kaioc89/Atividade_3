@@ -18,6 +18,7 @@ from .contracts import (
     ModelSpec,
     StoredJudgeRole,
 )
+from .evaluation_details import EvaluationDetails, jsonb_dumps
 
 DATASET_ALIASES = {
     "J1": "OAB_Bench",
@@ -522,6 +523,33 @@ class JudgeRepository:
             """
         )
 
+    def _ensure_evaluation_details_schema(self, cursor: Any) -> None:
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS avaliacao_juiz_detalhes (
+                id_detalhe SERIAL PRIMARY KEY,
+                id_avaliacao INTEGER NOT NULL UNIQUE
+                    REFERENCES avaliacoes_juiz(id_avaliacao) ON DELETE CASCADE,
+                legal_accuracy TEXT,
+                hallucination_risk TEXT,
+                rubric_alignment TEXT,
+                requires_human_review BOOLEAN,
+                criteria JSONB NOT NULL DEFAULT '{}'::jsonb,
+                raw_output_jsonb JSONB,
+                source_log_path TEXT,
+                run_id TEXT,
+                created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+                updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+            );
+            """
+        )
+
+    def rollback_evaluation_details_schema(self) -> None:
+        """Drop only the auxiliary judge details table."""
+        with self.connection:
+            with self.connection.cursor() as cursor:
+                cursor.execute("DROP TABLE IF EXISTS avaliacao_juiz_detalhes;")
+
     def ensure_schema(self) -> None:
         """Add optional multi-judge metadata columns when the restored schema lacks them."""
         with self.connection:
@@ -536,6 +564,7 @@ class JudgeRepository:
                 self._ensure_prompt_schema(cursor)
                 self._ensure_evaluation_prompt_fk(cursor)
                 self._ensure_meta_evaluation_schema(cursor)
+                self._ensure_evaluation_details_schema(cursor)
 
     def select_candidate_answers(self, *, dataset: str, limit: int | None) -> list[CandidateAnswerContext]:
         """Select AV1 answers with question/reference context."""
@@ -827,7 +856,8 @@ class JudgeRepository:
                             motivo_acionamento,
                             status_avaliacao
                         )
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s);
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    RETURNING id_avaliacao;
                     """,
                     (
                         record.answer_id,
@@ -841,6 +871,121 @@ class JudgeRepository:
                         "success",
                     ),
                 )
+                evaluation_id = int(cursor.fetchone()[0])
+                if record.parsed_evaluation is not None:
+                    parsed = record.parsed_evaluation
+                    self.persist_evaluation_details(
+                        evaluation_id=evaluation_id,
+                        details=EvaluationDetails(
+                            legal_accuracy=parsed.legal_accuracy,
+                            hallucination_risk=parsed.hallucination_risk,
+                            rubric_alignment=parsed.rubric_alignment,
+                            requires_human_review=parsed.requires_human_review,
+                            criteria=parsed.criteria,
+                            raw_output_jsonb=parsed.raw_output_jsonb,
+                        ),
+                        cursor=cursor,
+                    )
+
+    def persist_evaluation_details(
+        self,
+        *,
+        evaluation_id: int,
+        details: EvaluationDetails,
+        cursor: Any | None = None,
+    ) -> None:
+        """Upsert auxiliary judge metadata without changing official evaluation fields."""
+        criteria_json = jsonb_dumps(details.criteria)
+        raw_json = jsonb_dumps(details.raw_output_jsonb)
+        params = (
+            evaluation_id,
+            details.legal_accuracy,
+            details.hallucination_risk,
+            details.rubric_alignment,
+            details.requires_human_review,
+            criteria_json,
+            raw_json,
+            details.source_log_path,
+            details.run_id,
+        )
+        query = """
+            INSERT INTO avaliacao_juiz_detalhes
+                (
+                    id_avaliacao,
+                    legal_accuracy,
+                    hallucination_risk,
+                    rubric_alignment,
+                    requires_human_review,
+                    criteria,
+                    raw_output_jsonb,
+                    source_log_path,
+                    run_id
+                )
+            VALUES (%s, %s, %s, %s, %s, COALESCE(%s::jsonb, '{}'::jsonb), %s::jsonb, %s, %s)
+            ON CONFLICT (id_avaliacao) DO UPDATE
+            SET
+                legal_accuracy = COALESCE(EXCLUDED.legal_accuracy, avaliacao_juiz_detalhes.legal_accuracy),
+                hallucination_risk = COALESCE(
+                    EXCLUDED.hallucination_risk,
+                    avaliacao_juiz_detalhes.hallucination_risk
+                ),
+                rubric_alignment = COALESCE(EXCLUDED.rubric_alignment, avaliacao_juiz_detalhes.rubric_alignment),
+                requires_human_review = COALESCE(
+                    EXCLUDED.requires_human_review,
+                    avaliacao_juiz_detalhes.requires_human_review
+                ),
+                criteria = avaliacao_juiz_detalhes.criteria || EXCLUDED.criteria,
+                raw_output_jsonb = COALESCE(EXCLUDED.raw_output_jsonb, avaliacao_juiz_detalhes.raw_output_jsonb),
+                source_log_path = COALESCE(EXCLUDED.source_log_path, avaliacao_juiz_detalhes.source_log_path),
+                run_id = COALESCE(EXCLUDED.run_id, avaliacao_juiz_detalhes.run_id),
+                updated_at = NOW();
+        """
+        if cursor is not None:
+            cursor.execute(query, params)
+            return
+        with self.connection:
+            with self.connection.cursor() as managed_cursor:
+                managed_cursor.execute(query, params)
+
+    def find_evaluation_id_for_details(
+        self,
+        *,
+        answer_id: int,
+        judge_model: str,
+        role: str | None,
+        panel_mode: str | None,
+        trigger_reason: str | None,
+        score: int | None,
+    ) -> int | None:
+        """Return a unique evaluation id for historical details, or None when not unique."""
+        conditions = ["a.id_resposta_ativa1 = %s", "(m.nome_modelo = %s OR m.versao = %s)"]
+        params: list[Any] = [answer_id, judge_model, judge_model]
+        if role:
+            conditions.append("COALESCE(a.papel_juiz, '') = %s")
+            params.append(role)
+        if panel_mode:
+            conditions.append("COALESCE(a.motivo_acionamento, '') LIKE %s")
+            params.append(f"{panel_mode}:%")
+        if trigger_reason:
+            conditions.append("COALESCE(a.motivo_acionamento, '') LIKE %s")
+            params.append(f"%:{trigger_reason}")
+        if score is not None:
+            conditions.append("a.nota_atribuida = %s")
+            params.append(score)
+        where_sql = " AND ".join(conditions)
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                f"""
+                SELECT a.id_avaliacao
+                FROM avaliacoes_juiz a
+                JOIN modelos m ON m.id_modelo = a.id_modelo_juiz
+                WHERE {where_sql}
+                ORDER BY a.id_avaliacao;
+                """,
+                params,
+            )
+            rows = cursor.fetchall()
+        return int(rows[0][0]) if len(rows) == 1 else None
 
     def ensure_judge_model(self, model: ModelSpec) -> int:
         """Return a judge model id, inserting it if necessary."""

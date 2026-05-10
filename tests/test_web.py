@@ -1137,6 +1137,13 @@ def test_web_index_contains_controlled_operational_log_enrichment() -> None:
     assert "openHistoryLogFromMeta" in response.text
     assert "Abrir em Execucoes anteriores" in response.text
     assert 'targetId === "meta-panel" || targetId === "history-panel"' in response.text
+    assert "prefetchOperationalLogSummary();" in response.text
+    assert "prefetchRunHistory();" in response.text
+    assert "let operationalLogSummaryPromise = null;" in response.text
+    assert "let runHistoryPromise = null;" in response.text
+    assert "function refreshOperationalLogConsumers(summary)" in response.text
+    assert "if (historyLoaded) getRunHistory().then(renderHistory);" in response.text
+    assert 'fetch("/api/run-history")' in response.text
     assert 'fetch("/api/operational-log-summary", {cache: "no-store"})' in response.text
     assert "renderDashboardOperationalSummary" in response.text
     assert "renderMetaOperationalMetadata" in response.text

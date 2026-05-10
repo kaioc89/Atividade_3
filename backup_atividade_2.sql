@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict fxUO09DQp65d1G1UFVbGvYGqLe9GyUdKTpEVBetflgccmPJtR8V3A41D50yhV1C
+\restrict sRXvXTo1Rj0GT6aSZyLsiv6K2G6YDi3ZbH6e98V0f9JIXyQBCmh2yZfKDgv0Zfr
 
 -- Dumped from database version 18.3 (Debian 18.3-1.pgdg13+1)
 -- Dumped by pg_dump version 18.3 (Debian 18.3-1.pgdg13+1)
@@ -20,16 +20,14 @@ SET client_min_messages = warning;
 SET row_security = off;
 
 --
--- Name: public; Type: SCHEMA; Schema: -; Owner: postgres
+-- Name: public; Type: SCHEMA; Schema: -; Owner: -
 --
 
 -- *not* creating schema, since initdb creates it
 
 
-ALTER SCHEMA public OWNER TO postgres;
-
 --
--- Name: SCHEMA public; Type: COMMENT; Schema: -; Owner: postgres
+-- Name: SCHEMA public; Type: COMMENT; Schema: -; Owner: -
 --
 
 COMMENT ON SCHEMA public IS '';
@@ -40,7 +38,47 @@ SET default_tablespace = '';
 SET default_table_access_method = heap;
 
 --
--- Name: avaliacoes_juiz; Type: TABLE; Schema: public; Owner: postgres
+-- Name: avaliacao_juiz_detalhes; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.avaliacao_juiz_detalhes (
+    id_detalhe integer NOT NULL,
+    id_avaliacao integer NOT NULL,
+    legal_accuracy text,
+    hallucination_risk text,
+    rubric_alignment text,
+    requires_human_review boolean,
+    criteria jsonb DEFAULT '{}'::jsonb NOT NULL,
+    raw_output_jsonb jsonb,
+    source_log_path text,
+    run_id text,
+    created_at timestamp without time zone DEFAULT now() NOT NULL,
+    updated_at timestamp without time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: avaliacao_juiz_detalhes_id_detalhe_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.avaliacao_juiz_detalhes_id_detalhe_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: avaliacao_juiz_detalhes_id_detalhe_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.avaliacao_juiz_detalhes_id_detalhe_seq OWNED BY public.avaliacao_juiz_detalhes.id_detalhe;
+
+
+--
+-- Name: avaliacoes_juiz; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.avaliacoes_juiz (
@@ -59,10 +97,8 @@ CREATE TABLE public.avaliacoes_juiz (
 );
 
 
-ALTER TABLE public.avaliacoes_juiz OWNER TO postgres;
-
 --
--- Name: avaliacoes_juiz_id_avaliacao_seq; Type: SEQUENCE; Schema: public; Owner: postgres
+-- Name: avaliacoes_juiz_id_avaliacao_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
 CREATE SEQUENCE public.avaliacoes_juiz_id_avaliacao_seq
@@ -74,17 +110,15 @@ CREATE SEQUENCE public.avaliacoes_juiz_id_avaliacao_seq
     CACHE 1;
 
 
-ALTER SEQUENCE public.avaliacoes_juiz_id_avaliacao_seq OWNER TO postgres;
-
 --
--- Name: avaliacoes_juiz_id_avaliacao_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
+-- Name: avaliacoes_juiz_id_avaliacao_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
 --
 
 ALTER SEQUENCE public.avaliacoes_juiz_id_avaliacao_seq OWNED BY public.avaliacoes_juiz.id_avaliacao;
 
 
 --
--- Name: datasets; Type: TABLE; Schema: public; Owner: postgres
+-- Name: datasets; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.datasets (
@@ -94,10 +128,8 @@ CREATE TABLE public.datasets (
 );
 
 
-ALTER TABLE public.datasets OWNER TO postgres;
-
 --
--- Name: datasets_id_dataset_seq; Type: SEQUENCE; Schema: public; Owner: postgres
+-- Name: datasets_id_dataset_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
 CREATE SEQUENCE public.datasets_id_dataset_seq
@@ -109,17 +141,15 @@ CREATE SEQUENCE public.datasets_id_dataset_seq
     CACHE 1;
 
 
-ALTER SEQUENCE public.datasets_id_dataset_seq OWNER TO postgres;
-
 --
--- Name: datasets_id_dataset_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
+-- Name: datasets_id_dataset_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
 --
 
 ALTER SEQUENCE public.datasets_id_dataset_seq OWNED BY public.datasets.id_dataset;
 
 
 --
--- Name: meta_avaliacoes; Type: TABLE; Schema: public; Owner: postgres
+-- Name: meta_avaliacoes; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.meta_avaliacoes (
@@ -133,10 +163,8 @@ CREATE TABLE public.meta_avaliacoes (
 );
 
 
-ALTER TABLE public.meta_avaliacoes OWNER TO postgres;
-
 --
--- Name: meta_avaliacoes_id_meta_avaliacao_seq; Type: SEQUENCE; Schema: public; Owner: postgres
+-- Name: meta_avaliacoes_id_meta_avaliacao_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
 CREATE SEQUENCE public.meta_avaliacoes_id_meta_avaliacao_seq
@@ -148,17 +176,15 @@ CREATE SEQUENCE public.meta_avaliacoes_id_meta_avaliacao_seq
     CACHE 1;
 
 
-ALTER SEQUENCE public.meta_avaliacoes_id_meta_avaliacao_seq OWNER TO postgres;
-
 --
--- Name: meta_avaliacoes_id_meta_avaliacao_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
+-- Name: meta_avaliacoes_id_meta_avaliacao_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
 --
 
 ALTER SEQUENCE public.meta_avaliacoes_id_meta_avaliacao_seq OWNED BY public.meta_avaliacoes.id_meta_avaliacao;
 
 
 --
--- Name: modelos; Type: TABLE; Schema: public; Owner: postgres
+-- Name: modelos; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.modelos (
@@ -171,10 +197,8 @@ CREATE TABLE public.modelos (
 );
 
 
-ALTER TABLE public.modelos OWNER TO postgres;
-
 --
--- Name: modelos_id_modelo_seq; Type: SEQUENCE; Schema: public; Owner: postgres
+-- Name: modelos_id_modelo_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
 CREATE SEQUENCE public.modelos_id_modelo_seq
@@ -186,17 +210,15 @@ CREATE SEQUENCE public.modelos_id_modelo_seq
     CACHE 1;
 
 
-ALTER SEQUENCE public.modelos_id_modelo_seq OWNER TO postgres;
-
 --
--- Name: modelos_id_modelo_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
+-- Name: modelos_id_modelo_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
 --
 
 ALTER SEQUENCE public.modelos_id_modelo_seq OWNED BY public.modelos.id_modelo;
 
 
 --
--- Name: perguntas; Type: TABLE; Schema: public; Owner: postgres
+-- Name: perguntas; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.perguntas (
@@ -208,10 +230,8 @@ CREATE TABLE public.perguntas (
 );
 
 
-ALTER TABLE public.perguntas OWNER TO postgres;
-
 --
--- Name: perguntas_id_pergunta_seq; Type: SEQUENCE; Schema: public; Owner: postgres
+-- Name: perguntas_id_pergunta_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
 CREATE SEQUENCE public.perguntas_id_pergunta_seq
@@ -223,17 +243,15 @@ CREATE SEQUENCE public.perguntas_id_pergunta_seq
     CACHE 1;
 
 
-ALTER SEQUENCE public.perguntas_id_pergunta_seq OWNER TO postgres;
-
 --
--- Name: perguntas_id_pergunta_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
+-- Name: perguntas_id_pergunta_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
 --
 
 ALTER SEQUENCE public.perguntas_id_pergunta_seq OWNED BY public.perguntas.id_pergunta;
 
 
 --
--- Name: prompt_juizes; Type: TABLE; Schema: public; Owner: postgres
+-- Name: prompt_juizes; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.prompt_juizes (
@@ -251,10 +269,8 @@ CREATE TABLE public.prompt_juizes (
 );
 
 
-ALTER TABLE public.prompt_juizes OWNER TO postgres;
-
 --
--- Name: prompt_juizes_id_prompt_juiz_seq; Type: SEQUENCE; Schema: public; Owner: postgres
+-- Name: prompt_juizes_id_prompt_juiz_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
 CREATE SEQUENCE public.prompt_juizes_id_prompt_juiz_seq
@@ -266,17 +282,15 @@ CREATE SEQUENCE public.prompt_juizes_id_prompt_juiz_seq
     CACHE 1;
 
 
-ALTER SEQUENCE public.prompt_juizes_id_prompt_juiz_seq OWNER TO postgres;
-
 --
--- Name: prompt_juizes_id_prompt_juiz_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
+-- Name: prompt_juizes_id_prompt_juiz_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
 --
 
 ALTER SEQUENCE public.prompt_juizes_id_prompt_juiz_seq OWNED BY public.prompt_juizes.id_prompt_juiz;
 
 
 --
--- Name: render_bootstrap_metadata; Type: TABLE; Schema: public; Owner: postgres
+-- Name: render_bootstrap_metadata; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.render_bootstrap_metadata (
@@ -286,10 +300,8 @@ CREATE TABLE public.render_bootstrap_metadata (
 );
 
 
-ALTER TABLE public.render_bootstrap_metadata OWNER TO postgres;
-
 --
--- Name: respostas_atividade_1; Type: TABLE; Schema: public; Owner: postgres
+-- Name: respostas_atividade_1; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.respostas_atividade_1 (
@@ -303,10 +315,8 @@ CREATE TABLE public.respostas_atividade_1 (
 );
 
 
-ALTER TABLE public.respostas_atividade_1 OWNER TO postgres;
-
 --
--- Name: respostas_atividade_1_id_resposta_seq; Type: SEQUENCE; Schema: public; Owner: postgres
+-- Name: respostas_atividade_1_id_resposta_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
 CREATE SEQUENCE public.respostas_atividade_1_id_resposta_seq
@@ -318,17 +328,15 @@ CREATE SEQUENCE public.respostas_atividade_1_id_resposta_seq
     CACHE 1;
 
 
-ALTER SEQUENCE public.respostas_atividade_1_id_resposta_seq OWNER TO postgres;
-
 --
--- Name: respostas_atividade_1_id_resposta_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
+-- Name: respostas_atividade_1_id_resposta_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
 --
 
 ALTER SEQUENCE public.respostas_atividade_1_id_resposta_seq OWNED BY public.respostas_atividade_1.id_resposta;
 
 
 --
--- Name: stage_respostas_disc_import; Type: TABLE; Schema: public; Owner: postgres
+-- Name: stage_respostas_disc_import; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.stage_respostas_disc_import (
@@ -342,10 +350,8 @@ CREATE TABLE public.stage_respostas_disc_import (
 );
 
 
-ALTER TABLE public.stage_respostas_disc_import OWNER TO postgres;
-
 --
--- Name: stage_respostas_obj_import; Type: TABLE; Schema: public; Owner: postgres
+-- Name: stage_respostas_obj_import; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.stage_respostas_obj_import (
@@ -359,59 +365,72 @@ CREATE TABLE public.stage_respostas_obj_import (
 );
 
 
-ALTER TABLE public.stage_respostas_obj_import OWNER TO postgres;
+--
+-- Name: avaliacao_juiz_detalhes id_detalhe; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.avaliacao_juiz_detalhes ALTER COLUMN id_detalhe SET DEFAULT nextval('public.avaliacao_juiz_detalhes_id_detalhe_seq'::regclass);
+
 
 --
--- Name: avaliacoes_juiz id_avaliacao; Type: DEFAULT; Schema: public; Owner: postgres
+-- Name: avaliacoes_juiz id_avaliacao; Type: DEFAULT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.avaliacoes_juiz ALTER COLUMN id_avaliacao SET DEFAULT nextval('public.avaliacoes_juiz_id_avaliacao_seq'::regclass);
 
 
 --
--- Name: datasets id_dataset; Type: DEFAULT; Schema: public; Owner: postgres
+-- Name: datasets id_dataset; Type: DEFAULT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.datasets ALTER COLUMN id_dataset SET DEFAULT nextval('public.datasets_id_dataset_seq'::regclass);
 
 
 --
--- Name: meta_avaliacoes id_meta_avaliacao; Type: DEFAULT; Schema: public; Owner: postgres
+-- Name: meta_avaliacoes id_meta_avaliacao; Type: DEFAULT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.meta_avaliacoes ALTER COLUMN id_meta_avaliacao SET DEFAULT nextval('public.meta_avaliacoes_id_meta_avaliacao_seq'::regclass);
 
 
 --
--- Name: modelos id_modelo; Type: DEFAULT; Schema: public; Owner: postgres
+-- Name: modelos id_modelo; Type: DEFAULT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.modelos ALTER COLUMN id_modelo SET DEFAULT nextval('public.modelos_id_modelo_seq'::regclass);
 
 
 --
--- Name: perguntas id_pergunta; Type: DEFAULT; Schema: public; Owner: postgres
+-- Name: perguntas id_pergunta; Type: DEFAULT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.perguntas ALTER COLUMN id_pergunta SET DEFAULT nextval('public.perguntas_id_pergunta_seq'::regclass);
 
 
 --
--- Name: prompt_juizes id_prompt_juiz; Type: DEFAULT; Schema: public; Owner: postgres
+-- Name: prompt_juizes id_prompt_juiz; Type: DEFAULT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.prompt_juizes ALTER COLUMN id_prompt_juiz SET DEFAULT nextval('public.prompt_juizes_id_prompt_juiz_seq'::regclass);
 
 
 --
--- Name: respostas_atividade_1 id_resposta; Type: DEFAULT; Schema: public; Owner: postgres
+-- Name: respostas_atividade_1 id_resposta; Type: DEFAULT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.respostas_atividade_1 ALTER COLUMN id_resposta SET DEFAULT nextval('public.respostas_atividade_1_id_resposta_seq'::regclass);
 
 
 --
--- Data for Name: avaliacoes_juiz; Type: TABLE DATA; Schema: public; Owner: postgres
+-- Data for Name: avaliacao_juiz_detalhes; Type: TABLE DATA; Schema: public; Owner: -
+--
+
+COPY public.avaliacao_juiz_detalhes (id_detalhe, id_avaliacao, legal_accuracy, hallucination_risk, rubric_alignment, requires_human_review, criteria, raw_output_jsonb, source_log_path, run_id, created_at, updated_at) FROM stdin;
+\.
+
+
+--
+-- Data for Name: avaliacoes_juiz; Type: TABLE DATA; Schema: public; Owner: -
 --
 
 COPY public.avaliacoes_juiz (id_avaliacao, id_resposta_ativa1, id_modelo_juiz, nota_atribuida, chain_of_thought, data_avaliacao, papel_juiz, rodada_julgamento, motivo_acionamento, status_avaliacao, id_prompt_juiz) FROM stdin;
@@ -5272,7 +5291,7 @@ COPY public.avaliacoes_juiz (id_avaliacao, id_resposta_ativa1, id_modelo_juiz, n
 
 
 --
--- Data for Name: datasets; Type: TABLE DATA; Schema: public; Owner: postgres
+-- Data for Name: datasets; Type: TABLE DATA; Schema: public; Owner: -
 --
 
 COPY public.datasets (id_dataset, nome_dataset, dominio) FROM stdin;
@@ -5282,7 +5301,7 @@ COPY public.datasets (id_dataset, nome_dataset, dominio) FROM stdin;
 
 
 --
--- Data for Name: meta_avaliacoes; Type: TABLE DATA; Schema: public; Owner: postgres
+-- Data for Name: meta_avaliacoes; Type: TABLE DATA; Schema: public; Owner: -
 --
 
 COPY public.meta_avaliacoes (id_meta_avaliacao, id_avaliacao, nm_avaliador, vl_nota, ds_justificativa, created_at) FROM stdin;
@@ -5310,7 +5329,7 @@ COPY public.meta_avaliacoes (id_meta_avaliacao, id_avaliacao, nm_avaliador, vl_n
 
 
 --
--- Data for Name: modelos; Type: TABLE DATA; Schema: public; Owner: postgres
+-- Data for Name: modelos; Type: TABLE DATA; Schema: public; Owner: -
 --
 
 COPY public.modelos (id_modelo, nome_modelo, versao, parametro_precisao, tipo_modelo) FROM stdin;
@@ -5341,7 +5360,7 @@ COPY public.modelos (id_modelo, nome_modelo, versao, parametro_precisao, tipo_mo
 
 
 --
--- Data for Name: perguntas; Type: TABLE DATA; Schema: public; Owner: postgres
+-- Data for Name: perguntas; Type: TABLE DATA; Schema: public; Owner: -
 --
 
 COPY public.perguntas (id_pergunta, id_dataset, enunciado, resposta_ouro, metadados) FROM stdin;
@@ -6157,7 +6176,7 @@ COPY public.perguntas (id_pergunta, id_dataset, enunciado, resposta_ouro, metada
 
 
 --
--- Data for Name: prompt_juizes; Type: TABLE DATA; Schema: public; Owner: postgres
+-- Data for Name: prompt_juizes; Type: TABLE DATA; Schema: public; Owner: -
 --
 
 COPY public.prompt_juizes (id_prompt_juiz, id_dataset, versao, ds_prompt, ds_persona, ds_contexto, ds_rubrica, ds_saida, created_at, created_by, ativo) FROM stdin;
@@ -6168,7 +6187,7 @@ COPY public.prompt_juizes (id_prompt_juiz, id_dataset, versao, ds_prompt, ds_per
 
 
 --
--- Data for Name: render_bootstrap_metadata; Type: TABLE DATA; Schema: public; Owner: postgres
+-- Data for Name: render_bootstrap_metadata; Type: TABLE DATA; Schema: public; Owner: -
 --
 
 COPY public.render_bootstrap_metadata (id, backup_sha256, restored_at) FROM stdin;
@@ -6177,7 +6196,7 @@ COPY public.render_bootstrap_metadata (id, backup_sha256, restored_at) FROM stdi
 
 
 --
--- Data for Name: respostas_atividade_1; Type: TABLE DATA; Schema: public; Owner: postgres
+-- Data for Name: respostas_atividade_1; Type: TABLE DATA; Schema: public; Owner: -
 --
 
 COPY public.respostas_atividade_1 (id_resposta, id_pergunta, id_modelo, texto_resposta, tempo_inferencia_ms, data_geracao) FROM stdin;
@@ -8609,7 +8628,7 @@ COPY public.respostas_atividade_1 (id_resposta, id_pergunta, id_modelo, texto_re
 
 
 --
--- Data for Name: stage_respostas_disc_import; Type: TABLE DATA; Schema: public; Owner: postgres
+-- Data for Name: stage_respostas_disc_import; Type: TABLE DATA; Schema: public; Owner: -
 --
 
 COPY public.stage_respostas_disc_import (nome_modelo, versao, parametro_precisao, id_pergunta, texto_resposta, tempo_inferencia_ms, data_geracao) FROM stdin;
@@ -8755,7 +8774,7 @@ Jurema:7b	7B	INT4	140	A questão aborda duas situações distintas envolvendo em
 
 
 --
--- Data for Name: stage_respostas_obj_import; Type: TABLE DATA; Schema: public; Owner: postgres
+-- Data for Name: stage_respostas_obj_import; Type: TABLE DATA; Schema: public; Owner: -
 --
 
 COPY public.stage_respostas_obj_import (nome_modelo, versao, parametro_precisao, id_pergunta, texto_resposta, tempo_inferencia_ms, data_geracao) FROM stdin;
@@ -10239,56 +10258,79 @@ Jurema:7b	7B	INT4	1476	C	176.958757	2026-04-28T03:16:27Z
 
 
 --
--- Name: avaliacoes_juiz_id_avaliacao_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
+-- Name: avaliacao_juiz_detalhes_id_detalhe_seq; Type: SEQUENCE SET; Schema: public; Owner: -
+--
+
+SELECT pg_catalog.setval('public.avaliacao_juiz_detalhes_id_detalhe_seq', 1, false);
+
+
+--
+-- Name: avaliacoes_juiz_id_avaliacao_seq; Type: SEQUENCE SET; Schema: public; Owner: -
 --
 
 SELECT pg_catalog.setval('public.avaliacoes_juiz_id_avaliacao_seq', 4856, true);
 
 
 --
--- Name: datasets_id_dataset_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
+-- Name: datasets_id_dataset_seq; Type: SEQUENCE SET; Schema: public; Owner: -
 --
 
 SELECT pg_catalog.setval('public.datasets_id_dataset_seq', 2, true);
 
 
 --
--- Name: meta_avaliacoes_id_meta_avaliacao_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
+-- Name: meta_avaliacoes_id_meta_avaliacao_seq; Type: SEQUENCE SET; Schema: public; Owner: -
 --
 
 SELECT pg_catalog.setval('public.meta_avaliacoes_id_meta_avaliacao_seq', 22, true);
 
 
 --
--- Name: modelos_id_modelo_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
+-- Name: modelos_id_modelo_seq; Type: SEQUENCE SET; Schema: public; Owner: -
 --
 
 SELECT pg_catalog.setval('public.modelos_id_modelo_seq', 23, true);
 
 
 --
--- Name: perguntas_id_pergunta_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
+-- Name: perguntas_id_pergunta_seq; Type: SEQUENCE SET; Schema: public; Owner: -
 --
 
 SELECT pg_catalog.setval('public.perguntas_id_pergunta_seq', 1476, true);
 
 
 --
--- Name: prompt_juizes_id_prompt_juiz_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
+-- Name: prompt_juizes_id_prompt_juiz_seq; Type: SEQUENCE SET; Schema: public; Owner: -
 --
 
 SELECT pg_catalog.setval('public.prompt_juizes_id_prompt_juiz_seq', 3, true);
 
 
 --
--- Name: respostas_atividade_1_id_resposta_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
+-- Name: respostas_atividade_1_id_resposta_seq; Type: SEQUENCE SET; Schema: public; Owner: -
 --
 
 SELECT pg_catalog.setval('public.respostas_atividade_1_id_resposta_seq', 2828, true);
 
 
 --
--- Name: avaliacoes_juiz avaliacoes_juiz_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: avaliacao_juiz_detalhes avaliacao_juiz_detalhes_id_avaliacao_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.avaliacao_juiz_detalhes
+    ADD CONSTRAINT avaliacao_juiz_detalhes_id_avaliacao_key UNIQUE (id_avaliacao);
+
+
+--
+-- Name: avaliacao_juiz_detalhes avaliacao_juiz_detalhes_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.avaliacao_juiz_detalhes
+    ADD CONSTRAINT avaliacao_juiz_detalhes_pkey PRIMARY KEY (id_detalhe);
+
+
+--
+-- Name: avaliacoes_juiz avaliacoes_juiz_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.avaliacoes_juiz
@@ -10296,7 +10338,7 @@ ALTER TABLE ONLY public.avaliacoes_juiz
 
 
 --
--- Name: datasets datasets_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: datasets datasets_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.datasets
@@ -10304,7 +10346,7 @@ ALTER TABLE ONLY public.datasets
 
 
 --
--- Name: meta_avaliacoes meta_avaliacoes_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: meta_avaliacoes meta_avaliacoes_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.meta_avaliacoes
@@ -10312,7 +10354,7 @@ ALTER TABLE ONLY public.meta_avaliacoes
 
 
 --
--- Name: modelos modelos_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: modelos modelos_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.modelos
@@ -10320,7 +10362,7 @@ ALTER TABLE ONLY public.modelos
 
 
 --
--- Name: perguntas perguntas_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: perguntas perguntas_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.perguntas
@@ -10328,7 +10370,7 @@ ALTER TABLE ONLY public.perguntas
 
 
 --
--- Name: prompt_juizes prompt_juizes_id_dataset_versao_key; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: prompt_juizes prompt_juizes_id_dataset_versao_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.prompt_juizes
@@ -10336,7 +10378,7 @@ ALTER TABLE ONLY public.prompt_juizes
 
 
 --
--- Name: prompt_juizes prompt_juizes_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: prompt_juizes prompt_juizes_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.prompt_juizes
@@ -10344,7 +10386,7 @@ ALTER TABLE ONLY public.prompt_juizes
 
 
 --
--- Name: render_bootstrap_metadata render_bootstrap_metadata_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: render_bootstrap_metadata render_bootstrap_metadata_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.render_bootstrap_metadata
@@ -10352,7 +10394,7 @@ ALTER TABLE ONLY public.render_bootstrap_metadata
 
 
 --
--- Name: respostas_atividade_1 respostas_atividade_1_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: respostas_atividade_1 respostas_atividade_1_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.respostas_atividade_1
@@ -10360,49 +10402,57 @@ ALTER TABLE ONLY public.respostas_atividade_1
 
 
 --
--- Name: idx_avaliacoes_juiz; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_avaliacoes_juiz; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_avaliacoes_juiz ON public.avaliacoes_juiz USING btree (id_modelo_juiz);
 
 
 --
--- Name: idx_avaliacoes_resposta; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_avaliacoes_resposta; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_avaliacoes_resposta ON public.avaliacoes_juiz USING btree (id_resposta_ativa1);
 
 
 --
--- Name: idx_perguntas_dataset; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_perguntas_dataset; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_perguntas_dataset ON public.perguntas USING btree (id_dataset);
 
 
 --
--- Name: idx_prompt_juizes_active_per_dataset; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_prompt_juizes_active_per_dataset; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE UNIQUE INDEX idx_prompt_juizes_active_per_dataset ON public.prompt_juizes USING btree (id_dataset) WHERE ativo;
 
 
 --
--- Name: idx_respostas_modelo; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_respostas_modelo; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_respostas_modelo ON public.respostas_atividade_1 USING btree (id_modelo);
 
 
 --
--- Name: idx_respostas_pergunta; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_respostas_pergunta; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_respostas_pergunta ON public.respostas_atividade_1 USING btree (id_pergunta);
 
 
 --
--- Name: avaliacoes_juiz avaliacoes_juiz_id_modelo_juiz_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: avaliacao_juiz_detalhes avaliacao_juiz_detalhes_id_avaliacao_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.avaliacao_juiz_detalhes
+    ADD CONSTRAINT avaliacao_juiz_detalhes_id_avaliacao_fkey FOREIGN KEY (id_avaliacao) REFERENCES public.avaliacoes_juiz(id_avaliacao) ON DELETE CASCADE;
+
+
+--
+-- Name: avaliacoes_juiz avaliacoes_juiz_id_modelo_juiz_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.avaliacoes_juiz
@@ -10410,7 +10460,7 @@ ALTER TABLE ONLY public.avaliacoes_juiz
 
 
 --
--- Name: avaliacoes_juiz avaliacoes_juiz_id_prompt_juiz_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: avaliacoes_juiz avaliacoes_juiz_id_prompt_juiz_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.avaliacoes_juiz
@@ -10418,7 +10468,7 @@ ALTER TABLE ONLY public.avaliacoes_juiz
 
 
 --
--- Name: avaliacoes_juiz avaliacoes_juiz_id_resposta_ativa1_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: avaliacoes_juiz avaliacoes_juiz_id_resposta_ativa1_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.avaliacoes_juiz
@@ -10426,7 +10476,7 @@ ALTER TABLE ONLY public.avaliacoes_juiz
 
 
 --
--- Name: meta_avaliacoes meta_avaliacoes_id_avaliacao_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: meta_avaliacoes meta_avaliacoes_id_avaliacao_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.meta_avaliacoes
@@ -10434,7 +10484,7 @@ ALTER TABLE ONLY public.meta_avaliacoes
 
 
 --
--- Name: perguntas perguntas_id_dataset_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: perguntas perguntas_id_dataset_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.perguntas
@@ -10442,7 +10492,7 @@ ALTER TABLE ONLY public.perguntas
 
 
 --
--- Name: prompt_juizes prompt_juizes_id_dataset_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: prompt_juizes prompt_juizes_id_dataset_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.prompt_juizes
@@ -10450,7 +10500,7 @@ ALTER TABLE ONLY public.prompt_juizes
 
 
 --
--- Name: respostas_atividade_1 respostas_atividade_1_id_modelo_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: respostas_atividade_1 respostas_atividade_1_id_modelo_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.respostas_atividade_1
@@ -10458,7 +10508,7 @@ ALTER TABLE ONLY public.respostas_atividade_1
 
 
 --
--- Name: respostas_atividade_1 respostas_atividade_1_id_pergunta_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: respostas_atividade_1 respostas_atividade_1_id_pergunta_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.respostas_atividade_1
@@ -10466,15 +10516,8 @@ ALTER TABLE ONLY public.respostas_atividade_1
 
 
 --
--- Name: SCHEMA public; Type: ACL; Schema: -; Owner: postgres
---
-
-REVOKE USAGE ON SCHEMA public FROM PUBLIC;
-
-
---
 -- PostgreSQL database dump complete
 --
 
-\unrestrict fxUO09DQp65d1G1UFVbGvYGqLe9GyUdKTpEVBetflgccmPJtR8V3A41D50yhV1C
+\unrestrict sRXvXTo1Rj0GT6aSZyLsiv6K2G6YDi3ZbH6e98V0f9JIXyQBCmh2yZfKDgv0Zfr
 
