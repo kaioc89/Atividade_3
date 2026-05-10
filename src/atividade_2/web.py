@@ -969,6 +969,14 @@ _INDEX_HTML = """
     .metric-card { border:1px solid var(--line); border-radius:8px; padding:10px; background:#fbfcfe; min-width:0; }
     .metric-value { display:block; font-size:22px; font-weight:750; line-height:1.15; overflow-wrap:anywhere; }
     .metric-label { display:block; color:var(--muted); font-size:12px; margin-top:3px; }
+    .operational-card { border-color:#c6d8e7; background:#f8fbfd; }
+    .operational-section { margin:14px 0 0; padding-top:14px; border-top:1px solid var(--line); }
+    .operational-section[hidden] { display:none; }
+    .operational-section h3 { margin:0 0 6px; font-size:13px; }
+    .operational-section table { margin-top:8px; }
+    .operational-blocks { display:grid; gap:14px; }
+    .operational-category-table table { min-width:420px; }
+    .operational-category-table th:nth-child(n+2), .operational-category-table td:nth-child(n+2) { width:118px; text-align:right; }
     .chart-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(260px,1fr)); gap:14px; }
     .chart { border:1px solid var(--line); border-radius:8px; padding:12px; min-width:0; }
     .chart h3 { margin:0 0 10px; font-size:13px; }
@@ -1164,6 +1172,7 @@ _INDEX_HTML = """
             <button class="carousel-tab" type="button" data-carousel-index="2" role="tab" aria-selected="false">Especialidades juridicas</button>
             <button class="carousel-tab" type="button" data-carousel-index="3" role="tab" aria-selected="false">Erros criticos</button>
             <button class="carousel-tab" type="button" data-carousel-index="4" role="tab" aria-selected="false">Concordancia entre Juizes</button>
+            <button class="carousel-tab" type="button" data-carousel-index="5" role="tab" aria-selected="false">Logs operacionais</button>
           </div>
           <div class="carousel-controls" aria-label="Navegacao do carousel">
             <button id="dashboard-model-carousel-prev" class="carousel-button" type="button" aria-label="Pagina anterior">&lsaquo;</button>
@@ -1289,6 +1298,69 @@ _INDEX_HTML = """
                   </tbody>
                 </table>
               </div>
+            </div>
+            <div class="dashboard-carousel-slide">
+              <h3>Logs operacionais</h3>
+              <p class="dashboard-note">Enriquecimento read-only dos logs confirmados. Nao recalcula metricas oficiais do banco.</p>
+              <div id="dashboard-operational-section" class="operational-section" hidden>
+                <div id="dashboard-operational-cards" class="metric-grid"></div>
+                <div class="operational-blocks">
+                  <div class="chart">
+                    <h3>Tempo medio por juiz/arbitro</h3>
+                    <div class="table-wrap dashboard-table">
+                      <table aria-label="Tempo medio operacional por juiz e arbitro">
+                        <thead>
+                          <tr>
+                            <th>papel</th>
+                            <th>modelo</th>
+                            <th>tempo medio</th>
+                            <th>eventos</th>
+                          </tr>
+                        </thead>
+                        <tbody id="dashboard-operational-latency-body">
+                          <tr><td colspan="4" class="muted">Metadados operacionais indisponiveis.</td></tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                  <div class="chart">
+                    <h3>Falhas por categoria</h3>
+                    <div class="table-wrap dashboard-table operational-category-table">
+                      <table aria-label="Falhas operacionais por categoria">
+                        <thead>
+                          <tr>
+                            <th>categoria</th>
+                            <th>incidentes</th>
+                          </tr>
+                        </thead>
+                        <tbody id="dashboard-operational-categories-body">
+                          <tr><td colspan="2" class="muted">Metadados operacionais indisponiveis.</td></tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+                <h3>Logs com sucesso parcial</h3>
+                <p class="dashboard-note">Conta runs que tiveram ao menos uma falha operacional e tambem ao menos um evento parseado com sucesso no mesmo log.</p>
+                <div class="table-wrap dashboard-table">
+                  <table aria-label="Detalhe de logs com sucesso parcial">
+                    <thead>
+                      <tr>
+                        <th>run_id</th>
+                        <th>log</th>
+                        <th>eventos</th>
+                        <th>sucessos</th>
+                        <th>falhas</th>
+                        <th>retries</th>
+                      </tr>
+                    </thead>
+                    <tbody id="dashboard-operational-partial-body">
+                      <tr><td colspan="6" class="muted">Sem logs com sucesso parcial.</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+              <p id="dashboard-operational-empty" class="muted">Metadados operacionais indisponiveis.</p>
             </div>
           </div>
         </div>
@@ -1657,6 +1729,19 @@ _INDEX_HTML = """
               </tbody>
             </table>
           </div>
+          <div id="meta_operational_card" class="prompt-preview-card operational-section" hidden>
+            <h3>Metadados operacionais dos logs</h3>
+            <p class="dashboard-note">Enriquecimento read-only; a avaliacao final continua vindo do PostgreSQL.</p>
+            <table aria-label="Metadados operacionais da avaliacao selecionada">
+              <tbody>
+                <tr><th>Run ID / log</th><td id="meta_operational_run" class="muted">-</td></tr>
+                <tr><th>Latencia</th><td id="meta_operational_latency" class="muted">-</td></tr>
+                <tr><th>Status HTTP</th><td id="meta_operational_status" class="muted">-</td></tr>
+                <tr><th>Retry</th><td id="meta_operational_retry" class="muted">-</td></tr>
+                <tr><th>Motivo do arbitro</th><td id="meta_operational_arbiter_reason" class="muted">-</td></tr>
+              </tbody>
+            </table>
+          </div>
           <div class="prompt-preview-card">
             <h3>Questao</h3>
             <pre id="meta_subject_question">Selecione uma avaliacao para ver o enunciado.</pre>
@@ -1824,6 +1909,7 @@ _INDEX_HTML = """
     let metaEvaluationOptions = [];
     let selectedMetaEvaluationId = "";
     let dashboardLoaded = false;
+    let operationalLogSummary = null;
     let currentAuditLogUrl = null;
     let activeRunId = null;
     let judgeModelOptions = [];
@@ -1884,6 +1970,7 @@ _INDEX_HTML = """
         if (!response.ok) throw new Error(data.detail || "Dashboard indisponivel.");
         dashboardLoaded = true;
         renderDashboard(data);
+        loadOperationalLogSummary().then(renderDashboardOperationalSummary);
       } catch (error) {
         body.innerHTML = "";
         const row = document.createElement("tr");
@@ -1894,6 +1981,20 @@ _INDEX_HTML = """
         row.appendChild(cell);
         body.appendChild(row);
         renderJudgeAgreement({}, [], friendlyErrorMessage(error.message));
+        loadOperationalLogSummary().then(renderDashboardOperationalSummary);
+      }
+    }
+
+    async function loadOperationalLogSummary() {
+      try {
+        const response = await fetch("/api/operational-log-summary", {cache: "no-store"});
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.detail || "Metadados operacionais indisponiveis.");
+        operationalLogSummary = data;
+        return data;
+      } catch (error) {
+        operationalLogSummary = null;
+        return null;
       }
     }
 
@@ -1999,6 +2100,189 @@ _INDEX_HTML = """
         }
         root.appendChild(card);
       }
+    }
+
+    function renderDashboardOperationalSummary(summary) {
+      const section = document.getElementById("dashboard-operational-section");
+      const empty = document.getElementById("dashboard-operational-empty");
+      const cardsRoot = document.getElementById("dashboard-operational-cards");
+      const latencyBody = document.getElementById("dashboard-operational-latency-body");
+      const categoriesBody = document.getElementById("dashboard-operational-categories-body");
+      const partialBody = document.getElementById("dashboard-operational-partial-body");
+      cardsRoot.textContent = "";
+      latencyBody.textContent = "";
+      categoriesBody.textContent = "";
+      partialBody.textContent = "";
+      if (!summary || !summary.available) {
+        section.hidden = true;
+        empty.hidden = false;
+        return;
+      }
+      section.hidden = false;
+      empty.hidden = true;
+      const logs = safeOperationalLogs(summary);
+      const events = logs.flatMap((log) => safeOperationalEvents(log));
+      const latencies = events.map((event) => Number(event.latency_ms)).filter(Number.isFinite);
+      const averageLatency = latencies.length ? Math.round(latencies.reduce((sum, value) => sum + value, 0) / latencies.length) : null;
+      const failedEvents = events.filter((event) => isOperationalFailure(event));
+      const incidentEvents = events.filter((event) => isOperationalIncident(event));
+      const partialRuns = operationalPartialRuns(logs);
+      const metrics = [
+        ["Tempo medio de avaliacao", formatLatency(averageLatency)],
+        ["Total de retries", summary.totals?.retries ?? 0],
+        ["Falhas operacionais", summary.totals?.failures ?? failedEvents.length],
+        ["Logs com sucesso parcial", partialRuns.length || "-"],
+      ];
+      for (const [labelText, metricValue] of metrics) {
+        const card = document.createElement("div");
+        card.className = "metric-card operational-card";
+        const value = document.createElement("span");
+        value.className = "metric-value";
+        value.textContent = display(metricValue);
+        const label = document.createElement("span");
+        label.className = "metric-label";
+        label.textContent = labelText;
+        card.appendChild(value);
+        card.appendChild(label);
+        cardsRoot.appendChild(card);
+      }
+
+      renderOperationalLatencyRows(latencyBody, events);
+      renderOperationalCategoryRows(categoriesBody, incidentEvents);
+      renderOperationalPartialRows(partialBody, partialRuns);
+    }
+
+    function safeOperationalLogs(summary) {
+      return Array.isArray(summary?.logs) ? summary.logs : [];
+    }
+
+    function safeOperationalEvents(log) {
+      return Array.isArray(log?.events) ? log.events : [];
+    }
+
+    function isOperationalFailure(event) {
+      return ["adaptive_task_failed", "judge_call_failed"].includes(event?.event_type);
+    }
+
+    function isOperationalIncident(event) {
+      return isOperationalFailure(event) || event?.event_type === "adaptive_task_requeued";
+    }
+
+    function renderOperationalLatencyRows(body, events) {
+      const groups = new Map();
+      for (const event of events) {
+        const latency = Number(event.latency_ms);
+        if (!Number.isFinite(latency)) continue;
+        if (!event.role || !event.judge_model) continue;
+        const role = normalizeRole(event.role);
+        const model = event.judge_model;
+        const key = `${role}\u001f${model}`;
+        const current = groups.get(key) || {role, model, sum: 0, count: 0};
+        current.sum += latency;
+        current.count += 1;
+        groups.set(key, current);
+      }
+      const rows = Array.from(groups.values()).sort((a, b) => a.role.localeCompare(b.role) || a.model.localeCompare(b.model));
+      if (!rows.length) {
+        appendTableMessage(body, 4, "Sem latencia operacional nos logs disponiveis.");
+        return;
+      }
+      rows.forEach((item) => {
+        const row = document.createElement("tr");
+        appendCell(row, item.role);
+        appendCell(row, item.model);
+        appendCell(row, formatLatency(Math.round(item.sum / item.count)));
+        appendCell(row, item.count);
+        body.appendChild(row);
+      });
+    }
+
+    function renderOperationalCategoryRows(body, events) {
+      const categories = new Map();
+      for (const event of events) {
+        const category = operationalFailureCategory(event);
+        const current = categories.get(category) || {label: category, incidents: 0};
+        current.incidents += 1;
+        categories.set(category, current);
+      }
+      const rows = Array.from(categories.values()).sort((a, b) => b.incidents - a.incidents || a.label.localeCompare(b.label));
+      if (!rows.length) {
+        appendTableMessage(body, 2, "Sem incidentes operacionais categorizaveis.");
+        return;
+      }
+      rows.forEach((item) => {
+        const row = document.createElement("tr");
+        appendCell(row, item.label);
+        appendCell(row, item.incidents);
+        body.appendChild(row);
+      });
+    }
+
+    function operationalFailureCategory(event) {
+      const error = String(event.error || "").toLowerCase();
+      const status = Number(event.status_code);
+      if (status === 429 || error.includes("rate limit") || error.includes("too many") || error.includes("concurrency")) {
+        return "Concorrencia/rate limit do provedor";
+      }
+      if (status === 404 || error.includes("model") && (error.includes("unavailable") || error.includes("not found") || error.includes("does not exist")) || error.includes("gated") || error.includes("no access")) {
+        return "Modelo indisponivel ou sem acesso";
+      }
+      if (status === 401 || status === 403 || error.includes("unauthorized") || error.includes("forbidden")) {
+        return "Autenticacao/permissao do provedor";
+      }
+      if (error.includes("timeout") || error.includes("timed out")) {
+        return "Timeout";
+      }
+      if (status >= 500) {
+        return "Erro 5xx do provedor";
+      }
+      if (status >= 400) {
+        return "Erro HTTP do provedor";
+      }
+      return "Falha operacional nao classificada";
+    }
+
+    function operationalPartialRuns(logs) {
+      return logs.map((log) => {
+        const events = safeOperationalEvents(log);
+        const failures = events.filter((event) => isOperationalFailure(event)).length || Number(log.failures) || 0;
+        const successes = events.filter((event) => event.event_type === "evaluation_parsed").length;
+        return {
+          runId: log.run_id,
+          logPath: log.log_path,
+          events: Number(log.total_events) || events.length,
+          successes,
+          failures,
+          retries: Number(log.total_retries) || events.reduce((sum, event) => sum + (Number(event.retry_count) || 0), 0),
+        };
+      }).filter((run) => run.failures > 0 && run.successes > 0);
+    }
+
+    function renderOperationalPartialRows(body, rows) {
+      if (!rows.length) {
+        appendTableMessage(body, 6, "Sem logs com sucesso parcial.");
+        return;
+      }
+      rows.forEach((item) => {
+        const row = document.createElement("tr");
+        appendCell(row, display(item.runId));
+        appendCell(row, display(item.logPath));
+        appendCell(row, item.events);
+        appendCell(row, item.successes);
+        appendCell(row, item.failures);
+        appendCell(row, item.retries);
+        body.appendChild(row);
+      });
+    }
+
+    function appendTableMessage(body, colSpan, message) {
+      const row = document.createElement("tr");
+      const cell = document.createElement("td");
+      cell.colSpan = colSpan;
+      cell.className = "muted";
+      cell.textContent = message;
+      row.appendChild(cell);
+      body.appendChild(row);
     }
 
     function renderModelDistributionChart(rows) {
@@ -3304,6 +3588,7 @@ _INDEX_HTML = """
         const data = await response.json();
         if (!response.ok) throw new Error(data.detail || "Falha ao carregar meta-avaliacao.");
         renderMetaEvaluationState(data.subject, data.records || []);
+        loadOperationalLogSummary().then((summary) => renderMetaOperationalMetadata(data.subject, summary));
         if (data.subject) {
           setText(
             "meta_status",
@@ -3314,6 +3599,7 @@ _INDEX_HTML = """
         }
       } catch (error) {
         setText("meta_status", friendlyErrorMessage(error.message));
+        renderMetaOperationalMetadata(null, null);
       }
     }
 
@@ -3379,6 +3665,7 @@ _INDEX_HTML = """
         setText("meta_subject_reference", "Selecione uma avaliacao para ver o gabarito.");
         setText("meta_subject_candidate_answer", "Selecione uma avaliacao para ver a resposta candidata.");
         setText("meta_subject_chain_of_thought", "Selecione uma avaliacao para ver o Chain of Thoughts.");
+        renderMetaOperationalMetadata(null, null);
         return;
       }
       const promptLabel = subject.prompt_version
@@ -3397,6 +3684,44 @@ _INDEX_HTML = """
       setText("meta_subject_reference", subject.reference_answer || "-");
       setText("meta_subject_candidate_answer", subject.candidate_answer || "-");
       setText("meta_subject_chain_of_thought", subject.judge_chain_of_thought || "-");
+    }
+
+    function renderMetaOperationalMetadata(subject, summary) {
+      const card = document.getElementById("meta_operational_card");
+      if (!subject || !summary || !summary.available) {
+        card.hidden = true;
+        return;
+      }
+      const match = findOperationalEventForSubject(subject, summary);
+      if (!match) {
+        card.hidden = true;
+        return;
+      }
+      card.hidden = false;
+      const retry = Number(match.event.retry_count) || 0;
+      setText("meta_operational_run", `${display(match.log.run_id)} / ${display(match.log.log_path)}`);
+      setText("meta_operational_latency", formatLatency(match.event.latency_ms));
+      setText("meta_operational_status", display(match.event.status_code));
+      setText("meta_operational_retry", retry > 0 ? `sim (${retry})` : "nao");
+      setText("meta_operational_arbiter_reason", display(match.event.arbiter_reason || subject.trigger_reason));
+    }
+
+    function findOperationalEventForSubject(subject, summary) {
+      for (const log of safeOperationalLogs(summary)) {
+        for (const event of safeOperationalEvents(log)) {
+          if (event.matched_evaluation_id && String(event.matched_evaluation_id) === String(subject.evaluation_id)) {
+            return {log, event};
+          }
+        }
+      }
+      for (const log of safeOperationalLogs(summary)) {
+        for (const event of safeOperationalEvents(log)) {
+          const sameAnswer = event.answer_id && String(event.answer_id) === String(subject.answer_id);
+          const sameJudge = !event.judge_model || !subject.judge_model || String(event.judge_model) === String(subject.judge_model);
+          if (sameAnswer && sameJudge) return {log, event};
+        }
+      }
+      return null;
     }
 
     function renderMetaRecords(records) {

@@ -127,8 +127,42 @@ class FakeAuditLogSummaryService:
         return {
             "source": "prod_logs_manifest",
             "available": True,
-            "totals": {"logs": 1, "events": 1},
-            "logs": [{"run_id": "judge_run_1", "events": []}],
+            "totals": {"logs": 1, "events": 3, "retries": 2, "failures": 1},
+            "logs": [
+                {
+                    "run_id": "judge_run_1",
+                    "log_path": "outputs/audit/judge_run_1.log",
+                    "total_events": 3,
+                    "total_retries": 2,
+                    "failures": 1,
+                    "events": [
+                        {
+                            "event_type": "evaluation_parsed",
+                            "answer_id": 1,
+                            "matched_evaluation_id": 101,
+                            "judge_model": "modelo-juiz",
+                            "latency_ms": 1234,
+                            "status_code": 200,
+                            "retry_count": 0,
+                            "arbiter_reason": "score_delta_below_threshold",
+                        },
+                        {
+                            "event_type": "adaptive_task_requeued",
+                            "answer_id": 2,
+                            "judge_model": "provider/model-a",
+                            "status_code": 429,
+                            "retry_count": 2,
+                        },
+                        {
+                            "event_type": "judge_call_failed",
+                            "answer_id": 3,
+                            "judge_model": "provider/model-a",
+                            "latency_ms": 3000,
+                            "status_code": 500,
+                        },
+                    ],
+                }
+            ],
             "missing_logs": [],
             "problems": [],
         }
@@ -906,7 +940,9 @@ def test_web_index_contains_progress_element() -> None:
     assert 'data-carousel-index="2"' in response.text
     assert 'data-carousel-index="3"' in response.text
     assert 'data-carousel-index="4"' in response.text
+    assert 'data-carousel-index="5"' in response.text
     assert "Concordancia entre Juizes" in response.text
+    assert "Logs operacionais" in response.text
     assert 'id="dashboard-judge-agreement-cards"' in response.text
     assert 'id="dashboard-judge-agreement-body"' in response.text
     assert ">Juiz x referencia</button>" not in response.text
@@ -1060,6 +1096,60 @@ def test_web_index_contains_meta_evaluation_tab() -> None:
     assert 'id="meta_history_next"' in response.text
     assert 'data-meta-history-sort="created_at"' in response.text
     assert response.text.index("Meta-avaliacoes registradas") < response.text.index("Avaliacao selecionada")
+
+
+def test_web_index_contains_controlled_operational_log_enrichment() -> None:
+    client = TestClient(create_app(FakeRunJudgeService()))
+
+    response = client.get("/")
+
+    assert response.status_code == 200
+    assert 'id="dashboard-operational-section"' in response.text
+    assert response.text.index("<h3>Indicadores gerais</h3>") < response.text.index("<h3>Logs operacionais</h3>")
+    assert "Metadados operacionais dos logs" in response.text
+    assert "Nao recalcula metricas oficiais do banco" in response.text
+    assert "Tempo medio por juiz/arbitro" in response.text
+    assert 'id="dashboard-operational-latency-body"' in response.text
+    assert "Falhas por categoria" in response.text
+    assert 'class="operational-blocks"' in response.text
+    assert 'id="dashboard-operational-categories-body"' in response.text
+    assert "falhas finais" not in response.text
+    assert 'id="dashboard-operational-failures-body"' not in response.text
+    assert "Falhas operacionais por modelo ou provedor" not in response.text
+    assert "Logs com sucesso parcial" in response.text
+    assert 'id="dashboard-operational-partial-body"' in response.text
+    assert "Conta runs que tiveram ao menos uma falha operacional" in response.text
+    assert 'id="meta_operational_card"' in response.text
+    assert 'id="meta_operational_run"' in response.text
+    assert 'id="meta_operational_latency"' in response.text
+    assert 'id="meta_operational_status"' in response.text
+    assert 'id="meta_operational_retry"' in response.text
+    assert 'id="meta_operational_arbiter_reason"' in response.text
+    assert 'fetch("/api/operational-log-summary", {cache: "no-store"})' in response.text
+    assert "renderDashboardOperationalSummary" in response.text
+    assert "renderMetaOperationalMetadata" in response.text
+
+
+def test_web_operational_log_enrichment_is_non_blocking_and_whitelisted() -> None:
+    client = TestClient(create_app(FakeRunJudgeService()))
+
+    response = client.get("/")
+
+    operational_renderer = response.text[
+        response.text.index("function renderDashboardOperationalSummary") : response.text.index("function renderModelDistributionChart")
+    ]
+    assert "catch (error) {" in response.text
+    assert "operationalLogSummary = null;" in response.text
+    assert "return null;" in response.text
+    assert "safeOperationalEvents" in operational_renderer
+    assert 'event.role || "sem papel"' not in operational_renderer
+    assert 'event.judge_model || "sem modelo"' not in operational_renderer
+    assert "if (!event.role || !event.judge_model) continue;" in operational_renderer
+    assert "operationalFailureCategory" in operational_renderer
+    assert "Concorrencia/rate limit do provedor" in operational_renderer
+    assert "Modelo indisponivel ou sem acesso" in operational_renderer
+    assert "raw_response" not in operational_renderer
+    assert "api_key" not in operational_renderer
 
 
 def test_meta_evaluation_endpoints_return_options_and_allow_save() -> None:
