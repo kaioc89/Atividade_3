@@ -924,6 +924,10 @@ def test_web_index_contains_progress_element() -> None:
     assert "Execucoes anteriores" in response.text
     assert 'id="history-table-body"' in response.text
     assert 'id="history-log-content"' in response.text
+    assert ".history-row.selected" in response.text
+    assert "let selectedHistoryRunId = null;" in response.text
+    assert "row.dataset.runId = entry.run_id" in response.text
+    assert "highlightSelectedHistoryRow" in response.text
     assert 'id="post-run-panel" class="post-run-panel" hidden' in response.text
     assert 'id="post-run-cards"' in response.text
     assert 'id="score-distribution-chart"' in response.text
@@ -1119,12 +1123,20 @@ def test_web_index_contains_controlled_operational_log_enrichment() -> None:
     assert "Logs com sucesso parcial" in response.text
     assert 'id="dashboard-operational-partial-body"' in response.text
     assert "Conta runs que tiveram ao menos uma falha operacional" in response.text
+    assert "button.textContent = display(item.logPath);" in response.text
+    assert "button.onclick = () => openHistoryLogFromMeta(item.runId, item.logPath);" in response.text
     assert 'id="meta_operational_card"' in response.text
     assert 'id="meta_operational_run"' in response.text
     assert 'id="meta_operational_latency"' in response.text
-    assert 'id="meta_operational_status"' in response.text
-    assert 'id="meta_operational_retry"' in response.text
-    assert 'id="meta_operational_arbiter_reason"' in response.text
+    assert 'id="meta_operational_status"' not in response.text
+    assert 'id="meta_operational_retry"' not in response.text
+    assert 'id="meta_operational_arbiter_reason"' not in response.text
+    assert "Status HTTP" not in response.text
+    assert "Retry" not in response.text
+    assert "Motivo do arbitro" not in response.text
+    assert "openHistoryLogFromMeta" in response.text
+    assert "Abrir em Execucoes anteriores" in response.text
+    assert 'targetId === "meta-panel" || targetId === "history-panel"' in response.text
     assert 'fetch("/api/operational-log-summary", {cache: "no-store"})' in response.text
     assert "renderDashboardOperationalSummary" in response.text
     assert "renderMetaOperationalMetadata" in response.text

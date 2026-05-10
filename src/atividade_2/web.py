@@ -910,6 +910,7 @@ _INDEX_HTML = """
     .history-actions div { display:flex; gap:8px; }
     .history-row { cursor:pointer; }
     .history-row:hover { background:#f7fbff; }
+    .history-row.selected { background:#eef7ff; box-shadow:inset 3px 0 0 var(--accent); }
     .history-log { min-height:520px; max-height:calc(100vh - 260px); }
     .history-export-links { display:flex; gap:8px; white-space:nowrap; }
     .audit-log-row { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:8px; align-items:center; }
@@ -1736,9 +1737,6 @@ _INDEX_HTML = """
               <tbody>
                 <tr><th>Run ID / log</th><td id="meta_operational_run" class="muted">-</td></tr>
                 <tr><th>Latencia</th><td id="meta_operational_latency" class="muted">-</td></tr>
-                <tr><th>Status HTTP</th><td id="meta_operational_status" class="muted">-</td></tr>
-                <tr><th>Retry</th><td id="meta_operational_retry" class="muted">-</td></tr>
-                <tr><th>Motivo do arbitro</th><td id="meta_operational_arbiter_reason" class="muted">-</td></tr>
               </tbody>
             </table>
           </div>
@@ -1908,6 +1906,7 @@ _INDEX_HTML = """
     let metaHistorySort = {key: "created_at", direction: "desc"};
     let metaEvaluationOptions = [];
     let selectedMetaEvaluationId = "";
+    let selectedHistoryRunId = null;
     let dashboardLoaded = false;
     let operationalLogSummary = null;
     let currentAuditLogUrl = null;
@@ -2266,7 +2265,15 @@ _INDEX_HTML = """
       rows.forEach((item) => {
         const row = document.createElement("tr");
         appendCell(row, display(item.runId));
-        appendCell(row, display(item.logPath));
+        const logCell = document.createElement("td");
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "detail-button";
+        button.textContent = display(item.logPath);
+        button.title = "Abrir em Execucoes anteriores";
+        button.onclick = () => openHistoryLogFromMeta(item.runId, item.logPath);
+        logCell.appendChild(button);
+        row.appendChild(logCell);
         appendCell(row, item.events);
         appendCell(row, item.successes);
         appendCell(row, item.failures);
@@ -3523,10 +3530,7 @@ _INDEX_HTML = """
     }
 
     async function loadHistory() {
-      const response = await fetch("/api/run-history");
-      const data = await response.json();
-      renderHistory(data);
-      historyLoaded = true;
+      await loadHistoryRows();
     }
 
     async function loadPromptOptions() {
@@ -3698,12 +3702,26 @@ _INDEX_HTML = """
         return;
       }
       card.hidden = false;
-      const retry = Number(match.event.retry_count) || 0;
-      setText("meta_operational_run", `${display(match.log.run_id)} / ${display(match.log.log_path)}`);
+      renderMetaOperationalLogLink(match.log);
       setText("meta_operational_latency", formatLatency(match.event.latency_ms));
-      setText("meta_operational_status", display(match.event.status_code));
-      setText("meta_operational_retry", retry > 0 ? `sim (${retry})` : "nao");
-      setText("meta_operational_arbiter_reason", display(match.event.arbiter_reason || subject.trigger_reason));
+    }
+
+    function renderMetaOperationalLogLink(log) {
+      const cell = document.getElementById("meta_operational_run");
+      cell.textContent = "";
+      const runId = log.run_id;
+      const logPath = log.log_path;
+      if (!runId) {
+        cell.textContent = display(logPath);
+        return;
+      }
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "detail-button";
+      button.textContent = `${display(runId)} / ${display(logPath)}`;
+      button.title = "Abrir em Execucoes anteriores";
+      button.onclick = () => openHistoryLogFromMeta(runId, logPath);
+      cell.appendChild(button);
     }
 
     function findOperationalEventForSubject(subject, summary) {
@@ -4039,6 +4057,7 @@ _INDEX_HTML = """
     function renderHistory(rows) {
       const body = document.getElementById("history-table-body");
       body.textContent = "";
+      window.latestRunHistoryRows = rows;
       if (!rows.length) {
         const row = document.createElement("tr");
         const cell = document.createElement("td");
@@ -4052,6 +4071,8 @@ _INDEX_HTML = """
       rows.forEach((entry) => {
         const row = document.createElement("tr");
         row.className = "history-row";
+        row.dataset.runId = entry.run_id || "";
+        if (String(entry.run_id) === String(selectedHistoryRunId)) row.classList.add("selected");
         row.onclick = () => openHistoryLog(entry);
         for (const value of [
           entry.run_id,
@@ -4094,6 +4115,8 @@ _INDEX_HTML = """
     }
 
     async function openHistoryLog(entry) {
+      selectedHistoryRunId = entry.run_id || null;
+      highlightSelectedHistoryRow();
       setText("history-log-run-id", entry.run_id);
       setText("history-log-path", entry.log_path);
       setText("history-log-content", "Carregando log...");
@@ -4109,6 +4132,32 @@ _INDEX_HTML = """
       }
     }
 
+    function highlightSelectedHistoryRow() {
+      for (const row of document.querySelectorAll(".history-row")) {
+        row.classList.toggle("selected", String(row.dataset.runId) === String(selectedHistoryRunId));
+      }
+    }
+
+    async function openHistoryLogFromMeta(runId, logPath) {
+      activateTab("history-panel");
+      const rows = historyLoaded ? (window.latestRunHistoryRows || []) : await loadHistoryRows();
+      const entry = rows.find((item) => String(item.run_id) === String(runId))
+        || {
+          run_id: runId,
+          log_path: logPath,
+          log_url: `/api/run-history/${encodeURIComponent(runId)}/audit-log`,
+        };
+      await openHistoryLog(entry);
+    }
+
+    async function loadHistoryRows() {
+      const response = await fetch("/api/run-history");
+      const rows = await response.json();
+      renderHistory(rows);
+      historyLoaded = true;
+      return rows;
+    }
+
     function activateTab(targetId) {
       for (const button of document.querySelectorAll(".tab-button")) {
         const active = button.dataset.tab === targetId;
@@ -4118,7 +4167,7 @@ _INDEX_HTML = """
       for (const panel of document.querySelectorAll(".tab-panel")) {
         panel.hidden = panel.id !== targetId;
       }
-      if (targetId === "meta-panel") {
+      if (targetId === "meta-panel" || targetId === "history-panel") {
         window.scrollTo({top: 0, left: 0, behavior: "auto"});
       }
     }
