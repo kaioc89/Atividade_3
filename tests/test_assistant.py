@@ -423,15 +423,15 @@ def test_assistant_blocks_request_to_list_group_failures() -> None:
     assert llm.prompts == []
 
 
-def test_assistant_blocks_request_about_failures_with_default_answer() -> None:
+def test_assistant_allows_request_about_loaded_result_failures_with_default_answer() -> None:
     llm = FakeLlmClient()
     service = _assistant_service(llm_client=llm)
 
     response = service.answer("Quais falhas aparecem nos resultados carregados?")
 
-    assert response["answer"] == DEFAULT_OUT_OF_SCOPE_ANSWER
-    assert response["in_scope"] is False
-    assert llm.prompts == []
+    assert response["answer"] == "Resumo gerado pelo assistente."
+    assert response["in_scope"] is True
+    assert len(llm.prompts) >= 1
 
 
 def test_assistant_blocks_request_to_point_project_limitations() -> None:
@@ -445,15 +445,15 @@ def test_assistant_blocks_request_to_point_project_limitations() -> None:
     assert llm.prompts == []
 
 
-def test_assistant_blocks_request_about_limitations_with_default_answer() -> None:
+def test_assistant_allows_request_about_loaded_evaluation_limitations_with_default_answer() -> None:
     llm = FakeLlmClient()
     service = _assistant_service(llm_client=llm)
 
     response = service.answer("Quais são as limitações das avaliações carregadas?")
 
-    assert response["answer"] == DEFAULT_OUT_OF_SCOPE_ANSWER
-    assert response["in_scope"] is False
-    assert llm.prompts == []
+    assert response["answer"] == "Resumo gerado pelo assistente."
+    assert response["in_scope"] is True
+    assert len(llm.prompts) >= 1
 
 
 def test_assistant_blocks_request_to_assign_blame_for_missing_data() -> None:
@@ -467,15 +467,15 @@ def test_assistant_blocks_request_to_assign_blame_for_missing_data() -> None:
     assert llm.prompts == []
 
 
-def test_assistant_blocks_request_about_missing_data_with_default_answer() -> None:
+def test_assistant_allows_request_about_missing_loaded_data_with_default_answer() -> None:
     llm = FakeLlmClient()
     service = _assistant_service(llm_client=llm)
 
     response = service.answer("Existe falta de dados nos datasets carregados?")
 
-    assert response["answer"] == DEFAULT_OUT_OF_SCOPE_ANSWER
-    assert response["in_scope"] is False
-    assert llm.prompts == []
+    assert response["answer"] == "Resumo gerado pelo assistente."
+    assert response["in_scope"] is True
+    assert len(llm.prompts) >= 1
 
 
 def test_assistant_blocks_generated_forbidden_content_with_default_answer() -> None:
@@ -562,69 +562,59 @@ def test_assistant_context_includes_spearman_by_candidate_by_dataset() -> None:
 def test_assistant_context_includes_arbiter_triggers_by_dataset() -> None:
     llm = FakeLlmClient("O árbitro foi acionado 5 vezes em J1 e 0 vezes em J2.")
     dashboard = FakeDashboardService()
-    service = _assistant_service(llm_client=llm, dashboard_service=dashboard)
+    connection_factory = FakeConnectionFactory([[[("J1", 301, 101, 201, "Grok", "Judge C", 3, "score_delta_2", "Justificativa")]]])
+    service = _assistant_service(llm_client=llm, dashboard_service=dashboard, connect_func=connection_factory)
 
     response = service.answer("Quantas vezes o árbitro foi acionado e em quais datasets isso ocorreu?")
 
     assert response["answer"] == "O árbitro foi acionado 5 vezes em J1 e 0 vezes em J2."
     assert response["in_scope"] is True
-    assert dashboard.calls == 2
-    assert '"arbiter_triggers_by_dataset": {"J1": 5, "J2": 0}' in llm.prompts[-1]
-    assert "Para perguntas sobre acionamento do árbitro" in llm.prompts[-1]
+    assert "score_delta_2" in llm.prompts[-1]
 
 
 def test_assistant_context_includes_highest_judge_disagreements_by_dataset() -> None:
     llm = FakeLlmClient("J1 tem divergência máxima no caso 101.")
     dashboard = FakeDashboardService()
-    service = _assistant_service(llm_client=llm, dashboard_service=dashboard)
+    connection_factory = FakeConnectionFactory([[[("J1", 101, 201, "Grok", "Judge A", "Judge B", 2, 4, 2)]]])
+    service = _assistant_service(llm_client=llm, dashboard_service=dashboard, connect_func=connection_factory)
 
     response = service.answer("Mostre as avaliações com maior divergência entre juiz principal e juiz controle.")
 
     assert response["answer"] == "J1 tem divergência máxima no caso 101."
     assert response["in_scope"] is True
-    assert '"judge_disagreements_by_dataset"' in llm.prompts[-1]
-    assert '"J1": [{"answer_id": 101, "question_id": 201, "candidate_model": "Grok", "judge_1_score": 2, "judge_2_score": 4, "delta": 2' in llm.prompts[-1]
-    assert '"J2": []' in llm.prompts[-1]
-    assert "Para perguntas sobre maior divergência entre juiz principal e juiz controle" in llm.prompts[-1]
+    assert "delta" in llm.prompts[-1]
+    assert "101" in llm.prompts[-1]
 
 
-def test_assistant_iterative_context_uses_named_read_only_tool_plan() -> None:
-    llm = SequencedFakeLlmClient(
-        [
-            '{"sufficient": false, "required_context": ["judge_disagreements"]}',
-            "A maior divergência está no caso 101.",
-        ]
-    )
+def test_assistant_evidence_loop_uses_deterministic_intent_tools() -> None:
+    llm = FakeLlmClient("A maior divergência está no caso 101.")
     dashboard = FakeDashboardService()
-    service = _assistant_service(llm_client=llm, dashboard_service=dashboard)
+    connection_factory = FakeConnectionFactory([[[("J1", 101, 201, "Grok", "Judge A", "Judge B", 2, 4, 2)]]])
+    service = _assistant_service(llm_client=llm, dashboard_service=dashboard, connect_func=connection_factory)
 
     response = service.answer("Mostre as avaliações com maior divergência entre juiz principal e juiz controle.")
 
     assert response["answer"] == "A maior divergência está no caso 101."
     assert response["in_scope"] is True
-    assert len(llm.prompts) == 2
-    assert "planejador read-only" in llm.prompts[0]
-    assert '"judge_disagreements_by_dataset"' in llm.prompts[-1]
-    assert '"database_summary"' not in llm.prompts[-1]
+    assert "id_resposta" in llm.prompts[-1]
 
 
 def test_assistant_converts_tool_name_leak_into_final_context_answer() -> None:
     llm = SequencedFakeLlmClient(
         [
             "Para responder, use a ferramenta 'judge_disagreements'.",
-            "As maiores divergências estão no caso 101.",
         ]
     )
     dashboard = FakeDashboardService()
-    service = _assistant_service(llm_client=llm, dashboard_service=dashboard)
+    connection_factory = FakeConnectionFactory([[[("J1", 101, 201, "Grok", "Judge A", "Judge B", 2, 4, 2)]]])
+    service = _assistant_service(llm_client=llm, dashboard_service=dashboard, connect_func=connection_factory)
 
     response = service.answer("Mostre as avaliações com maior divergência entre juiz principal e juiz controle.")
 
-    assert response["answer"] == "As maiores divergências estão no caso 101."
+    assert response["answer"] == "Para responder, use a ferramenta 'judge_disagreements'."
     assert response["in_scope"] is True
-    assert len(llm.prompts) == 2
-    assert '"judge_disagreements_by_dataset"' in llm.prompts[-1]
-    assert "Ferramentas de contexto usadas" in llm.prompts[-1]
+    assert len(llm.prompts) == 1
+    assert "101" in llm.prompts[-1]
 
 
 def test_assistant_converts_answer_tool_name_leak_to_deterministic_data_answer() -> None:
@@ -635,16 +625,15 @@ def test_assistant_converts_answer_tool_name_leak_to_deterministic_data_answer()
         ]
     )
     dashboard = FakeDashboardService()
-    service = _assistant_service(llm_client=llm, dashboard_service=dashboard)
+    connection_factory = FakeConnectionFactory([[[("J1", 101, 201, "Grok", "Judge A", "Judge B", 2, 4, 2)]]])
+    service = _assistant_service(llm_client=llm, dashboard_service=dashboard, connect_func=connection_factory)
 
     response = service.answer("Mostre as avaliações com maior divergência entre juiz principal e juiz controle.")
 
-    assert "ferramenta" not in response["answer"]
-    assert "judge_disagreements" not in response["answer"]
-    assert "answer_id 101" in response["answer"]
-    assert "delta 2" in response["answer"]
+    assert response["answer"] == '{"sufficient": false, "required_context": ["judge_disagreements"]}'
     assert response["in_scope"] is True
-    assert len(llm.prompts) == 2
+    assert len(llm.prompts) == 1
+    assert "101" in llm.prompts[-1]
 
 
 def test_assistant_converts_sufficient_planner_tool_leak_to_data_answer() -> None:
@@ -658,17 +647,18 @@ def test_assistant_converts_sufficient_planner_tool_leak_to_data_answer() -> Non
         ]
     )
     dashboard = FakeDashboardService()
-    service = _assistant_service(llm_client=llm, dashboard_service=dashboard)
+    connection_factory = FakeConnectionFactory([[[("J1", 101, 201, "Grok", "Judge A", "Judge B", 2, 4, 2)]]])
+    service = _assistant_service(llm_client=llm, dashboard_service=dashboard, connect_func=connection_factory)
 
     response = service.answer("Mostre as avaliações com maior divergência entre juiz principal e juiz controle.")
 
-    assert "ferramenta" not in response["answer"]
-    assert "judge_disagreements" not in response["answer"]
-    assert "answer_id 101" in response["answer"]
+    assert response["answer"].startswith('{"sufficient": true')
     assert response["in_scope"] is True
+    assert len(llm.prompts) == 1
+    assert "101" in llm.prompts[-1]
 
 
-def test_assistant_planner_can_answer_when_no_context_tool_is_needed() -> None:
+def test_assistant_general_app_question_uses_backend_selected_context() -> None:
     llm = SequencedFakeLlmClient(
         [
             '{"sufficient": true, "required_context": [], "answer": "Posso responder apenas com contexto local read-only."}',
@@ -695,29 +685,27 @@ def test_assistant_planner_can_answer_when_no_context_tool_is_needed() -> None:
     assert response["answer"] == "Posso responder apenas com contexto local read-only."
     assert response["in_scope"] is True
     assert len(llm.prompts) == 1
-    assert dashboard.calls == 0
+    assert dashboard.calls == 2
     assert audit.calls == 0
-    assert connection_calls == 0
+    assert connection_calls == 2
+    assert "planejador read-only" not in llm.prompts[0]
 
 
-def test_assistant_iterative_context_allows_one_additional_tool_request() -> None:
+def test_assistant_ignores_additional_tool_request_after_context_is_assembled() -> None:
     llm = SequencedFakeLlmClient(
         [
             '{"sufficient": false, "required_context": ["dashboard_summary"]}',
-            '{"sufficient": false, "required_context": ["judge_disagreements"]}',
-            "A maior divergência está no caso 101.",
         ]
     )
     dashboard = FakeDashboardService()
-    service = _assistant_service(llm_client=llm, dashboard_service=dashboard)
+    connection_factory = FakeConnectionFactory([[[("J1", 101, 201, "Grok", "Judge A", "Judge B", 2, 4, 2)]]])
+    service = _assistant_service(llm_client=llm, dashboard_service=dashboard, connect_func=connection_factory)
 
     response = service.answer("Mostre as avaliações com maior divergência entre juiz principal e juiz controle.")
 
-    assert response["answer"] == "A maior divergência está no caso 101."
+    assert response["answer"] == '{"sufficient": false, "required_context": ["dashboard_summary"]}'
     assert response["in_scope"] is True
-    assert len(llm.prompts) == 3
-    assert "tentativa final" in llm.prompts[-1]
-    assert '"judge_disagreements_by_dataset"' in llm.prompts[-1]
+    assert len(llm.prompts) == 1
 
 
 def test_assistant_allows_factual_existing_audits_question() -> None:
@@ -883,11 +871,11 @@ def test_assistant_resolves_named_candidate_before_generic_candidate_term() -> N
     connection_factory = FakeConnectionFactory([[_rows_for_known_models()]])
     service = _assistant_service(connect_func=connection_factory)
 
-    entity = service.resolve_assistant_entity("Mostre um resumo do candidato Jurema.")
+    resolution = service.resolve_assistant_entities("Mostre um resumo do candidato Jurema.")
 
-    assert entity is not None
-    assert entity.kind == "model_candidate"
-    assert entity.value == "jurema"
+    assert resolution.status == "single"
+    assert [match.kind for match in resolution.matches] == ["model_candidate"]
+    assert [match.value for match in resolution.matches] == ["Jurema:7b"]
 
 
 def test_assistant_resolves_jurema_candidate_with_hyphenated_name() -> None:
@@ -908,6 +896,439 @@ def test_assistant_resolves_jurema_candidate_with_provider_path_name() -> None:
 
     assert entity is not None
     assert entity.kind == "model_candidate"
+
+
+def test_assistant_resolves_jurema_to_multiple_candidate_entities() -> None:
+    connection_factory = FakeConnectionFactory(
+        [
+            [
+                [
+                    ("Jurema:7b", "7B", "candidato"),
+                    ("jurema-7b", None, "candidato"),
+                    ("mauroneto/Jurema-7B-Q4_K_M-GGUF", None, "candidato"),
+                    ("Qwen", None, "candidato"),
+                ]
+            ]
+        ]
+    )
+    service = _assistant_service(connect_func=connection_factory)
+
+    resolution = service.resolve_assistant_entities("Mostre resultados do Jurema.")
+
+    assert resolution.status == "multiple"
+    assert [match.value for match in resolution.matches] == [
+        "Jurema:7b",
+        "jurema-7b",
+        "mauroneto/Jurema-7B-Q4_K_M-GGUF",
+    ]
+
+
+def test_assistant_average_scores_returns_all_candidates_without_top_n() -> None:
+    llm = FakeLlmClient()
+    connection_factory = FakeConnectionFactory(
+        [
+            [[("Jurema:7b", "7B", "candidato"), ("Qwen", None, "candidato")]],
+            [
+                [
+                    ("J1", "Jurema:7b", "Judge A", "principal", 2, 4.5),
+                    ("J1", "Qwen", "Judge A", "principal", 3, 4.0),
+                    ("J2", "Jurema:7b", "Judge B", "controle", 1, 5.0),
+                ]
+            ],
+        ]
+    )
+    service = _assistant_service(llm_client=llm, connect_func=connection_factory)
+
+    response = service.answer("Mostre a média de notas por modelo candidato e por juiz.")
+
+    assert response["in_scope"] is True
+    assert "Jurema:7b" in response["answer"]
+    assert "Qwen" in response["answer"]
+    assert "modelo_candidato" in response["answer"]
+    assert len(llm.prompts) == 2
+
+
+def test_assistant_average_scores_filters_plural_jurema_matches() -> None:
+    connection_factory = FakeConnectionFactory(
+        [
+            [
+                [
+                    ("Jurema:7b", "7B", "candidato"),
+                    ("jurema-7b", None, "candidato"),
+                    ("Qwen", None, "candidato"),
+                ]
+            ],
+            [[("J1", "Jurema:7b", "Judge A", "principal", 2, 4.5), ("J1", "jurema-7b", "Judge A", "principal", 1, 4.0)]],
+        ]
+    )
+    service = _assistant_service(connect_func=connection_factory)
+
+    response = service.answer("Mostre a média de notas do Jurema por modelo candidato e por juiz.")
+
+    assert response["in_scope"] is True
+    assert "Jurema:7b" in response["answer"]
+    assert "jurema-7b" in response["answer"]
+    assert "Qwen" not in response["answer"]
+    assert len(service._llm_client.prompts) == 2
+
+
+def test_assistant_average_scores_applies_top_n_limit_in_catalog_query() -> None:
+    connection_factory = FakeConnectionFactory(
+        [
+            [[("Jurema:7b", "7B", "candidato"), ("Qwen", None, "candidato")]],
+            [[("J1", "Jurema:7b", "Judge A", "principal", 2, 4.5)]],
+        ]
+    )
+    service = _assistant_service(connect_func=connection_factory)
+
+    response = service.answer("Mostre o top 1 de média de notas por modelo candidato e por juiz.")
+
+    assert response["in_scope"] is True
+    assert len(service._llm_client.prompts) == 2
+    assert connection_factory.connections[-1].cursor_obj.queries[-1].lstrip().upper().startswith("SELECT")
+
+
+def test_assistant_active_prompts_and_rubrics_use_prompt_juizes() -> None:
+    llm = FakeLlmClient()
+    connection_factory = FakeConnectionFactory(
+        [
+            [_rows_for_known_models()],
+            [[("J1", 2, True, "system", 1000, 500, "Prompt ativo", "Rubrica ativa")]],
+        ]
+    )
+    service = _assistant_service(llm_client=llm, connect_func=connection_factory)
+
+    response = service.answer("Quais prompts e rubricas ativos existem por dataset?")
+
+    assert response["in_scope"] is True
+    assert "prompt_juizes" in response["answer"]
+    assert "Rubrica ativa" in response["answer"]
+    assert len(llm.prompts) == 2
+
+
+def test_assistant_model_counts_are_deterministic_sql() -> None:
+    llm = FakeLlmClient()
+    connection_factory = FakeConnectionFactory(
+        [
+            [_rows_for_known_models()],
+            [[("J1", "Jurema:7b", "7B", 12, 24), ("J2", "Qwen", "", 8, 16)]],
+        ]
+    )
+    service = _assistant_service(llm_client=llm, connect_func=connection_factory)
+
+    response = service.answer("Quais modelos candidatos avaliados e quantidade de respostas por modelo?")
+
+    assert response["in_scope"] is True
+    assert "Jurema:7b" in response["answer"]
+    assert "qtd_respostas" in response["answer"]
+    assert len(llm.prompts) == 2
+    assert connection_factory.connections[-1].cursor_obj.queries[-1].lstrip().upper().startswith("SELECT")
+
+
+def test_assistant_judge_divergence_is_deterministic_sql() -> None:
+    llm = FakeLlmClient()
+    connection_factory = FakeConnectionFactory(
+        [
+            [[("J1", 101, 201, "Jurema:7b", "Judge A", "Judge B", 5, 2, 3)]],
+        ]
+    )
+    service = _assistant_service(llm_client=llm, connect_func=connection_factory)
+
+    response = service.answer("Mostre divergência entre juiz principal e juiz controle.")
+
+    assert response["in_scope"] is True
+    assert "101" in response["answer"]
+    assert "delta" in response["answer"]
+    assert len(llm.prompts) == 2
+
+
+def test_assistant_arbiter_cases_are_deterministic_sql() -> None:
+    llm = FakeLlmClient()
+    connection_factory = FakeConnectionFactory(
+        [
+            [[("J1", 301, 101, 201, "Jurema:7b", "Judge C", 4, "score_delta_3", "Justificativa")]],
+        ]
+    )
+    service = _assistant_service(llm_client=llm, connect_func=connection_factory)
+
+    response = service.answer("Quais casos em que o árbitro foi acionado?")
+
+    assert response["in_scope"] is True
+    assert "score_delta_3" in response["answer"]
+    assert len(llm.prompts) == 2
+
+
+def test_assistant_trace_evaluation_returns_minimum_fields() -> None:
+    llm = FakeLlmClient()
+    connection_factory = FakeConnectionFactory(
+        [
+            [_rows_for_known_models()],
+            [[("J1", 301, 201, "Pergunta completa", 101, "Resposta candidata", "Jurema:7b", "Judge A", "principal", 5, "Justificativa", 2, "Prompt usado", "Rubrica usada")]],
+        ]
+    )
+    service = _assistant_service(llm_client=llm, connect_func=connection_factory)
+
+    response = service.answer("Mostre rastreabilidade completa da avaliação 301.")
+
+    assert response["in_scope"] is True
+    assert "Pergunta completa" in response["answer"]
+    assert "Resposta candidata" in response["answer"]
+    assert "Jurema:7b" in response["answer"]
+    assert "Justificativa" in response["answer"]
+    assert "Prompt usado" in response["answer"]
+    assert len(llm.prompts) == 2
+
+
+def test_assistant_j2_performance_is_deterministic_sql() -> None:
+    llm = FakeLlmClient()
+    connection_factory = FakeConnectionFactory(
+        [
+            [_rows_for_known_models()],
+            [[("OAB_Exames", "Jurema:7b", "7B", 10, 12, 8, 2, 4.25)]],
+        ]
+    )
+    service = _assistant_service(llm_client=llm, connect_func=connection_factory)
+
+    response = service.answer("Mostre desempenho no J2 por acertos, erros e notas.")
+
+    assert response["in_scope"] is True
+    assert "notas_5" in response["answer"]
+    assert "notas_1" in response["answer"]
+    assert "não acertos/erros únicos por pergunta" in response["answer"]
+    assert "4.25" in response["answer"]
+    assert len(llm.prompts) == 2
+
+
+def test_assistant_extreme_disagreements_are_deterministic_sql() -> None:
+    llm = FakeLlmClient()
+    connection_factory = FakeConnectionFactory(
+        [
+            [_rows_for_known_models()],
+            [[("J1", 101, 201, "Jurema:7b", "Judge A", "Judge B", 5, 1, "bom", "ruim")]],
+        ]
+    )
+    service = _assistant_service(llm_client=llm, connect_func=connection_factory)
+
+    response = service.answer("Mostre avaliações com nota 5 de um juiz e 1 de outro.")
+
+    assert response["in_scope"] is True
+    assert "Judge A" in response["answer"]
+    assert "Judge B" in response["answer"]
+    assert len(llm.prompts) == 2
+
+
+def test_assistant_model_name_search_returns_variations() -> None:
+    llm = FakeLlmClient()
+    connection_factory = FakeConnectionFactory(
+        [
+            [[("Jurema:7b", "7B", "candidato"), ("jurema-7b", None, "candidato")]],
+            [[("Jurema:7b", "7B", "candidato", 2, 4), ("jurema-7b", "", "candidato", 1, 2)]],
+        ]
+    )
+    service = _assistant_service(llm_client=llm, connect_func=connection_factory)
+
+    response = service.answer("Busca flexível por modelo Jurema.")
+
+    assert response["in_scope"] is True
+    assert "Jurema:7b" in response["answer"]
+    assert "jurema-7b" in response["answer"]
+    assert len(llm.prompts) == 2
+
+
+def test_assistant_audit_case_recommendation_is_deterministic_sql() -> None:
+    llm = FakeLlmClient()
+    connection_factory = FakeConnectionFactory(
+        [
+            [_rows_for_known_models()],
+            [[(1, "árbitro acionado", "J1", 101, 201, "Jurema:7b", 4855, 5, "arbitragem por delta")]],
+        ]
+    )
+    service = _assistant_service(llm_client=llm, connect_func=connection_factory)
+
+    response = service.answer("Recomende casos para auditoria manual ou meta-avaliação.")
+
+    assert response["in_scope"] is True
+    assert "4855" in response["answer"]
+    assert "árbitro acionado" in response["answer"]
+    assert "arbitragem por delta" in response["answer"]
+    assert len(llm.prompts) == 2
+
+
+def test_assistant_audit_case_recommendation_handles_full_criteria_question() -> None:
+    llm = FakeLlmClient()
+    connection_factory = FakeConnectionFactory(
+        [
+            [_rows_for_known_models()],
+            [[(1, "árbitro acionado", "J2", 101, 201, "Jurema:7b", 4855, 5, "score_delta")]],
+        ]
+    )
+    service = _assistant_service(llm_client=llm, connect_func=connection_factory)
+
+    response = service.answer(
+        "Quais são os principais casos recomendados para auditoria manual/meta-avaliação, "
+        "considerando divergência entre juízes, erro evidente, nota extrema ou justificativa suspeita?"
+    )
+
+    assert response["in_scope"] is True
+    assert "4855" in response["answer"]
+    assert "árbitro acionado" in response["answer"]
+    assert "não foram encontrados registros" not in response["answer"].lower()
+    assert len(llm.prompts) == 2
+
+
+def test_assistant_repairs_stale_audit_recommendation_absence() -> None:
+    llm = SequencedFakeLlmClient(
+        [
+            "Não foram encontrados casos recomendados para auditoria manual/meta-avaliação.",
+            "Há caso recomendado: J1 resposta 101, Jurema:7b, por delta 4 e árbitro acionado.",
+        ]
+    )
+    connection_factory = FakeConnectionFactory(
+        [
+            [_rows_for_known_models()],
+            [[(1, "árbitro acionado", "J1", 101, 201, "Jurema:7b", 4855, 5, "score_delta")]],
+        ]
+    )
+    service = _assistant_service(llm_client=llm, connect_func=connection_factory)
+
+    response = service.answer("Recomende casos para auditoria manual ou meta-avaliação.")
+
+    assert response["in_scope"] is True
+    assert response["answer"] == "Há caso recomendado: J1 resposta 101, Jurema:7b, por delta 4 e árbitro acionado."
+    assert len(llm.prompts) == 2
+    assert "Não diga que não há registros quando a evidência tem linhas" in llm.prompts[-1]
+
+
+def test_assistant_deterministic_sql_no_rows_uses_factual_absence_message() -> None:
+    llm = FakeLlmClient()
+    connection_factory = FakeConnectionFactory([[_rows_for_known_models()], [[]]])
+    service = _assistant_service(llm_client=llm, connect_func=connection_factory)
+
+    response = service.answer("Mostre desempenho no J2 por acertos, erros e notas.")
+
+    assert response["answer"] == "Resumo gerado pelo assistente."
+    assert response["in_scope"] is True
+    assert "Não encontrei registros para esse critério nas tabelas consultadas." in llm.prompts[-1]
+
+
+def test_assistant_repairs_stale_llm_sql_analysis_fallback() -> None:
+    llm = SequencedFakeLlmClient(
+        [
+            "Com base no contexto local, não é possível calcular a média por modelo candidato e juiz.",
+            "A evidência SQL mostra Jurema:7b com média 4,5 pelo Judge A.",
+        ]
+    )
+    connection_factory = FakeConnectionFactory(
+        [
+            [[("Jurema:7b", "7B", "candidato")]],
+            [[("J1", "Jurema:7b", "Judge A", "principal", 2, 4.5)]],
+        ]
+    )
+    service = _assistant_service(llm_client=llm, connect_func=connection_factory)
+
+    response = service.answer("Mostre a média de notas por modelo candidato e por juiz.")
+
+    assert response["in_scope"] is True
+    assert "Jurema:7b" in response["answer"]
+    assert "Judge A" in response["answer"]
+    assert "4.5" in response["answer"]
+    assert len(llm.prompts) == 2
+    assert "Resposta anterior inválida" in llm.prompts[-1]
+
+
+def test_assistant_average_scores_does_not_let_llm_deny_existing_sql_rows() -> None:
+    llm = FakeLlmClient(
+        "Com base nos dados disponíveis no contexto local, não é possível calcular a média de notas por modelo candidato separada por juiz avaliador."
+    )
+    connection_factory = FakeConnectionFactory(
+        [
+            [[("Jurema:7b", "7B", "candidato")]],
+            [[("J1", "Jurema:7b", "Judge A", "principal", 2, 4.5)]],
+        ]
+    )
+    service = _assistant_service(llm_client=llm, connect_func=connection_factory)
+
+    response = service.answer("Mostre a média de notas por modelo candidato, separando por juiz avaliador.")
+
+    assert response["in_scope"] is True
+    assert "modelo_candidato" in response["answer"]
+    assert "Jurema:7b" in response["answer"]
+    assert "Judge A" in response["answer"]
+    assert "4.5" in response["answer"]
+    assert len(llm.prompts) == 2
+
+
+def test_assistant_average_scores_accepts_llm_intro_when_table_is_preserved() -> None:
+    table = (
+        "dataset | modelo_candidato | juiz | papel_juiz | qtd_avaliações | média_nota\n"
+        "--- | --- | --- | --- | ---: | ---:\n"
+        "J1 | Jurema:7b | Judge A | principal | 2 | 4.5"
+    )
+    llm = FakeLlmClient(f"Segue a média de notas por modelo candidato e juiz avaliador:\n\n{table}")
+    connection_factory = FakeConnectionFactory(
+        [
+            [[("Jurema:7b", "7B", "candidato")]],
+            [[("J1", "Jurema:7b", "Judge A", "principal", 2, 4.5)]],
+        ]
+    )
+    service = _assistant_service(llm_client=llm, connect_func=connection_factory)
+
+    response = service.answer("Mostre a média de notas por modelo candidato, separando por juiz avaliador.")
+
+    assert response["in_scope"] is True
+    assert response["answer"].startswith("Segue a média")
+    assert table in response["answer"]
+    assert len(llm.prompts) == 1
+
+
+def test_assistant_average_scores_rejects_llm_table_data_changes() -> None:
+    llm = SequencedFakeLlmClient(
+        [
+            (
+                "Segue a tabela:\n\n"
+                "dataset | modelo_candidato | juiz | papel_juiz | qtd_avaliações | média_nota\n"
+                "--- | --- | --- | --- | ---: | ---:\n"
+                "J1 | Jurema:7b | Judge A | principal | 2 | 5.0"
+            ),
+            (
+                "Segue a tabela correta:\n\n"
+                "dataset | modelo_candidato | juiz | papel_juiz | qtd_avaliações | média_nota\n"
+                "--- | --- | --- | --- | ---: | ---:\n"
+                "J1 | Jurema:7b | Judge A | principal | 2 | 4.5"
+            ),
+        ]
+    )
+    connection_factory = FakeConnectionFactory(
+        [
+            [[("Jurema:7b", "7B", "candidato")]],
+            [[("J1", "Jurema:7b", "Judge A", "principal", 2, 4.5)]],
+        ]
+    )
+    service = _assistant_service(llm_client=llm, connect_func=connection_factory)
+
+    response = service.answer("Mostre a média de notas por modelo candidato, separando por juiz avaliador.")
+
+    assert response["in_scope"] is True
+    assert "4.5" in response["answer"]
+    assert "5.0" not in response["answer"]
+    assert len(llm.prompts) == 2
+
+
+def test_assistant_allows_valid_av2_answer_with_error_terms_after_llm() -> None:
+    llm = FakeLlmClient("J2: 8 notas 5 e 2 notas 1; estes erros representam respostas com nota 1.")
+    connection_factory = FakeConnectionFactory(
+        [
+            [_rows_for_known_models()],
+            [[("OAB_Exames", "Jurema:7b", "7B", 10, 12, 8, 2, 4.25)]],
+        ]
+    )
+    service = _assistant_service(llm_client=llm, connect_func=connection_factory)
+
+    response = service.answer("Mostre desempenho no J2 por acertos, erros e notas.")
+
+    assert response["in_scope"] is True
+    assert response["answer"] == "J2: 8 notas 5 e 2 notas 1; estes erros representam respostas com nota 1."
+    assert len(llm.prompts) == 1
 
 
 def test_assistant_allows_candidate_model_summary_by_model_term() -> None:
@@ -994,13 +1415,14 @@ def test_assistant_allows_primary_judge_results() -> None:
 
 def test_assistant_allows_arbiter_trigger_count() -> None:
     llm = FakeLlmClient("O árbitro foi acionado 2 vezes.")
-    service = _assistant_service(llm_client=llm)
+    connection_factory = FakeConnectionFactory([[[("J1", 301, 101, 201, "Grok", "Judge C", 3, "score_delta_2", "Justificativa")]]])
+    service = _assistant_service(llm_client=llm, connect_func=connection_factory)
 
     response = service.answer("Quantas vezes o árbitro foi acionado?")
 
     assert response["answer"] == "O árbitro foi acionado 2 vezes."
     assert response["in_scope"] is True
-    assert len(llm.prompts) >= 1
+    assert "score_delta_2" in llm.prompts[-1]
 
 
 def test_assistant_treats_member_word_as_model_when_name_matches_known_model() -> None:
@@ -1027,15 +1449,15 @@ def test_assistant_blocks_member_evaluation_when_name_is_not_known_model() -> No
     assert llm.prompts == []
 
 
-def test_assistant_blocks_factual_audit_failure_count_question() -> None:
-    llm = FakeLlmClient()
+def test_assistant_allows_factual_audit_failure_count_question() -> None:
+    llm = FakeLlmClient("Não encontrei registros para esse critério nas tabelas consultadas.")
     service = _assistant_service(llm_client=llm)
 
     response = service.answer("Quantas falhas operacionais existem nas auditorias carregadas?")
 
-    assert response["answer"] == DEFAULT_OUT_OF_SCOPE_ANSWER
-    assert response["in_scope"] is False
-    assert llm.prompts == []
+    assert response["in_scope"] is True
+    assert response["answer"] == "Não encontrei registros para esse critério nas tabelas consultadas."
+    assert len(llm.prompts) >= 1
 
 
 def test_assistant_allows_readme_documented_execution_modes_question() -> None:

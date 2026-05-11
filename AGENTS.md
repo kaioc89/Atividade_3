@@ -21,6 +21,12 @@ Repo-local skill auto-loading behavior requires validation in the local Codex en
 - Avoid placeholders, TODOs, incomplete code, and vague fallback behavior.
 - Do not commit changes unless explicitly requested.
 
+## AI assistant LLM invocation rule
+
+The AI assistant must always call the LLM for valid questions. This rule must
+not be changed unless explicitly requested by the user; when possible, confirm
+with the user before changing it.
+
 ## Python command policy
 
 Use the project virtual environment for Python commands:
@@ -44,18 +50,6 @@ Before considering work complete:
 - Prefer deterministic scripts and tests over natural-language instructions.
 - Document commands executed and results observed.
 - Do not claim validation passed if it was not run.
-
-## Web UI deployment
-
-After Web UI changes or when a new local deploy is needed, run:
-
-```bash
-make web-up
-```
-
-This command is the canonical way to rebuild/restart the local Web UI and refresh the content served on port `8000`.
-
-Exception: if provider calls are already in progress, do not run `make web-up`. Inform the user that the Web UI deploy is blocked by the active provider calls and ask them to stop or confirm completion of the current processing before running `make web-up`.
 
 ## Output defaults
 
