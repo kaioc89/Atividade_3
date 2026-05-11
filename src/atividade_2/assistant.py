@@ -38,9 +38,11 @@ _WRITE_OPERATION_PATTERN = re.compile(
 _IN_SCOPE_PATTERN = re.compile(
     r"\b("
     r"resultado|resultados|carregado|carregados|dashboard|avaliacao|avaliacoes|avaliação|avaliações|"
+    r"meta-análise|meta-analise|metaanálise|metaanalise|meta análise|meta analise|"
+    r"meta-avaliação|meta-avaliacao|meta avaliação|meta avaliacao|"
     r"auditoria|auditorias|audit|banco|database|dados|tabela|tabelas|readme|documentado|documentacao|"
     r"documentação|uso|usar|filtro|filtros|tela|aplicacao|aplicação|app|modelo|modelos|candidato|"
-    r"candidatos|juiz|juizes|juízes|arbitro|árbitro|avaliador|avaliadores"
+    r"candidatos|juiz|juizes|juízes|arbitro|árbitro|avaliador|avaliadores|dataset|datasets|ia|ias|top|ranking"
     r")\b",
     re.IGNORECASE,
 )
@@ -84,7 +86,9 @@ _PERSON_SUBJECTIVE_PATTERN = re.compile(
 _FACTUAL_AUDIT_PATTERN = re.compile(
     r"\b("
     r"auditoria|auditorias|audit|meta-avaliação|meta-avaliacao|meta-avaliações|meta-avaliacoes|"
-    r"meta-análise|meta-analise|avaliador|avaliadores|auditor|auditores|revisão humana|revisao humana|"
+    r"meta avaliação|meta avaliacao|meta avaliações|meta avaliacoes|"
+    r"meta-análise|meta-analise|metaanálise|metaanalise|meta análise|meta analise|"
+    r"avaliador|avaliadores|auditor|auditores|revisão humana|revisao humana|"
     r"casos auditados|notas auditadas|divergência|divergencias|divergência|divergências|discordaram|"
     r"realizou|realizadas|feitas|feitos|quantas|quantos|liste|lista|resumo|resultados"
     r")\b",
@@ -136,9 +140,24 @@ _ALLOWED_TABLES = (
     "prompt_juizes",
     "meta_avaliacoes",
 )
+_CONTEXT_TOOL_CATALOG = {
+    "dashboard_summary": "Cards agregados por dataset, incluindo totais e concordância entre juízes.",
+    "candidate_rankings": "Ranking dos modelos candidatos por dataset.",
+    "candidate_spearman": "Spearman por modelo candidato e dataset quando disponível.",
+    "arbiter_triggers": "Quantidade de acionamentos do árbitro por dataset.",
+    "judge_disagreements": "Casos com maior divergência entre juiz principal e juiz controle.",
+    "database_summary": "Tabelas permitidas e contagens de linhas.",
+    "human_audits": "Resumo factual das auditorias/meta-avaliações humanas registradas.",
+    "audit_logs": "Resumo neutro dos logs de execução do juiz.",
+    "readme": "Trechos do README interno permitidos.",
+    "usage": "Contexto de uso da Web UI e filtros.",
+}
+_DEFAULT_CONTEXT_TOOLS = ("dashboard_summary", "database_summary", "usage")
+_MAX_CONTEXT_INTERACTIONS = 3
 _ASSISTANT_ENTITY_TERMS_PATTERN = re.compile(
     r"\b("
     r"candidato|candidatos|modelo candidato|modelo candidatos|modelo|modelos|"
+    r"ia|ias|ranking|top|dataset|datasets|"
     r"juiz|juizes|juízes|modelo juiz|modelo avaliador|avaliador automático|avaliador automatico|"
     r"arbitro|árbitro"
     r")\b",
@@ -266,7 +285,8 @@ class AssistantService:
         if _WRITE_OPERATION_PATTERN.search(question):
             return _blocked_response()
 
-        docs_match = _lookup_app_docs_context(question, self._readme_loader())
+        factual_human_audit_query = is_factual_human_audit_query(question)
+        docs_match = None if factual_human_audit_query else _lookup_app_docs_context(question, self._readme_loader())
         if docs_match is not None:
             prompt = _build_app_docs_prompt(question, docs_match)
             answer = self._llm_client.complete(prompt).strip()
@@ -280,20 +300,21 @@ class AssistantService:
                 "sources_used": docs_match["sources_used"],
             }
 
-        entity = self.resolve_assistant_entity(question)
-        scope = classify_scope(question, entity)
+        entity = None
+        scope = classify_scope(question)
+        if scope != "allowed":
+            entity = self.resolve_assistant_entity(question)
+            scope = classify_scope(question, entity)
         if scope != "allowed":
             return _blocked_response()
+        if entity is None:
+            entity = _generic_allowed_entity(question)
 
-        context = {
-            "dashboard": self._load_dashboard_context(),
-            "auditorias": self._load_audit_context(),
-            "banco": self._load_database_context(),
-            "readme": self._readme_loader()[:8000],
-            "uso_app": _usage_context(),
-        }
-        prompt = _build_prompt(question, context)
-        answer = self._llm_client.complete(prompt).strip()
+        answer = self._answer_with_iterative_context(
+            question,
+            entity=entity,
+            factual_human_audit_query=factual_human_audit_query,
+        )
         answer = _sanitize_entity_answer(answer, entity).strip()
         blocked_output = _validate_output(answer)
         if blocked_output is not None:
@@ -304,17 +325,236 @@ class AssistantService:
             "suggestions": DEFAULT_SUGGESTIONS,
         }
 
-    def _load_dashboard_context(self) -> dict[str, Any]:
+    def _answer_with_iterative_context(
+        self,
+        question: str,
+        *,
+        entity: AssistantEntity | None,
+        factual_human_audit_query: bool,
+    ) -> str:
+        used_tools: set[str] = set()
+        context: dict[str, Any] = {}
+
+        planning_prompt = _build_context_planning_prompt(question)
+        planning_response = self._llm_client.complete(planning_prompt).strip()
+        plan = _parse_context_plan(planning_response)
+        planning_leaked_tools = _tool_names_mentioned(planning_response)
+        if plan is not None and plan["sufficient"] and plan["answer"] and not planning_leaked_tools:
+            return str(plan["answer"])
+        requested_tools = planning_leaked_tools or (plan["tools"] if plan is not None else _heuristic_context_tools(question))
+        if not requested_tools:
+            requested_tools = list(_DEFAULT_CONTEXT_TOOLS)
+        context.update(
+            self._load_named_context_tools(
+                requested_tools,
+                question=question,
+                factual_human_audit_query=factual_human_audit_query,
+            )
+        )
+        used_tools.update(requested_tools)
+
+        answer = self._llm_client.complete(_build_context_answer_prompt(question, context, used_tools)).strip()
+        follow_up = _parse_context_plan(answer)
+        if follow_up is not None and not follow_up["sufficient"] and follow_up["tools"]:
+            next_tools = [tool for tool in follow_up["tools"] if tool not in used_tools]
+            if next_tools:
+                context.update(
+                    self._load_named_context_tools(
+                        next_tools,
+                        question=question,
+                        factual_human_audit_query=factual_human_audit_query,
+                    )
+                )
+                used_tools.update(next_tools)
+                answer = self._llm_client.complete(
+                    _build_context_answer_prompt(
+                        question,
+                        context,
+                        used_tools,
+                        final_attempt=True,
+                    )
+                ).strip()
+            else:
+                return _deterministic_context_answer(question, context, used_tools)
+        answer_leaked_tools = _tool_names_mentioned(answer)
+        if answer_leaked_tools:
+            next_tools = [tool for tool in answer_leaked_tools if tool not in used_tools]
+            if next_tools:
+                context.update(
+                    self._load_named_context_tools(
+                        next_tools,
+                        question=question,
+                        factual_human_audit_query=factual_human_audit_query,
+                    )
+                )
+                used_tools.update(next_tools)
+                answer = self._llm_client.complete(
+                    _build_context_answer_prompt(
+                        question,
+                        context,
+                        used_tools,
+                        final_attempt=True,
+                    )
+                ).strip()
+                if _tool_names_mentioned(answer):
+                    return _deterministic_context_answer(question, context, used_tools)
+            else:
+                return _deterministic_context_answer(question, context, used_tools)
+        return answer
+
+    def _load_named_context_tools(
+        self,
+        tool_names: list[str],
+        *,
+        question: str,
+        factual_human_audit_query: bool,
+    ) -> dict[str, Any]:
+        context: dict[str, Any] = {}
+        dashboard_payload: dict[str, Any] | None = None
+        database_payload: dict[str, Any] | None = None
+
+        def dashboard() -> dict[str, Any]:
+            nonlocal dashboard_payload
+            if dashboard_payload is None:
+                dashboard_payload = self._load_dashboard_context(question)
+            return dashboard_payload
+
+        def database() -> dict[str, Any]:
+            nonlocal database_payload
+            if database_payload is None:
+                database_payload = self._load_database_context()
+            return database_payload
+
+        for tool_name in tool_names:
+            if tool_name not in _CONTEXT_TOOL_CATALOG:
+                continue
+            if tool_name == "dashboard_summary":
+                payload = dashboard()
+                context.setdefault("dashboard", {})
+                context["dashboard"].update(
+                    {
+                        "available": payload.get("available", False),
+                        "cards_by_dataset": payload.get("cards_by_dataset", {}),
+                        "cards": payload.get("cards", {}),
+                        "methodology_by_dataset": payload.get("methodology_by_dataset", {}),
+                    }
+                )
+            elif tool_name == "candidate_rankings":
+                context.setdefault("dashboard", {})
+                context["dashboard"]["rankings_by_dataset"] = dashboard().get("rankings_by_dataset", {})
+            elif tool_name == "candidate_spearman":
+                context.setdefault("dashboard", {})
+                context["dashboard"]["spearman_by_candidate_by_dataset"] = dashboard().get(
+                    "spearman_by_candidate_by_dataset",
+                    {},
+                )
+            elif tool_name == "arbiter_triggers":
+                context.setdefault("dashboard", {})
+                context["dashboard"]["arbiter_triggers_by_dataset"] = dashboard().get(
+                    "arbiter_triggers_by_dataset",
+                    {},
+                )
+            elif tool_name == "judge_disagreements":
+                payload = dashboard()
+                context.setdefault("dashboard", {})
+                context["dashboard"]["judge_disagreements_by_dataset"] = payload.get(
+                    "judge_disagreements_by_dataset",
+                    {},
+                )
+                context["dashboard"].setdefault("cards_by_dataset", payload.get("cards_by_dataset", {}))
+            elif tool_name == "database_summary":
+                payload = database()
+                context.setdefault("banco", {})
+                context["banco"]["available"] = payload.get("available", False)
+                context["banco"]["tables"] = payload.get("tables", [])
+            elif tool_name == "human_audits":
+                payload = database()
+                context.setdefault("banco", {})
+                context["banco"]["available"] = payload.get("available", False)
+                context["banco"]["auditorias_humanas"] = payload.get("auditorias_humanas", [])
+            elif tool_name == "audit_logs":
+                context["logs_execucao_juiz"] = (
+                    {"available": False, "skipped": "consulta factual de auditoria humana"}
+                    if factual_human_audit_query
+                    else self._load_audit_context()
+                )
+            elif tool_name == "readme":
+                context["readme"] = (
+                    "README omitido: consultas factuais sobre auditorias/meta-análises realizadas usam primeiro o banco/dados carregados."
+                    if factual_human_audit_query
+                    else self._readme_loader()[:8000]
+                )
+            elif tool_name == "usage":
+                context["uso_app"] = _usage_context()
+        return context
+
+    def _load_dashboard_context(self, question: str = "") -> dict[str, Any]:
+        rankings_by_dataset = {}
+        spearman_by_candidate_by_dataset = {}
+        cards_by_dataset = {}
+        arbiter_triggers_by_dataset = {}
+        judge_disagreements_by_dataset = {}
+        methodology_by_dataset = {}
+        base_payload: dict[str, Any] = {}
+        include_candidate_spearman = _wants_candidate_spearman(question)
         try:
-            payload = self._dashboard_service.load(DashboardFilters())
+            for dataset in ("J1", "J2"):
+                dataset_payload = self._dashboard_service.load(DashboardFilters(dataset=dataset))
+                if not base_payload:
+                    base_payload = dataset_payload
+                candidate_ranking = dataset_payload.get("charts", {}).get("candidate_ranking", [])
+                rankings_by_dataset[dataset] = candidate_ranking[:5]
+                if include_candidate_spearman:
+                    spearman_by_candidate_by_dataset[dataset] = self._load_candidate_spearman(
+                        dataset=dataset,
+                        candidate_ranking=candidate_ranking,
+                    )
+                dataset_cards = dataset_payload.get("cards", {})
+                cards_by_dataset[dataset] = dataset_cards
+                arbiter_triggers_by_dataset[dataset] = (
+                    dataset_cards.get("judge_agreement", {}).get("arbiter_triggered", 0)
+                )
+                judge_disagreements_by_dataset[dataset] = _top_judge_disagreements(dataset_payload)
+                methodology_by_dataset[dataset] = dataset_payload.get("methodology", {})
         except (RuntimeError, ValueError) as error:
             return {"available": False, "error": str(error)}
         return {
             "available": True,
-            "cards": payload.get("cards", {}),
-            "options": payload.get("options", {}),
-            "methodology": payload.get("methodology", {}),
+            "rankings_by_dataset": rankings_by_dataset,
+            "spearman_by_candidate_by_dataset": spearman_by_candidate_by_dataset,
+            "cards_by_dataset": cards_by_dataset,
+            "arbiter_triggers_by_dataset": arbiter_triggers_by_dataset,
+            "judge_disagreements_by_dataset": judge_disagreements_by_dataset,
+            "cards": base_payload.get("cards", {}),
+            "options": base_payload.get("options", {}),
+            "methodology": base_payload.get("methodology", {}),
+            "methodology_by_dataset": methodology_by_dataset,
         }
+
+    def _load_candidate_spearman(
+        self,
+        *,
+        dataset: str,
+        candidate_ranking: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        rows = []
+        for candidate in candidate_ranking:
+            candidate_name = candidate.get("label")
+            if not candidate_name:
+                continue
+            candidate_payload = self._dashboard_service.load(
+                DashboardFilters(dataset=dataset, candidate_models=(str(candidate_name),))
+            )
+            spearman_card = candidate_payload.get("cards", {}).get("spearman_reference", {})
+            rows.append(
+                {
+                    "label": candidate_name,
+                    "spearman": spearman_card,
+                    "average_score": candidate.get("value"),
+                    "count": candidate.get("count"),
+                }
+            )
+        return rows
 
     def _load_audit_context(self) -> dict[str, Any]:
         if self._audit_log_summary_service is None:
@@ -414,12 +654,10 @@ def classify_scope(message: str, entity: AssistantEntity | None = None) -> str:
         return "blocked"
     if _is_subjective_person_or_team_request(message, entity):
         return "subjective_blocked"
-    if entity is not None:
-        return "allowed"
     if _BLOCKED_ANALYSIS_PATTERN.search(message):
         return "blocked"
-        if _SUBJECTIVE_BLOCK_PATTERN.search(message):
-            return "subjective_blocked"
+    if entity is not None:
+        return "allowed"
     if not _IN_SCOPE_PATTERN.search(message):
         return "blocked"
     return "allowed"
@@ -429,6 +667,60 @@ def classify_readme_or_app_docs_query(message: str) -> str:
     if _is_app_docs_query(message):
         return _README_OR_APP_DOCS_QUERY
     return "not_app_docs_query"
+
+
+def _wants_candidate_spearman(message: str) -> bool:
+    normalized = normalizeSearchText(message)
+    if "spearman" not in normalized:
+        return False
+    return any(term in normalized for term in ("modelo candidato", "candidato", "candidatos", "modelo", "modelos"))
+
+
+def is_factual_human_audit_query(message: str) -> bool:
+    normalized = normalizeSearchText(message)
+    if not normalized:
+        return False
+    audit_terms = {
+        "auditoria",
+        "auditorias",
+        "audit",
+        "auditor",
+        "auditores",
+        "avaliador",
+        "avaliadores",
+    }
+    tokens = set(normalized.split())
+    has_meta_alias = any(
+        alias in normalized
+        for alias in (
+            "meta analise",
+            "metaanalise",
+            "meta avaliacao",
+            "meta avaliacoes",
+            "revisao humana",
+        )
+    )
+    if not has_meta_alias and not (tokens & audit_terms):
+        return False
+    docs_terms = {"como", "funciona", "usar", "uso", "documentado", "documentacao", "readme", "tela", "filtro", "filtros"}
+    factual_terms = {
+        "resumo",
+        "realizada",
+        "realizadas",
+        "feita",
+        "feitas",
+        "feito",
+        "feitos",
+        "quantas",
+        "quantos",
+        "quais",
+        "total",
+        "totais",
+        "por",
+        "avaliador",
+        "auditor",
+    }
+    return bool(has_meta_alias or (tokens & factual_terms)) and not bool((tokens & docs_terms) - factual_terms)
 
 
 def _is_subjective_person_or_team_request(message: str, entity: AssistantEntity | None) -> bool:
@@ -585,11 +877,24 @@ def _preferred_entity_kinds(message: str) -> set[str]:
         return {"judge_model"}
     if "arbitro" in normalized:
         return {"arbiter"}
-    if {"auditoria", "auditor", "auditores", "avaliador", "avaliadores"} & set(normalized.split()):
+    if is_factual_human_audit_query(message):
         return {"auditor"}
     if "modelo" in normalized:
         return {"model_candidate", "judge_model"}
     return set()
+
+
+def _generic_allowed_entity(message: str) -> AssistantEntity | None:
+    preferred_kinds = _preferred_entity_kinds(message)
+    if "model_candidate" in preferred_kinds:
+        return AssistantEntity(kind="model_candidate", value="modelo candidato")
+    if "judge_model" in preferred_kinds:
+        return AssistantEntity(kind="judge_model", value="modelo juiz")
+    if "arbiter" in preferred_kinds:
+        return AssistantEntity(kind="arbiter", value="arbitro")
+    if "auditor" in preferred_kinds:
+        return AssistantEntity(kind="auditor", value="auditor")
+    return None
 
 
 def _blocked_response() -> dict[str, Any]:
@@ -687,6 +992,199 @@ def _neutral_audit_totals(totals: Any) -> dict[str, Any]:
     }
 
 
+def _top_judge_disagreements(payload: dict[str, Any], *, limit: int = 10) -> list[dict[str, Any]]:
+    rows = payload.get("tables", {}).get("judge_agreement_arbitrations", [])
+    if not isinstance(rows, list):
+        return []
+    clean_rows = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        clean_rows.append(
+            {
+                "answer_id": row.get("answer_id"),
+                "question_id": row.get("question_id"),
+                "candidate_model": row.get("candidate_model"),
+                "judge_1_score": row.get("judge_1_score"),
+                "judge_2_score": row.get("judge_2_score"),
+                "delta": row.get("delta"),
+                "arbiter_score": row.get("arbiter_score"),
+                "arbitration_reason": row.get("arbitration_reason"),
+            }
+        )
+    return sorted(clean_rows, key=lambda row: (-(row.get("delta") or 0), row.get("answer_id") or 0))[:limit]
+
+
+def _heuristic_context_tools(question: str) -> list[str]:
+    normalized = normalizeSearchText(question)
+    tools = list(_DEFAULT_CONTEXT_TOOLS)
+    if any(term in normalized for term in ("ranking", "top", "modelo candidato", "candidato", "candidatos", "ia", "ias")):
+        tools.append("candidate_rankings")
+    if "spearman" in normalized:
+        tools.extend(["candidate_spearman", "candidate_rankings"])
+    if "arbitro" in normalized and any(term in normalized for term in ("acion", "vezes", "quantas", "quantos")):
+        tools.append("arbiter_triggers")
+    if any(term in normalized for term in ("divergencia", "divergencias", "discord", "principal", "controle")):
+        tools.append("judge_disagreements")
+    if is_factual_human_audit_query(question):
+        tools.extend(["human_audits", "audit_logs", "readme"])
+    if _is_app_docs_query(question):
+        tools.append("readme")
+    return _dedupe_context_tools(tools)
+
+
+def _dedupe_context_tools(tool_names: list[str] | tuple[str, ...]) -> list[str]:
+    deduped: list[str] = []
+    for tool_name in tool_names:
+        if tool_name in _CONTEXT_TOOL_CATALOG and tool_name not in deduped:
+            deduped.append(tool_name)
+    return deduped
+
+
+def _tool_names_mentioned(text: str) -> list[str]:
+    normalized = normalizeSearchText(text)
+    tool_names = [
+        tool_name
+        for tool_name in _CONTEXT_TOOL_CATALOG
+        if normalizeSearchText(tool_name) in normalized
+    ]
+    return _dedupe_context_tools(tool_names)
+
+
+def _deterministic_context_answer(question: str, context: dict[str, Any], used_tools: set[str]) -> str:
+    normalized = normalizeSearchText(question)
+    if "judge_disagreements" in used_tools or any(
+        term in normalized for term in ("divergencia", "divergencias", "principal", "controle")
+    ):
+        return _format_judge_disagreements_answer(context)
+    return "Não encontrei contexto local suficiente para responder de forma factual."
+
+
+def _format_judge_disagreements_answer(context: dict[str, Any]) -> str:
+    disagreements = context.get("dashboard", {}).get("judge_disagreements_by_dataset", {})
+    if not isinstance(disagreements, dict):
+        return "Não encontrei casos detalhados de divergência entre juiz principal e juiz controle no contexto local."
+
+    rows_with_dataset: list[tuple[str, dict[str, Any]]] = []
+    for dataset, rows in disagreements.items():
+        if not isinstance(rows, list):
+            continue
+        for row in rows:
+            if isinstance(row, dict):
+                rows_with_dataset.append((str(dataset), row))
+    if not rows_with_dataset:
+        return "Não encontrei casos detalhados de divergência entre juiz principal e juiz controle no contexto local."
+
+    max_delta = max(int(row.get("delta") or 0) for _, row in rows_with_dataset)
+    top_rows = [(dataset, row) for dataset, row in rows_with_dataset if int(row.get("delta") or 0) == max_delta]
+    lines = [f"A maior divergência encontrada foi delta {max_delta}:"]
+    for dataset, row in top_rows[:10]:
+        arbiter_score = row.get("arbiter_score")
+        arbiter_text = f", árbitro {arbiter_score}" if arbiter_score is not None else ""
+        lines.append(
+            "- "
+            f"{dataset}: answer_id {row.get('answer_id')}, pergunta {row.get('question_id')}, "
+            f"candidato {row.get('candidate_model')}, "
+            f"principal {row.get('judge_1_score')}, controle {row.get('judge_2_score')}"
+            f"{arbiter_text}."
+        )
+    return "\n".join(lines)
+
+
+def _parse_context_plan(raw_response: str) -> dict[str, Any] | None:
+    text = raw_response.strip()
+    if text.startswith("```"):
+        text = re.sub(r"^```(?:json)?\s*", "", text, flags=re.IGNORECASE)
+        text = re.sub(r"\s*```$", "", text)
+    try:
+        parsed = json.loads(text)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(parsed, dict):
+        return None
+    raw_tools = parsed.get("required_context", parsed.get("required_tools", []))
+    if isinstance(raw_tools, str):
+        raw_tools = [raw_tools]
+    if not isinstance(raw_tools, list):
+        raw_tools = []
+    tools = _dedupe_context_tools([str(tool) for tool in raw_tools])
+    sufficient = bool(parsed.get("sufficient", False))
+    answer = parsed.get("answer")
+    return {"sufficient": sufficient, "tools": tools, "answer": answer if isinstance(answer, str) else ""}
+
+
+def _build_context_planning_prompt(question: str) -> str:
+    return (
+        "Você é o planejador read-only do assistente AV2.\n"
+        "Sua tarefa é decidir se a pergunta já pode ser respondida com segurança ou quais ferramentas de contexto "
+        "nomeadas são necessárias para respondê-la.\n"
+        "Você não pode pedir SQL livre, internet, arquivos externos ou operações de escrita. "
+        "Use somente os nomes de ferramentas listados.\n"
+        "Se a pergunta exigir dados carregados, métricas, rankings, auditorias, banco, dashboard ou README, "
+        "não invente: marque sufficient=false e peça as ferramentas necessárias. "
+        "Só marque sufficient=true quando a pergunta puder ser respondida apenas com instruções estáticas deste prompt.\n"
+        f"Limite total do fluxo: {_MAX_CONTEXT_INTERACTIONS} chamadas à LLM, incluindo esta.\n\n"
+        "Ferramentas disponíveis:\n"
+        f"{json.dumps(_CONTEXT_TOOL_CATALOG, ensure_ascii=False)}\n\n"
+        "Responda apenas JSON em um destes formatos:\n"
+        '{"sufficient": false, "required_context": ["dashboard_summary"], "answer": ""}\n'
+        '{"sufficient": true, "required_context": [], "answer": "resposta final"}\n\n'
+        f"Pergunta do usuário:\n{question}"
+    )
+
+
+def _build_context_answer_prompt(
+    question: str,
+    context: dict[str, Any],
+    used_tools: set[str],
+    *,
+    final_attempt: bool = False,
+) -> str:
+    extra_instruction = (
+        "Esta é a tentativa final do fluxo; responda com o que estiver disponível no contexto local."
+        if final_attempt
+        else (
+            "Se o contexto ainda for insuficiente, responda apenas JSON no formato "
+            '{"sufficient": false, "required_context": ["nome_da_ferramenta"]}. '
+            "Caso contrário, responda ao usuário diretamente."
+        )
+    )
+    return (
+        "Você opera em modo estritamente somente leitura.\n"
+        "Não altere arquivos, não gere SQL livre, não execute operações de escrita, "
+        "não consulte internet, não use arquivos externos e não responda com conhecimento geral.\n"
+        "Não faça avaliação subjetiva ou acadêmica sobre integrantes, equipe, grupo, qualidade do trabalho, "
+        "responsabilidades, culpa, mérito, nota ou conceito. "
+        "Não descreva categorias bloqueadas como falhas, limitações, falta de dados, problemas, erros, "
+        "inconsistências ou lacunas. Consultas factuais sobre auditorias e meta-avaliações carregadas são permitidas.\n"
+        "A pergunta abaixo já passou pelo classificador de escopo do app. Se ela for sobre modelo candidato, modelo juiz, "
+        "árbitro, auditoria ou uso do app, responda factualmente e omita qualquer métrica ou campo cujo rótulo use termos "
+        "bloqueados como falhas, problemas, erros, limitações, inconsistências ou lacunas.\n"
+        "Neste app, meta-análise, meta-avaliação, auditoria e revisão humana significam a auditoria humana registrada "
+        "em public.meta_avaliacoes por membros avaliadores sobre avaliações do Juiz-IA. Para perguntas sobre "
+        "auditorias/meta-análises realizadas, use primeiro banco.auditorias_humanas e demais dados carregados; não use "
+        "README para responder quais auditorias existem.\n"
+        "Para resumo geral, exiba apenas fatos neutros e operacionais: totais carregados, datasets, modelos, "
+        "avaliações, auditorias, tabelas disponíveis e consultas possíveis.\n"
+        "Para perguntas sobre Spearman geral do dataset, use dashboard.cards_by_dataset[dataset].spearman_reference. "
+        "Para perguntas sobre Spearman por modelo candidato, use "
+        "dashboard.spearman_by_candidate_by_dataset; não substitua Spearman por média de nota. "
+        "Não infira indisponibilidade de J2 a partir de J1: em J2 a referência ordinal é derivada do gabarito "
+        "oficial, com acerto = 5 e erro = 1. Para ranking por modelo candidato, use "
+        "dashboard.rankings_by_dataset. Para perguntas sobre acionamento do árbitro, use "
+        "dashboard.arbiter_triggers_by_dataset; não use somente o dataset base nem troque J1 por J2.\n"
+        "Para perguntas sobre maior divergência entre juiz principal e juiz controle, use "
+        "dashboard.judge_disagreements_by_dataset para listar os casos e use "
+        "dashboard.cards_by_dataset[dataset].judge_agreement apenas para os totais agregados.\n"
+        "Não use nem mencione histórico de chat; esta chamada é stateless.\n"
+        f"{extra_instruction}\n\n"
+        f"Ferramentas de contexto usadas: {json.dumps(sorted(used_tools), ensure_ascii=False)}\n\n"
+        f"Pergunta do usuário:\n{question}\n\n"
+        "Contexto local permitido:\n"
+        f"{json.dumps(context, ensure_ascii=False, default=str)}"
+    )
+
+
 def _build_prompt(question: str, context: dict[str, Any]) -> str:
     return (
         "Você opera em modo estritamente somente leitura.\n"
@@ -699,8 +1197,22 @@ def _build_prompt(question: str, context: dict[str, Any]) -> str:
         "A pergunta abaixo já passou pelo classificador de escopo do app. Se ela for sobre modelo candidato, modelo juiz, "
         "árbitro, auditoria ou uso do app, responda factualmente e omita qualquer métrica ou campo cujo rótulo use termos "
         "bloqueados como falhas, problemas, erros, limitações, inconsistências ou lacunas.\n"
+        "Neste app, meta-análise, meta-avaliação, auditoria e revisão humana significam a auditoria humana registrada "
+        "em public.meta_avaliacoes por membros avaliadores sobre avaliações do Juiz-IA. Para perguntas sobre "
+        "auditorias/meta-análises realizadas, use primeiro banco.auditorias_humanas e demais dados carregados; não use "
+        "README para responder quais auditorias existem.\n"
         "Para resumo geral, exiba apenas fatos neutros e operacionais: totais carregados, datasets, modelos, "
         "avaliações, auditorias, tabelas disponíveis e consultas possíveis.\n"
+        "Para perguntas sobre Spearman geral do dataset, use dashboard.cards_by_dataset[dataset].spearman_reference. "
+        "Para perguntas sobre Spearman por modelo candidato, use "
+        "dashboard.spearman_by_candidate_by_dataset; não substitua Spearman por média de nota. "
+        "Não infira indisponibilidade de J2 a partir de J1: em J2 a referência ordinal é derivada do gabarito "
+        "oficial, com acerto = 5 e erro = 1. Para ranking por modelo candidato, use "
+        "dashboard.rankings_by_dataset. Para perguntas sobre acionamento do árbitro, use "
+        "dashboard.arbiter_triggers_by_dataset; não use somente o dataset base nem troque J1 por J2.\n"
+        "Para perguntas sobre maior divergência entre juiz principal e juiz controle, use "
+        "dashboard.judge_disagreements_by_dataset para listar os casos e use "
+        "dashboard.cards_by_dataset[dataset].judge_agreement apenas para os totais agregados.\n"
         "Não use nem mencione histórico de chat; esta chamada é stateless.\n"
         "Responda somente com base no contexto local abaixo. Se a pergunta exigir conteúdo bloqueado, use o fluxo "
         "de bloqueio do app.\n\n"
