@@ -1000,12 +1000,14 @@ def test_web_index_contains_progress_element() -> None:
     assert "function valueTone" in response.text
 
 
-def test_web_index_contains_floating_assistant_chat() -> None:
+def test_web_index_hides_floating_assistant_chat_by_default() -> None:
     client = TestClient(create_app(FakeRunJudgeService()))
 
     response = client.get("/")
 
     assert response.status_code == 200
+    assert ".assistant-widget[hidden] { display:none; }" in response.text
+    assert '<div class="assistant-widget" aria-live="polite" hidden>' in response.text
     assert 'id="assistant-chat-toggle"' in response.text
     assert 'aria-controls="assistant-chat-panel"' in response.text
     assert 'aria-expanded="false"' in response.text
@@ -1028,6 +1030,18 @@ def test_web_index_contains_floating_assistant_chat() -> None:
     assert 'assistantMessages.push({role: "assistant", text: data.answer || "O assistente nao retornou uma resposta."});' in response.text
     assert "friendlyErrorMessage(requestError.message)" in response.text
     assert 'document.getElementById("assistant-chat-form").onsubmit = submitAssistantMessage;' in response.text
+
+
+def test_web_index_shows_floating_assistant_chat_when_feature_flag_enabled(monkeypatch) -> None:
+    monkeypatch.setenv("ENABLE_AI_ASSISTANT", "true")
+    client = TestClient(create_app(FakeRunJudgeService()))
+
+    response = client.get("/")
+    config = client.get("/api/config").json()
+
+    assert response.status_code == 200
+    assert '<div class="assistant-widget" aria-live="polite">' in response.text
+    assert config["feature_flags"]["ai_assistant"] is True
 
 
 def test_dashboard_tab_selection_always_refreshes_dashboard_data() -> None:

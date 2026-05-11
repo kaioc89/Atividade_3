@@ -43,6 +43,13 @@ DEFAULT_AUDIT_DIR = Path("outputs") / "audit"
 DEFAULT_BACKUP_DIR = Path("outputs") / "backup"
 
 
+def _env_flag(name: str, *, default: bool = False) -> bool:
+    raw_value = os.environ.get(name)
+    if raw_value is None:
+        return default
+    return raw_value.strip().lower() in {"1", "true", "yes", "on"}
+
+
 class RunPayload(BaseModel):
     panel_mode: Literal["single", "primary_only", "2plus1"] | None = None
     dataset: Literal["J1", "J2", "OAB_Bench", "OAB_Exames"] = "J2"
@@ -277,6 +284,7 @@ def create_app(
     app = FastAPI(title="Atividade 2 Judge Console")
     startup_schema_mode = os.environ.get("ENSURE_SCHEMA_ON_STARTUP", "").strip().lower()
     ensure_schema_on_startup = startup_schema_mode in {"1", "true", "yes", "on"}
+    assistant_enabled = _env_flag("ENABLE_AI_ASSISTANT", default=False)
     app.state.csrf_token = secrets.token_urlsafe(32)
     app.state.jobs = JobRegistry(service or RunJudgeService())
     app.state.audit_dir = Path(audit_dir)
@@ -287,6 +295,7 @@ def create_app(
     app.state.judge_prompt_service = judge_prompt_service or JudgePromptConfigService()
     app.state.meta_evaluation_service = meta_evaluation_service or MetaEvaluationService()
     app.state.audit_log_summary_service = audit_log_summary_service or AuditLogSummaryService()
+    app.state.assistant_enabled = assistant_enabled
     app.state.assistant_service = assistant_service or AssistantService(
         dashboard_service=app.state.dashboard,
         audit_log_summary_service=app.state.audit_log_summary_service,
@@ -304,8 +313,12 @@ def create_app(
             connection.close()
 
     @app.get("/", response_class=HTMLResponse)
-    def index() -> HTMLResponse:
-        return HTMLResponse(_INDEX_HTML, headers={"Cache-Control": "no-store"})
+    def index(request: Request) -> HTMLResponse:
+        assistant_hidden = " hidden" if not request.app.state.assistant_enabled else ""
+        return HTMLResponse(
+            _INDEX_HTML.replace("__ASSISTANT_WIDGET_HIDDEN__", assistant_hidden),
+            headers={"Cache-Control": "no-store"},
+        )
 
     @app.get("/api/config")
     def get_config(request: Request) -> dict:
@@ -318,6 +331,7 @@ def create_app(
         ]
         config["judge_model_options"] = list(dict.fromkeys(model for model in configured_models if model))
         config["csrf_token"] = request.app.state.csrf_token
+        config["feature_flags"] = {"ai_assistant": request.app.state.assistant_enabled}
         return config
 
     @app.get("/api/dashboard")
@@ -1120,6 +1134,7 @@ _INDEX_HTML = """
     .confirm-actions button { min-width:96px; white-space:nowrap; }
     .danger-button { border-color:var(--bad); background:var(--bad); color:#fff; }
     .assistant-widget { position:fixed; right:22px; bottom:22px; z-index:60; display:grid; justify-items:end; gap:10px; pointer-events:none; }
+    .assistant-widget[hidden] { display:none; }
     .assistant-toggle { pointer-events:auto; display:inline-flex; align-items:center; justify-content:center; gap:8px; min-height:44px; padding:0 16px; border-radius:999px; box-shadow:0 12px 28px rgba(16,24,40,.22); }
     .assistant-toggle-icon { font-size:17px; line-height:1; }
     .assistant-panel { pointer-events:auto; width:min(390px, calc(100vw - 28px)); max-height:min(620px, calc(100vh - 92px)); display:grid; grid-template-rows:auto minmax(180px, 1fr) auto; border:1px solid var(--line); border-radius:8px; background:#fff; box-shadow:0 18px 42px rgba(16,24,40,.2); overflow:hidden; }
@@ -1868,7 +1883,7 @@ _INDEX_HTML = """
         </section>
       </div>
     </div>
-  <div class="assistant-widget" aria-live="polite">
+  <div class="assistant-widget" aria-live="polite"__ASSISTANT_WIDGET_HIDDEN__>
     <section id="assistant-chat-panel" class="assistant-panel" aria-label="Chat do assistente" hidden>
       <div class="assistant-head">
         <strong>Assistente AV2</strong>
