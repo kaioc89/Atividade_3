@@ -36,9 +36,9 @@ COPY public.modelos (id_modelo, nome_modelo, versao, parametro_precisao, tipo_mo
 10	gemma-2-2b-it	google/gemma-2-2b-it	FP32	candidato
 11	Jurema:7b	7B	INT4	candidato
 12	curio-edu-7b	mradermacher/Curio-edu-7b-GGUF:Curio-edu-7b.Q4_K_M	Q4_K_M	candidato
-13	Gemini	\N	src:jose	candidato
-14	ChatGPT	\N	src:jose	candidato
-15	Grok	\N	src:jose	candidato
+13	gemini-3-pro	Gemini 3 Pro	N/A_API	candidato
+14	chatgpt-5.3	GPT-5.3 Chat / GPT-5.3 Instant	N/A_API	candidato
+15	grok-3	grok-3	N/A_API	candidato
 16	qwen2-1.5b	Qwen/Qwen2.5-1.5B-Instruct-GGUF	gguf-q4	candidato
 17	phi-3-mini	microsoft/Phi-3-mini-4k-instruct-gguf	gguf-q4	candidato
 18	tinyllama-1.1b	TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF	gguf-q4	candidato
