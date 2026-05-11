@@ -19,6 +19,7 @@ from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse, Response
 from pydantic import BaseModel, Field
 
+from .assistant import AssistantService
 from .audit_log_service import AuditLogSummaryService
 from .config import ConfigurationError
 from .contracts import BatchProgress, EligibilitySummary, EvaluationProgress, PipelineSummary
@@ -115,6 +116,10 @@ class MetaEvaluationPayload(BaseModel):
     evaluator_name: str
     score: int = Field(ge=1, le=5)
     rationale: str
+
+
+class AssistantPayload(BaseModel):
+    message: str = Field(min_length=1)
 
 
 @dataclass
@@ -267,6 +272,7 @@ def create_app(
     judge_prompt_service: JudgePromptConfigService | None = None,
     meta_evaluation_service: MetaEvaluationService | None = None,
     audit_log_summary_service: AuditLogSummaryService | None = None,
+    assistant_service: AssistantService | None = None,
 ) -> FastAPI:
     app = FastAPI(title="Atividade 2 Judge Console")
     startup_schema_mode = os.environ.get("ENSURE_SCHEMA_ON_STARTUP", "").strip().lower()
@@ -281,6 +287,10 @@ def create_app(
     app.state.judge_prompt_service = judge_prompt_service or JudgePromptConfigService()
     app.state.meta_evaluation_service = meta_evaluation_service or MetaEvaluationService()
     app.state.audit_log_summary_service = audit_log_summary_service or AuditLogSummaryService()
+    app.state.assistant_service = assistant_service or AssistantService(
+        dashboard_service=app.state.dashboard,
+        audit_log_summary_service=app.state.audit_log_summary_service,
+    )
 
     @app.on_event("startup")
     def ensure_runtime_schema() -> None:
@@ -383,6 +393,13 @@ def create_app(
     @app.get("/api/operational-log-summary")
     def get_operational_log_summary(request: Request) -> dict:
         return request.app.state.audit_log_summary_service.load()
+
+    @app.post("/api/assistant/chat", dependencies=[Depends(_require_csrf)])
+    def assistant_chat(payload: AssistantPayload, request: Request) -> dict:
+        try:
+            return request.app.state.assistant_service.answer(payload.message)
+        except RuntimeError as error:
+            raise HTTPException(status_code=503, detail=str(error)) from error
 
     @app.put("/api/meta-evaluations", dependencies=[Depends(_require_csrf)])
     def save_meta_evaluation(payload: MetaEvaluationPayload, request: Request) -> dict:
@@ -1102,10 +1119,32 @@ _INDEX_HTML = """
     .confirm-actions { display:flex; justify-content:flex-end; align-items:center; gap:8px; padding:12px 14px; border-top:1px solid var(--line); }
     .confirm-actions button { min-width:96px; white-space:nowrap; }
     .danger-button { border-color:var(--bad); background:var(--bad); color:#fff; }
+    .assistant-widget { position:fixed; right:22px; bottom:22px; z-index:60; display:grid; justify-items:end; gap:10px; pointer-events:none; }
+    .assistant-toggle { pointer-events:auto; display:inline-flex; align-items:center; justify-content:center; gap:8px; min-height:44px; padding:0 16px; border-radius:999px; box-shadow:0 12px 28px rgba(16,24,40,.22); }
+    .assistant-toggle-icon { font-size:17px; line-height:1; }
+    .assistant-panel { pointer-events:auto; width:min(390px, calc(100vw - 28px)); max-height:min(620px, calc(100vh - 92px)); display:grid; grid-template-rows:auto minmax(180px, 1fr) auto; border:1px solid var(--line); border-radius:8px; background:#fff; box-shadow:0 18px 42px rgba(16,24,40,.2); overflow:hidden; }
+    .assistant-panel[hidden] { display:none; }
+    .assistant-head { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:12px 14px; border-bottom:1px solid var(--line); }
+    .assistant-head strong { font-size:14px; }
+    .assistant-close { width:32px; min-height:32px; padding:0; border-color:var(--line); background:#fff; color:var(--muted); font-size:18px; line-height:1; }
+    .assistant-messages { display:grid; align-content:start; gap:10px; min-height:220px; overflow:auto; padding:14px; background:#fbfcfe; }
+    .assistant-empty { align-self:center; color:var(--muted); font-size:13px; line-height:1.4; text-align:center; }
+    .assistant-message { max-width:86%; border:1px solid var(--line); border-radius:8px; padding:9px 10px; font-size:13px; line-height:1.4; overflow-wrap:anywhere; }
+    .assistant-message.user { justify-self:end; border-color:#b9d5eb; background:#eef7ff; }
+    .assistant-message.assistant { justify-self:start; background:#fff; }
+    .assistant-message.error { justify-self:start; border-color:#f0b8b2; background:#fff5f5; color:var(--bad); }
+    .assistant-loading { display:flex; align-items:center; gap:8px; min-height:22px; color:var(--muted); font-size:12px; }
+    .assistant-loading[hidden], .assistant-error[hidden] { display:none; }
+    .assistant-loading .spinner { width:16px; height:16px; flex:0 0 auto; }
+    .assistant-error { color:var(--bad); font-size:12px; line-height:1.35; }
+    .assistant-form { display:grid; gap:8px; padding:12px; border-top:1px solid var(--line); background:#fff; }
+    .assistant-input-row { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:8px; align-items:end; }
+    .assistant-input-row textarea { min-height:44px; max-height:120px; resize:vertical; }
+    .assistant-input-row button { min-width:76px; }
     .ok { color:var(--ok); }
     .bad { color:var(--bad); }
     .muted { color:var(--muted); }
-    @media (max-width: 860px) { main, .history-layout, .dashboard-layout { grid-template-columns:minmax(0,1fr); padding:12px; } .dashboard-head { flex-direction:column; } .dashboard-actions { align-items:stretch; width:100%; } }
+    @media (max-width: 860px) { main, .history-layout, .dashboard-layout { grid-template-columns:minmax(0,1fr); padding:12px; } .dashboard-head { flex-direction:column; } .dashboard-actions { align-items:stretch; width:100%; } .assistant-widget { right:14px; bottom:14px; } .assistant-toggle { min-height:42px; padding:0 14px; } }
   </style>
 </head>
 <body>
@@ -1829,6 +1868,32 @@ _INDEX_HTML = """
         </section>
       </div>
     </div>
+  <div class="assistant-widget" aria-live="polite">
+    <section id="assistant-chat-panel" class="assistant-panel" aria-label="Chat do assistente" hidden>
+      <div class="assistant-head">
+        <strong>Assistente AV2</strong>
+        <button id="assistant-chat-close" class="assistant-close" type="button" aria-label="Fechar assistente">×</button>
+      </div>
+      <div id="assistant-chat-messages" class="assistant-messages" aria-live="polite">
+        <div class="assistant-empty">Envie uma pergunta sobre os resultados, execucoes ou configuracoes disponiveis.</div>
+      </div>
+      <form id="assistant-chat-form" class="assistant-form">
+        <div id="assistant-chat-loading" class="assistant-loading" hidden>
+          <span class="spinner" aria-hidden="true"></span>
+          <span>Assistente esta respondendo...</span>
+        </div>
+        <div id="assistant-chat-error" class="assistant-error" hidden></div>
+        <div class="assistant-input-row">
+          <textarea id="assistant-chat-input" rows="2" placeholder="Pergunte ao assistente" aria-label="Mensagem para o assistente"></textarea>
+          <button id="assistant-chat-send" type="submit">Enviar</button>
+        </div>
+      </form>
+    </section>
+    <button id="assistant-chat-toggle" class="assistant-toggle" type="button" aria-controls="assistant-chat-panel" aria-expanded="false">
+      <span class="assistant-toggle-icon" aria-hidden="true">?</span>
+      <span>Assistente</span>
+    </button>
+  </div>
   <dialog id="details-dialog">
     <div class="dialog-head">
       <strong id="details-title">Detalhes da avaliacao</strong>
@@ -1917,6 +1982,8 @@ _INDEX_HTML = """
     let currentAuditLogUrl = null;
     let activeRunId = null;
     let judgeModelOptions = [];
+    let assistantMessages = [];
+    let assistantLoading = false;
     const executionTableState = new Map();
 
     function value(id) { return document.getElementById(id).value; }
@@ -3215,6 +3282,68 @@ _INDEX_HTML = """
       }
       if (!response.ok) throw new Error(data.detail || "Request failed");
       return data;
+    }
+
+    function toggleAssistantChat(forceOpen = null) {
+      const panel = document.getElementById("assistant-chat-panel");
+      const toggle = document.getElementById("assistant-chat-toggle");
+      const shouldOpen = forceOpen === null ? panel.hidden : Boolean(forceOpen);
+      panel.hidden = !shouldOpen;
+      toggle.setAttribute("aria-expanded", String(shouldOpen));
+      if (shouldOpen) document.getElementById("assistant-chat-input").focus();
+    }
+
+    function renderAssistantMessages() {
+      const messages = document.getElementById("assistant-chat-messages");
+      messages.textContent = "";
+      if (!assistantMessages.length) {
+        const empty = document.createElement("div");
+        empty.className = "assistant-empty";
+        empty.textContent = "Envie uma pergunta sobre os resultados, execucoes ou configuracoes disponiveis.";
+        messages.appendChild(empty);
+        return;
+      }
+      for (const message of assistantMessages) {
+        const bubble = document.createElement("div");
+        bubble.className = `assistant-message ${message.role}`;
+        bubble.textContent = message.text;
+        messages.appendChild(bubble);
+      }
+      messages.scrollTop = messages.scrollHeight;
+    }
+
+    function setAssistantLoading(loading) {
+      assistantLoading = loading;
+      document.getElementById("assistant-chat-loading").hidden = !loading;
+      document.getElementById("assistant-chat-input").disabled = loading;
+      document.getElementById("assistant-chat-send").disabled = loading;
+    }
+
+    async function submitAssistantMessage(event) {
+      event.preventDefault();
+      if (assistantLoading) return;
+      const input = document.getElementById("assistant-chat-input");
+      const error = document.getElementById("assistant-chat-error");
+      const message = input.value.trim();
+      if (!message) return;
+      assistantMessages.push({role: "user", text: message});
+      input.value = "";
+      error.hidden = true;
+      error.textContent = "";
+      renderAssistantMessages();
+      setAssistantLoading(true);
+      try {
+        const data = await postJson("/api/assistant/chat", {message: message});
+        assistantMessages.push({role: "assistant", text: data.answer || "O assistente nao retornou uma resposta."});
+      } catch (requestError) {
+        const friendlyMessage = friendlyErrorMessage(requestError.message);
+        error.textContent = friendlyMessage;
+        error.hidden = false;
+        assistantMessages.push({role: "error", text: friendlyMessage});
+      } finally {
+        setAssistantLoading(false);
+        renderAssistantMessages();
+      }
     }
 
     async function postBackupFile(file, retryOnCsrf = true) {
@@ -4556,6 +4685,9 @@ _INDEX_HTML = """
     for (const button of document.querySelectorAll(".tab-button")) {
       button.onclick = () => switchTab(button.dataset.tab);
     }
+    document.getElementById("assistant-chat-toggle").onclick = () => toggleAssistantChat();
+    document.getElementById("assistant-chat-close").onclick = () => toggleAssistantChat(false);
+    document.getElementById("assistant-chat-form").onsubmit = submitAssistantMessage;
     document.getElementById("prompt_dataset").onchange = () => loadPromptConfig();
     document.getElementById("prompt_reload").onclick = () => loadPromptConfig();
     document.getElementById("prompt_save").onclick = () => savePromptConfig();

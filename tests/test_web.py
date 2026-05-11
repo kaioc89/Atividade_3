@@ -1000,6 +1000,36 @@ def test_web_index_contains_progress_element() -> None:
     assert "function valueTone" in response.text
 
 
+def test_web_index_contains_floating_assistant_chat() -> None:
+    client = TestClient(create_app(FakeRunJudgeService()))
+
+    response = client.get("/")
+
+    assert response.status_code == 200
+    assert 'id="assistant-chat-toggle"' in response.text
+    assert 'aria-controls="assistant-chat-panel"' in response.text
+    assert 'aria-expanded="false"' in response.text
+    assert 'id="assistant-chat-panel" class="assistant-panel"' in response.text
+    assert 'aria-label="Chat do assistente"' in response.text
+    assert "Assistente AV2" in response.text
+    assert 'id="assistant-chat-messages"' in response.text
+    assert 'id="assistant-chat-input"' in response.text
+    assert 'id="assistant-chat-send" type="submit">Enviar</button>' in response.text
+    assert 'id="assistant-chat-loading" class="assistant-loading" hidden' in response.text
+    assert 'id="assistant-chat-error" class="assistant-error" hidden' in response.text
+    assert "let assistantMessages = [];" in response.text
+    assert "let assistantLoading = false;" in response.text
+    assert "function toggleAssistantChat" in response.text
+    assert "function renderAssistantMessages" in response.text
+    assert "function submitAssistantMessage" in response.text
+    assert 'document.getElementById("assistant-chat-input").disabled = loading;' in response.text
+    assert 'document.getElementById("assistant-chat-send").disabled = loading;' in response.text
+    assert 'const data = await postJson("/api/assistant/chat", {message: message});' in response.text
+    assert 'assistantMessages.push({role: "assistant", text: data.answer || "O assistente nao retornou uma resposta."});' in response.text
+    assert "friendlyErrorMessage(requestError.message)" in response.text
+    assert 'document.getElementById("assistant-chat-form").onsubmit = submitAssistantMessage;' in response.text
+
+
 def test_dashboard_tab_selection_always_refreshes_dashboard_data() -> None:
     client = TestClient(create_app(FakeRunJudgeService()))
 
