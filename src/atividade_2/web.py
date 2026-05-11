@@ -1138,6 +1138,7 @@ _INDEX_HTML = """
     .assistant-toggle { pointer-events:auto; display:inline-flex; align-items:center; justify-content:center; gap:8px; min-height:44px; padding:0 16px; border-radius:999px; box-shadow:0 12px 28px rgba(16,24,40,.22); }
     .assistant-toggle-icon { font-size:17px; line-height:1; }
     .assistant-panel { pointer-events:auto; width:min(390px, calc(100vw - 28px)); max-height:min(620px, calc(100vh - 92px)); display:grid; grid-template-rows:auto minmax(180px, 1fr) auto; border:1px solid var(--line); border-radius:8px; background:#fff; box-shadow:0 18px 42px rgba(16,24,40,.2); overflow:hidden; }
+    .assistant-panel.has-table { width:min(720px, calc(100vw - 28px)); }
     .assistant-panel[hidden] { display:none; }
     .assistant-head { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:12px 14px; border-bottom:1px solid var(--line); }
     .assistant-head strong { font-size:14px; }
@@ -1146,8 +1147,17 @@ _INDEX_HTML = """
     .assistant-empty { align-self:center; color:var(--muted); font-size:13px; line-height:1.4; text-align:center; }
     .assistant-message { max-width:86%; border:1px solid var(--line); border-radius:8px; padding:9px 10px; font-size:13px; line-height:1.4; overflow-wrap:anywhere; }
     .assistant-message.user { justify-self:end; border-color:#b9d5eb; background:#eef7ff; }
-    .assistant-message.assistant { justify-self:start; background:#fff; }
+    .assistant-message.assistant { justify-self:start; max-width:96%; background:#fff; }
     .assistant-message.error { justify-self:start; border-color:#f0b8b2; background:#fff5f5; color:var(--bad); }
+    .assistant-message-content { display:grid; gap:8px; }
+    .assistant-message-content p { margin:0; white-space:pre-wrap; }
+    .assistant-table-wrap { max-width:100%; overflow:auto; border:1px solid var(--line); border-radius:6px; }
+    .assistant-message table { width:max-content; min-width:100%; border-collapse:collapse; font-size:12px; background:#fff; }
+    .assistant-message th, .assistant-message td { padding:6px 8px; border-bottom:1px solid var(--line); border-right:1px solid var(--line); text-align:left; vertical-align:top; white-space:nowrap; }
+    .assistant-message th:last-child, .assistant-message td:last-child { border-right:0; }
+    .assistant-message tr:last-child td { border-bottom:0; }
+    .assistant-message th { background:#f5f7fb; color:var(--text); font-weight:600; }
+    .assistant-message tbody tr:nth-child(even) { background:#f8fafc; }
     .assistant-loading { display:flex; align-items:center; gap:8px; min-height:22px; color:var(--muted); font-size:12px; }
     .assistant-loading[hidden], .assistant-error[hidden] { display:none; }
     .assistant-loading .spinner { width:16px; height:16px; flex:0 0 auto; }
@@ -3310,6 +3320,9 @@ _INDEX_HTML = """
 
     function renderAssistantMessages() {
       const messages = document.getElementById("assistant-chat-messages");
+      const panel = document.getElementById("assistant-chat-panel");
+      const hasTable = assistantMessages.some((message) => message.role === "assistant" && containsMarkdownTable(message.text));
+      panel.classList.toggle("has-table", hasTable);
       messages.textContent = "";
       if (!assistantMessages.length) {
         const empty = document.createElement("div");
@@ -3321,10 +3334,113 @@ _INDEX_HTML = """
       for (const message of assistantMessages) {
         const bubble = document.createElement("div");
         bubble.className = `assistant-message ${message.role}`;
-        bubble.textContent = message.text;
+        if (message.role === "assistant") {
+          bubble.appendChild(renderAssistantMarkdown(message.text));
+        } else {
+          bubble.textContent = message.text;
+        }
         messages.appendChild(bubble);
       }
       messages.scrollTop = messages.scrollHeight;
+    }
+
+    function renderAssistantMarkdown(text) {
+      const root = document.createElement("div");
+      root.className = "assistant-message-content";
+      const lines = String(text || "").replaceAll(String.fromCharCode(13), "").split(String.fromCharCode(10));
+      let paragraph = [];
+      let index = 0;
+
+      function flushParagraph() {
+        if (!paragraph.length) return;
+        const node = document.createElement("p");
+        node.textContent = paragraph.join(String.fromCharCode(10)).trim();
+        root.appendChild(node);
+        paragraph = [];
+      }
+
+      while (index < lines.length) {
+        if (isMarkdownTableAt(lines, index)) {
+          flushParagraph();
+          const tableLines = [];
+          while (index < lines.length && isPipeTableRow(lines[index])) {
+            tableLines.push(lines[index]);
+            index += 1;
+          }
+          root.appendChild(renderMarkdownTable(tableLines));
+          continue;
+        }
+        paragraph.push(lines[index]);
+        index += 1;
+      }
+      flushParagraph();
+      return root;
+    }
+
+    function isMarkdownTableAt(lines, index) {
+      return (
+        index + 1 < lines.length &&
+        isPipeTableRow(lines[index]) &&
+        isMarkdownSeparatorRow(lines[index + 1])
+      );
+    }
+
+    function containsMarkdownTable(text) {
+      const lines = String(text || "").replaceAll(String.fromCharCode(13), "").split(String.fromCharCode(10));
+      return lines.some((line, index) => isMarkdownTableAt(lines, index));
+    }
+
+    function isPipeTableRow(line) {
+      const trimmed = String(line || "").trim();
+      return trimmed.includes("|") && splitMarkdownTableRow(trimmed).length >= 2;
+    }
+
+    function isMarkdownSeparatorRow(line) {
+      const cells = splitMarkdownTableRow(line);
+      return cells.length >= 2 && cells.every((cell) => /^:?-{3,}:?$/.test(cell.trim()));
+    }
+
+    function splitMarkdownTableRow(line) {
+      return String(line || "")
+        .trim()
+        .replace(/^[|]/, "")
+        .replace(/[|]$/, "")
+        .split("|")
+        .map((cell) => cell.trim());
+    }
+
+    function renderMarkdownTable(tableLines) {
+      const wrapper = document.createElement("div");
+      wrapper.className = "assistant-table-wrap";
+      const table = document.createElement("table");
+      const thead = document.createElement("thead");
+      const tbody = document.createElement("tbody");
+      const headers = splitMarkdownTableRow(tableLines[0]);
+      const columnCount = headers.length;
+      const headerRow = document.createElement("tr");
+
+      for (const header of headers) {
+        const cell = document.createElement("th");
+        cell.textContent = header || "-";
+        headerRow.appendChild(cell);
+      }
+      thead.appendChild(headerRow);
+
+      for (const line of tableLines.slice(2)) {
+        const row = document.createElement("tr");
+        const cells = splitMarkdownTableRow(line);
+        for (let cellIndex = 0; cellIndex < columnCount; cellIndex += 1) {
+          const cell = document.createElement("td");
+          cell.textContent = cells[cellIndex] || "-";
+          row.appendChild(cell);
+        }
+        tbody.appendChild(row);
+      }
+
+      table.appendChild(thead);
+      table.appendChild(tbody);
+      wrapper.appendChild(table);
+      return wrapper;
     }
 
     function setAssistantLoading(loading) {

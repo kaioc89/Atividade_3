@@ -1007,6 +1007,8 @@ def test_web_index_hides_floating_assistant_chat_by_default() -> None:
 
     assert response.status_code == 200
     assert ".assistant-widget[hidden] { display:none; }" in response.text
+    assert ".assistant-panel { pointer-events:auto; width:min(390px, calc(100vw - 28px));" in response.text
+    assert ".assistant-panel.has-table { width:min(720px, calc(100vw - 28px)); }" in response.text
     assert '<div class="assistant-widget" aria-live="polite" hidden>' in response.text
     assert 'id="assistant-chat-toggle"' in response.text
     assert 'aria-controls="assistant-chat-panel"' in response.text
@@ -1023,6 +1025,12 @@ def test_web_index_hides_floating_assistant_chat_by_default() -> None:
     assert "let assistantLoading = false;" in response.text
     assert "function toggleAssistantChat" in response.text
     assert "function renderAssistantMessages" in response.text
+    assert "function renderAssistantMarkdown" in response.text
+    assert "function renderMarkdownTable" in response.text
+    assert "function containsMarkdownTable" in response.text
+    assert 'panel.classList.toggle("has-table", hasTable);' in response.text
+    assert 'className = "assistant-table-wrap"' in response.text
+    assert ".assistant-message tbody tr:nth-child(even) { background:#f8fafc; }" in response.text
     assert "function submitAssistantMessage" in response.text
     assert 'document.getElementById("assistant-chat-input").disabled = loading;' in response.text
     assert 'document.getElementById("assistant-chat-send").disabled = loading;' in response.text
