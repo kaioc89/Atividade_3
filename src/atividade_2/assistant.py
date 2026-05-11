@@ -60,7 +60,9 @@ _STALE_SQL_ANALYSIS_PATTERN = re.compile(
     r"\b("
     r"não é possível calcular|nao e possivel calcular|não posso calcular|nao posso calcular|"
     r"contexto local insuficiente|contexto insuficiente|não há registros específicos que permitam|"
-    r"nao ha registros especificos que permitam|não detalham as notas individuais|nao detalham as notas individuais"
+    r"nao ha registros especificos que permitam|não detalham as notas individuais|nao detalham as notas individuais|"
+    r"não foram encontrados|nao foram encontrados|não encontrei registros|nao encontrei registros|"
+    r"zero registros|0 registros"
     r")\b",
     re.IGNORECASE,
 )
@@ -896,10 +898,10 @@ class AssistantService:
     ) -> str:
         prompt = _build_sql_analysis_prompt(question, intent, payload, evidence_answer)
         answer = self._llm_client.complete(prompt).strip()
-        if _is_stale_sql_analysis_answer(answer, evidence_answer):
+        if _is_invalid_sql_analysis_answer(intent, answer, evidence_answer):
             repair_prompt = _build_sql_analysis_repair_prompt(question, intent, evidence_answer, answer)
             repaired_answer = self._llm_client.complete(repair_prompt).strip()
-            if not _is_stale_sql_analysis_answer(repaired_answer, evidence_answer):
+            if not _is_invalid_sql_analysis_answer(intent, repaired_answer, evidence_answer):
                 return repaired_answer
             return evidence_answer
         return answer
@@ -1273,81 +1275,128 @@ class AssistantService:
         )
 
     def _load_audit_case_recommendations(self, question: str, resolution: EntityResolution) -> dict[str, Any]:
-        dataset_names = _dataset_filter_names(question)
         return self._fetch_sql_rows(
             """
             SELECT *
             FROM (
-            WITH pair_deltas AS (
-                SELECT
-                    a1.id_resposta_ativa1,
-                    MAX(ABS(a1.nota_atribuida - a2.nota_atribuida)) AS max_delta
-                FROM public.avaliacoes_juiz a1
-                JOIN public.avaliacoes_juiz a2
-                  ON a2.id_resposta_ativa1 = a1.id_resposta_ativa1
-                 AND a2.id_avaliacao > a1.id_avaliacao
-                GROUP BY a1.id_resposta_ativa1
-            ),
-            answer_flags AS (
-                SELECT
-                    a.id_resposta_ativa1,
-                    BOOL_OR(translate(lower(COALESCE(a.papel_juiz, '')), 'áàâãéêíóôõúç', 'aaaaeeiooouc') = 'arbitro') AS arbiter_triggered,
-                    BOOL_OR(a.nota_atribuida IN (1, 5)) AS extreme_score,
-                    BOOL_OR(LENGTH(BTRIM(COALESCE(a.chain_of_thought, ''))) < 40) AS short_rationale,
-                    BOOL_OR(
-                        (a.nota_atribuida >= 4 AND regexp_replace(translate(lower(COALESCE(a.chain_of_thought, '')), 'áàâãéêíóôõúç/:._-', 'aaaaeeiooouc     '), '\\s+', ' ', 'g') LIKE '%insuficient%')
-                        OR (a.nota_atribuida <= 2 AND regexp_replace(translate(lower(COALESCE(a.chain_of_thought, '')), 'áàâãéêíóôõúç/:._-', 'aaaaeeiooouc     '), '\\s+', ' ', 'g') LIKE '%excelent%')
-                    ) AS suspicious_rationale
-                FROM public.avaliacoes_juiz a
-                GROUP BY a.id_resposta_ativa1
-            )
-            SELECT
-                d.nome_dataset,
+            WITH arbiter_cases AS (
+              SELECT
+                1 AS prioridade,
+                'árbitro acionado' AS motivo,
+                d.nome_dataset AS dataset,
                 r.id_resposta,
                 p.id_pergunta,
-                cm.nome_modelo,
-                COALESCE(pd.max_delta, 0) AS max_delta,
-                COALESCE(af.arbiter_triggered, FALSE),
-                COALESCE(af.extreme_score, FALSE),
-                COALESCE(af.short_rationale, FALSE),
-                COALESCE(af.suspicious_rationale, FALSE)
-            FROM public.respostas_atividade_1 r
-            JOIN public.perguntas p ON p.id_pergunta = r.id_pergunta
-            JOIN public.datasets d ON d.id_dataset = p.id_dataset
-            JOIN public.modelos cm ON cm.id_modelo = r.id_modelo
-            LEFT JOIN public.avaliacoes_juiz a ON a.id_resposta_ativa1 = r.id_resposta
-            LEFT JOIN public.prompt_juizes pj ON pj.id_prompt_juiz = a.id_prompt_juiz
-            LEFT JOIN pair_deltas pd ON pd.id_resposta_ativa1 = r.id_resposta
-            LEFT JOIN answer_flags af ON af.id_resposta_ativa1 = r.id_resposta
-            WHERE (%s::text[] IS NULL OR d.nome_dataset = ANY(%s))
-            GROUP BY d.nome_dataset, r.id_resposta, p.id_pergunta, cm.nome_modelo,
-                     pd.max_delta, af.arbiter_triggered, af.extreme_score,
-                     af.short_rationale, af.suspicious_rationale
-            HAVING COALESCE(pd.max_delta, 0) > 0
-                OR COALESCE(af.arbiter_triggered, FALSE)
-                OR COALESCE(af.extreme_score, FALSE)
-                OR COALESCE(af.short_rationale, FALSE)
-                OR COALESCE(af.suspicious_rationale, FALSE)
-            ORDER BY
-                COALESCE(pd.max_delta, 0) DESC,
-                COALESCE(af.arbiter_triggered, FALSE) DESC,
-                COALESCE(af.extreme_score, FALSE) DESC,
-                COALESCE(af.short_rationale, FALSE) DESC,
-                r.id_resposta
-            LIMIT %s
+                mc.nome_modelo AS modelo_candidato,
+                a.id_avaliacao,
+                a.nota_atribuida,
+                a.chain_of_thought AS evidencia
+              FROM public.avaliacoes_juiz a
+              JOIN public.respostas_atividade_1 r ON r.id_resposta = a.id_resposta_ativa1
+              JOIN public.perguntas p ON p.id_pergunta = r.id_pergunta
+              JOIN public.datasets d ON d.id_dataset = p.id_dataset
+              JOIN public.modelos mc ON mc.id_modelo = r.id_modelo
+              WHERE a.papel_juiz = 'arbitro'
+                 OR a.rodada_julgamento = 'arbitragem'
+                 OR a.motivo_acionamento = '2plus1:score_delta'
+            ),
+            divergence_cases AS (
+              SELECT
+                2 AS prioridade,
+                'divergência entre principal e controle' AS motivo,
+                d.nome_dataset AS dataset,
+                r.id_resposta,
+                p.id_pergunta,
+                mc.nome_modelo AS modelo_candidato,
+                jp.id_avaliacao AS id_avaliacao,
+                ABS(jp.nota_atribuida - jc.nota_atribuida) AS nota_atribuida,
+                CONCAT(
+                  'principal=', jp.nota_atribuida,
+                  '; controle=', jc.nota_atribuida,
+                  '; delta=', ABS(jp.nota_atribuida - jc.nota_atribuida)
+                ) AS evidencia
+              FROM public.avaliacoes_juiz jp
+              JOIN public.avaliacoes_juiz jc
+                ON jc.id_resposta_ativa1 = jp.id_resposta_ativa1
+               AND jc.papel_juiz = 'controle'
+              JOIN public.respostas_atividade_1 r ON r.id_resposta = jp.id_resposta_ativa1
+              JOIN public.perguntas p ON p.id_pergunta = r.id_pergunta
+              JOIN public.datasets d ON d.id_dataset = p.id_dataset
+              JOIN public.modelos mc ON mc.id_modelo = r.id_modelo
+              WHERE jp.papel_juiz = 'principal'
+                AND ABS(jp.nota_atribuida - jc.nota_atribuida) > 0
+            ),
+            extreme_cases AS (
+              SELECT
+                3 AS prioridade,
+                'nota extrema' AS motivo,
+                d.nome_dataset AS dataset,
+                r.id_resposta,
+                p.id_pergunta,
+                mc.nome_modelo AS modelo_candidato,
+                a.id_avaliacao,
+                a.nota_atribuida,
+                a.chain_of_thought AS evidencia
+              FROM public.avaliacoes_juiz a
+              JOIN public.respostas_atividade_1 r ON r.id_resposta = a.id_resposta_ativa1
+              JOIN public.perguntas p ON p.id_pergunta = r.id_pergunta
+              JOIN public.datasets d ON d.id_dataset = p.id_dataset
+              JOIN public.modelos mc ON mc.id_modelo = r.id_modelo
+              WHERE a.nota_atribuida IN (1, 5)
+            ),
+            suspicious_rationale_cases AS (
+              SELECT
+                4 AS prioridade,
+                CASE
+                  WHEN LENGTH(BTRIM(COALESCE(a.chain_of_thought, ''))) < 40 THEN 'justificativa curta/suspeita'
+                  ELSE 'justificativa suspeita'
+                END AS motivo,
+                d.nome_dataset AS dataset,
+                r.id_resposta,
+                p.id_pergunta,
+                mc.nome_modelo AS modelo_candidato,
+                a.id_avaliacao,
+                a.nota_atribuida,
+                a.chain_of_thought AS evidencia
+              FROM public.avaliacoes_juiz a
+              JOIN public.respostas_atividade_1 r ON r.id_resposta = a.id_resposta_ativa1
+              JOIN public.perguntas p ON p.id_pergunta = r.id_pergunta
+              JOIN public.datasets d ON d.id_dataset = p.id_dataset
+              JOIN public.modelos mc ON mc.id_modelo = r.id_modelo
+              WHERE LENGTH(BTRIM(COALESCE(a.chain_of_thought, ''))) < 40
+                 OR (
+                   a.nota_atribuida >= 4
+                   AND regexp_replace(translate(lower(COALESCE(a.chain_of_thought, '')), 'áàâãéêíóôõúç/:._-', 'aaaaeeiooouc     '), '\\s+', ' ', 'g') LIKE '%%insuficient%%'
+                 )
+                 OR (
+                   a.nota_atribuida <= 2
+                   AND regexp_replace(translate(lower(COALESCE(a.chain_of_thought, '')), 'áàâãéêíóôõúç/:._-', 'aaaaeeiooouc     '), '\\s+', ' ', 'g') LIKE '%%excelent%%'
+                 )
+            )
+            SELECT *
+            FROM (
+              SELECT * FROM arbiter_cases
+              UNION ALL
+              SELECT * FROM divergence_cases
+              UNION ALL
+              SELECT * FROM extreme_cases
+              UNION ALL
+              SELECT * FROM suspicious_rationale_cases
+            ) x
+            ORDER BY prioridade, nota_atribuida DESC, id_avaliacao
+            LIMIT 30
             ) AS audit_recommendations;
             """,
-            [dataset_names, dataset_names, _top_n_filter(question) or 25],
+            [],
             lambda row: {
-                "dataset": row[0],
-                "answer_id": row[1],
-                "question_id": row[2],
-                "candidate_model": row[3],
-                "max_delta": int(row[4] or 0),
-                "arbiter_triggered": bool(row[5]),
-                "extreme_score": bool(row[6]),
-                "short_rationale": bool(row[7]),
-                "suspicious_rationale": bool(row[8]),
+                "priority": int(row[0] or 0),
+                "reason": row[1],
+                "dataset": row[2],
+                "answer_id": row[3],
+                "question_id": row[4],
+                "candidate_model": row[5],
+                "evaluation_id": row[6],
+                "score": row[7],
+                "evidence": row[8],
             },
         )
 
@@ -1434,6 +1483,9 @@ def classify_intent(message: str, *, factual_human_audit_query: bool = False) ->
     normalized = normalizeSearchText(message)
     if any(term in normalized for term in ("auditoria manual", "revisao manual", "casos para auditoria", "recomende casos", "recomendacao")):
         return _INTENT_AUDIT_CASE_RECOMMENDATION
+    if "media" in normalized and any(term in normalized for term in ("juiz", "juizes", "avaliador", "avaliadores")):
+        if any(term in normalized for term in ("candidato", "candidatos", "modelo", "modelos", "ia", "ias")):
+            return _INTENT_SCORE_MEAN_BY_CANDIDATE_AND_JUDGE
     if factual_human_audit_query:
         return _INTENT_HUMAN_AUDIT_SUMMARY
     if "spearman" in normalized:
@@ -1456,9 +1508,6 @@ def classify_intent(message: str, *, factual_human_audit_query: bool = False) ->
     if "rubrica" in normalized or "rubricas" in normalized or "prompt" in normalized or "prompts" in normalized:
         if any(term in normalized for term in ("ativo", "ativos", "vigente", "vigentes", "juiz", "juizes", "dataset")):
             return _INTENT_ACTIVE_PROMPTS_AND_RUBRICS
-    if "media" in normalized and any(term in normalized for term in ("juiz", "juizes", "avaliador", "avaliadores")):
-        if any(term in normalized for term in ("candidato", "candidatos", "modelo", "modelos", "ia", "ias")):
-            return _INTENT_SCORE_MEAN_BY_CANDIDATE_AND_JUDGE
     if any(term in normalized for term in ("divergencia", "divergencias", "discord")) or (
         "principal" in normalized and "controle" in normalized
     ):
@@ -2204,7 +2253,11 @@ def _format_deterministic_sql_answer(intent: str, payload: dict[str, Any]) -> st
                 f"{_compact_preview(row['prompt'], limit=80)} / {_compact_preview(row['rubric'], limit=120)}."
             )
     elif intent == _INTENT_J2_PERFORMANCE:
-        lines = ["dataset | modelo | qtd_respostas | qtd_avaliações | notas_5 | notas_1 | média_nota"]
+        lines = [
+            "As colunas notas_5 e notas_1 contam avaliações atribuídas pelos juízes, "
+            "não acertos/erros únicos por pergunta."
+        ]
+        lines.append("dataset | modelo | qtd_respostas | qtd_avaliações | notas_5 | notas_1 | média_nota")
         lines.append("--- | --- | ---: | ---: | ---: | ---: | ---:")
         for row in rows:
             lines.append(
@@ -2227,21 +2280,13 @@ def _format_deterministic_sql_answer(intent: str, payload: dict[str, Any]) -> st
                 f"{row['answer_count']} respostas, {row['evaluation_count']} avaliações."
             )
     elif intent == _INTENT_AUDIT_CASE_RECOMMENDATION:
+        lines = ["prioridade | motivo | dataset | id_avaliacao | id_resposta | id_pergunta | modelo_candidato | nota/delta | evidencia"]
+        lines.append("---: | --- | --- | ---: | ---: | ---: | --- | ---: | ---")
         for row in rows:
-            reasons = []
-            if row.get("max_delta"):
-                reasons.append(f"delta {row['max_delta']}")
-            if row.get("arbiter_triggered"):
-                reasons.append("árbitro acionado")
-            if row.get("extreme_score"):
-                reasons.append("nota extrema")
-            if row.get("short_rationale"):
-                reasons.append("justificativa curta")
-            if row.get("suspicious_rationale"):
-                reasons.append("possível inconsistência nota/justificativa")
             lines.append(
-                f"- {row['dataset']} resposta {row['answer_id']} pergunta {row['question_id']}: "
-                f"{row['candidate_model']} -> {', '.join(reasons) or 'critério de auditoria'}."
+                f"{row['priority']} | {row['reason']} | {row['dataset']} | {row['evaluation_id']} | "
+                f"{row['answer_id']} | {row['question_id']} | {row['candidate_model']} | "
+                f"{row['score']} | {_compact_preview(row.get('evidence', ''), limit=100)}"
             )
     return "\n".join(lines)
 
@@ -2252,7 +2297,9 @@ def _build_sql_analysis_prompt(question: str, intent: str, payload: dict[str, An
         "Analise e sintetize a resposta com base exclusivamente no resultado SQL determinístico abaixo. "
         "Não diga que está fora do escopo e não diga que não é possível calcular se há dados na evidência. "
         f"Se a evidência disser exatamente '{_NO_RECORDS_ANSWER}', responda essa ausência de forma factual e breve. "
-        "Mantenha tabelas compactas quando a evidência vier em tabela. Não invente dados.\n\n"
+        "Mantenha tabelas compactas quando a evidência vier em tabela. Não invente dados. "
+        "Quando a evidência vier em tabela, você pode adicionar uma frase introdutória, mas deve preservar a tabela "
+        "da evidência exatamente como recebida, sem alterar valores, linhas, colunas ou rótulos.\n\n"
         f"Intent: {intent}\n"
         f"Pergunta do usuário:\n{question}\n\n"
         "Resposta/evidência SQL compacta:\n"
@@ -2267,7 +2314,9 @@ def _build_sql_analysis_repair_prompt(question: str, intent: str, evidence_answe
         "A resposta anterior contradisse a evidência SQL ou caiu em fallback antigo. "
         "Reescreva a resposta final analisando somente a evidência abaixo. "
         "Não diga que não é possível calcular quando a evidência tem linhas. "
-        "Não mencione contexto insuficiente. Mantenha tabelas compactas quando houver tabela.\n\n"
+        "Não diga que não há registros quando a evidência tem linhas. "
+        "Não mencione contexto insuficiente. Mantenha tabelas compactas quando houver tabela. "
+        "Se houver tabela, preserve a tabela da evidência exatamente como recebida, sem alterar valores, linhas, colunas ou rótulos.\n\n"
         f"Intent: {intent}\n"
         f"Pergunta do usuário:\n{question}\n\n"
         f"Resposta anterior inválida:\n{stale_answer}\n\n"
@@ -2275,13 +2324,34 @@ def _build_sql_analysis_repair_prompt(question: str, intent: str, evidence_answe
     )
 
 
+def _is_invalid_sql_analysis_answer(intent: str, answer: str, evidence_answer: str) -> bool:
+    if _is_stale_sql_analysis_answer(answer, evidence_answer):
+        return True
+    if not _sql_answer_preserves_evidence(intent, answer, evidence_answer):
+        return True
+    return False
+
+
 def _is_stale_sql_analysis_answer(answer: str, evidence_answer: str) -> bool:
-    if not answer.strip():
+    stripped_answer = answer.strip()
+    if not stripped_answer:
+        return True
+    has_positive_evidence = bool(evidence_answer.strip()) and evidence_answer.strip() != _NO_RECORDS_ANSWER
+    if has_positive_evidence and normalizeSearchText(stripped_answer) == "resumo gerado pelo assistente":
         return True
     if not _STALE_SQL_ANALYSIS_PATTERN.search(answer):
         return False
-    has_positive_evidence = bool(evidence_answer.strip()) and evidence_answer.strip() != _NO_RECORDS_ANSWER
     return has_positive_evidence
+
+
+def _sql_answer_preserves_evidence(intent: str, answer: str, evidence_answer: str) -> bool:
+    if evidence_answer.strip() == _NO_RECORDS_ANSWER:
+        return True
+    if intent != _INTENT_SCORE_MEAN_BY_CANDIDATE_AND_JUDGE:
+        return True
+    if "|" not in evidence_answer:
+        return True
+    return evidence_answer.strip() in answer.strip()
 
 
 def _compact_sql_payload(payload: dict[str, Any]) -> dict[str, Any]:

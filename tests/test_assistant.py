@@ -942,9 +942,10 @@ def test_assistant_average_scores_returns_all_candidates_without_top_n() -> None
     response = service.answer("Mostre a média de notas por modelo candidato e por juiz.")
 
     assert response["in_scope"] is True
-    assert "Jurema:7b" in llm.prompts[-1]
-    assert "Qwen" in llm.prompts[-1]
-    assert "modelo_candidato" in llm.prompts[-1]
+    assert "Jurema:7b" in response["answer"]
+    assert "Qwen" in response["answer"]
+    assert "modelo_candidato" in response["answer"]
+    assert len(llm.prompts) == 2
 
 
 def test_assistant_average_scores_filters_plural_jurema_matches() -> None:
@@ -965,9 +966,10 @@ def test_assistant_average_scores_filters_plural_jurema_matches() -> None:
     response = service.answer("Mostre a média de notas do Jurema por modelo candidato e por juiz.")
 
     assert response["in_scope"] is True
-    assert "Jurema:7b" in response["answer"] or "Jurema:7b" in service._llm_client.prompts[-1]
-    assert "jurema-7b" in service._llm_client.prompts[-1]
-    assert "Qwen" not in service._llm_client.prompts[-1]
+    assert "Jurema:7b" in response["answer"]
+    assert "jurema-7b" in response["answer"]
+    assert "Qwen" not in response["answer"]
+    assert len(service._llm_client.prompts) == 2
 
 
 def test_assistant_average_scores_applies_top_n_limit_in_catalog_query() -> None:
@@ -982,7 +984,7 @@ def test_assistant_average_scores_applies_top_n_limit_in_catalog_query() -> None
     response = service.answer("Mostre o top 1 de média de notas por modelo candidato e por juiz.")
 
     assert response["in_scope"] is True
-    assert len(service._llm_client.prompts) == 1
+    assert len(service._llm_client.prompts) == 2
     assert connection_factory.connections[-1].cursor_obj.queries[-1].lstrip().upper().startswith("SELECT")
 
 
@@ -999,9 +1001,9 @@ def test_assistant_active_prompts_and_rubrics_use_prompt_juizes() -> None:
     response = service.answer("Quais prompts e rubricas ativos existem por dataset?")
 
     assert response["in_scope"] is True
-    assert "prompt_juizes" in llm.prompts[-1]
-    assert "Rubrica ativa" in llm.prompts[-1]
-    assert len(llm.prompts) == 1
+    assert "prompt_juizes" in response["answer"]
+    assert "Rubrica ativa" in response["answer"]
+    assert len(llm.prompts) == 2
 
 
 def test_assistant_model_counts_are_deterministic_sql() -> None:
@@ -1017,9 +1019,9 @@ def test_assistant_model_counts_are_deterministic_sql() -> None:
     response = service.answer("Quais modelos candidatos avaliados e quantidade de respostas por modelo?")
 
     assert response["in_scope"] is True
-    assert "Jurema:7b" in llm.prompts[-1]
-    assert "qtd_respostas" in llm.prompts[-1]
-    assert len(llm.prompts) == 1
+    assert "Jurema:7b" in response["answer"]
+    assert "qtd_respostas" in response["answer"]
+    assert len(llm.prompts) == 2
     assert connection_factory.connections[-1].cursor_obj.queries[-1].lstrip().upper().startswith("SELECT")
 
 
@@ -1035,9 +1037,9 @@ def test_assistant_judge_divergence_is_deterministic_sql() -> None:
     response = service.answer("Mostre divergência entre juiz principal e juiz controle.")
 
     assert response["in_scope"] is True
-    assert "101" in llm.prompts[-1]
-    assert "delta" in llm.prompts[-1]
-    assert len(llm.prompts) == 1
+    assert "101" in response["answer"]
+    assert "delta" in response["answer"]
+    assert len(llm.prompts) == 2
 
 
 def test_assistant_arbiter_cases_are_deterministic_sql() -> None:
@@ -1052,8 +1054,8 @@ def test_assistant_arbiter_cases_are_deterministic_sql() -> None:
     response = service.answer("Quais casos em que o árbitro foi acionado?")
 
     assert response["in_scope"] is True
-    assert "score_delta_3" in llm.prompts[-1]
-    assert len(llm.prompts) == 1
+    assert "score_delta_3" in response["answer"]
+    assert len(llm.prompts) == 2
 
 
 def test_assistant_trace_evaluation_returns_minimum_fields() -> None:
@@ -1069,12 +1071,12 @@ def test_assistant_trace_evaluation_returns_minimum_fields() -> None:
     response = service.answer("Mostre rastreabilidade completa da avaliação 301.")
 
     assert response["in_scope"] is True
-    assert "Pergunta completa" in llm.prompts[-1]
-    assert "Resposta candidata" in llm.prompts[-1]
-    assert "Jurema:7b" in llm.prompts[-1]
-    assert "Justificativa" in llm.prompts[-1]
-    assert "Prompt usado" in llm.prompts[-1]
-    assert len(llm.prompts) == 1
+    assert "Pergunta completa" in response["answer"]
+    assert "Resposta candidata" in response["answer"]
+    assert "Jurema:7b" in response["answer"]
+    assert "Justificativa" in response["answer"]
+    assert "Prompt usado" in response["answer"]
+    assert len(llm.prompts) == 2
 
 
 def test_assistant_j2_performance_is_deterministic_sql() -> None:
@@ -1090,9 +1092,11 @@ def test_assistant_j2_performance_is_deterministic_sql() -> None:
     response = service.answer("Mostre desempenho no J2 por acertos, erros e notas.")
 
     assert response["in_scope"] is True
-    assert "notas_5" in llm.prompts[-1]
-    assert "notas_1" in llm.prompts[-1]
-    assert "4.25" in llm.prompts[-1]
+    assert "notas_5" in response["answer"]
+    assert "notas_1" in response["answer"]
+    assert "não acertos/erros únicos por pergunta" in response["answer"]
+    assert "4.25" in response["answer"]
+    assert len(llm.prompts) == 2
 
 
 def test_assistant_extreme_disagreements_are_deterministic_sql() -> None:
@@ -1108,9 +1112,9 @@ def test_assistant_extreme_disagreements_are_deterministic_sql() -> None:
     response = service.answer("Mostre avaliações com nota 5 de um juiz e 1 de outro.")
 
     assert response["in_scope"] is True
-    assert "Judge A" in llm.prompts[-1]
-    assert "Judge B" in llm.prompts[-1]
-    assert len(llm.prompts) == 1
+    assert "Judge A" in response["answer"]
+    assert "Judge B" in response["answer"]
+    assert len(llm.prompts) == 2
 
 
 def test_assistant_model_name_search_returns_variations() -> None:
@@ -1126,9 +1130,9 @@ def test_assistant_model_name_search_returns_variations() -> None:
     response = service.answer("Busca flexível por modelo Jurema.")
 
     assert response["in_scope"] is True
-    assert "Jurema:7b" in llm.prompts[-1]
-    assert "jurema-7b" in llm.prompts[-1]
-    assert len(llm.prompts) == 1
+    assert "Jurema:7b" in response["answer"]
+    assert "jurema-7b" in response["answer"]
+    assert len(llm.prompts) == 2
 
 
 def test_assistant_audit_case_recommendation_is_deterministic_sql() -> None:
@@ -1136,7 +1140,7 @@ def test_assistant_audit_case_recommendation_is_deterministic_sql() -> None:
     connection_factory = FakeConnectionFactory(
         [
             [_rows_for_known_models()],
-            [[("J1", 101, 201, "Jurema:7b", 4, True, True, True, False)]],
+            [[(1, "árbitro acionado", "J1", 101, 201, "Jurema:7b", 4855, 5, "arbitragem por delta")]],
         ]
     )
     service = _assistant_service(llm_client=llm, connect_func=connection_factory)
@@ -1144,10 +1148,55 @@ def test_assistant_audit_case_recommendation_is_deterministic_sql() -> None:
     response = service.answer("Recomende casos para auditoria manual ou meta-avaliação.")
 
     assert response["in_scope"] is True
-    assert "delta 4" in llm.prompts[-1]
-    assert "árbitro acionado" in llm.prompts[-1]
-    assert "nota extrema" in llm.prompts[-1]
-    assert len(llm.prompts) == 1
+    assert "4855" in response["answer"]
+    assert "árbitro acionado" in response["answer"]
+    assert "arbitragem por delta" in response["answer"]
+    assert len(llm.prompts) == 2
+
+
+def test_assistant_audit_case_recommendation_handles_full_criteria_question() -> None:
+    llm = FakeLlmClient()
+    connection_factory = FakeConnectionFactory(
+        [
+            [_rows_for_known_models()],
+            [[(1, "árbitro acionado", "J2", 101, 201, "Jurema:7b", 4855, 5, "score_delta")]],
+        ]
+    )
+    service = _assistant_service(llm_client=llm, connect_func=connection_factory)
+
+    response = service.answer(
+        "Quais são os principais casos recomendados para auditoria manual/meta-avaliação, "
+        "considerando divergência entre juízes, erro evidente, nota extrema ou justificativa suspeita?"
+    )
+
+    assert response["in_scope"] is True
+    assert "4855" in response["answer"]
+    assert "árbitro acionado" in response["answer"]
+    assert "não foram encontrados registros" not in response["answer"].lower()
+    assert len(llm.prompts) == 2
+
+
+def test_assistant_repairs_stale_audit_recommendation_absence() -> None:
+    llm = SequencedFakeLlmClient(
+        [
+            "Não foram encontrados casos recomendados para auditoria manual/meta-avaliação.",
+            "Há caso recomendado: J1 resposta 101, Jurema:7b, por delta 4 e árbitro acionado.",
+        ]
+    )
+    connection_factory = FakeConnectionFactory(
+        [
+            [_rows_for_known_models()],
+            [[(1, "árbitro acionado", "J1", 101, 201, "Jurema:7b", 4855, 5, "score_delta")]],
+        ]
+    )
+    service = _assistant_service(llm_client=llm, connect_func=connection_factory)
+
+    response = service.answer("Recomende casos para auditoria manual ou meta-avaliação.")
+
+    assert response["in_scope"] is True
+    assert response["answer"] == "Há caso recomendado: J1 resposta 101, Jurema:7b, por delta 4 e árbitro acionado."
+    assert len(llm.prompts) == 2
+    assert "Não diga que não há registros quando a evidência tem linhas" in llm.prompts[-1]
 
 
 def test_assistant_deterministic_sql_no_rows_uses_factual_absence_message() -> None:
@@ -1180,9 +1229,89 @@ def test_assistant_repairs_stale_llm_sql_analysis_fallback() -> None:
     response = service.answer("Mostre a média de notas por modelo candidato e por juiz.")
 
     assert response["in_scope"] is True
-    assert response["answer"] == "A evidência SQL mostra Jurema:7b com média 4,5 pelo Judge A."
+    assert "Jurema:7b" in response["answer"]
+    assert "Judge A" in response["answer"]
+    assert "4.5" in response["answer"]
     assert len(llm.prompts) == 2
     assert "Resposta anterior inválida" in llm.prompts[-1]
+
+
+def test_assistant_average_scores_does_not_let_llm_deny_existing_sql_rows() -> None:
+    llm = FakeLlmClient(
+        "Com base nos dados disponíveis no contexto local, não é possível calcular a média de notas por modelo candidato separada por juiz avaliador."
+    )
+    connection_factory = FakeConnectionFactory(
+        [
+            [[("Jurema:7b", "7B", "candidato")]],
+            [[("J1", "Jurema:7b", "Judge A", "principal", 2, 4.5)]],
+        ]
+    )
+    service = _assistant_service(llm_client=llm, connect_func=connection_factory)
+
+    response = service.answer("Mostre a média de notas por modelo candidato, separando por juiz avaliador.")
+
+    assert response["in_scope"] is True
+    assert "modelo_candidato" in response["answer"]
+    assert "Jurema:7b" in response["answer"]
+    assert "Judge A" in response["answer"]
+    assert "4.5" in response["answer"]
+    assert len(llm.prompts) == 2
+
+
+def test_assistant_average_scores_accepts_llm_intro_when_table_is_preserved() -> None:
+    table = (
+        "dataset | modelo_candidato | juiz | papel_juiz | qtd_avaliações | média_nota\n"
+        "--- | --- | --- | --- | ---: | ---:\n"
+        "J1 | Jurema:7b | Judge A | principal | 2 | 4.5"
+    )
+    llm = FakeLlmClient(f"Segue a média de notas por modelo candidato e juiz avaliador:\n\n{table}")
+    connection_factory = FakeConnectionFactory(
+        [
+            [[("Jurema:7b", "7B", "candidato")]],
+            [[("J1", "Jurema:7b", "Judge A", "principal", 2, 4.5)]],
+        ]
+    )
+    service = _assistant_service(llm_client=llm, connect_func=connection_factory)
+
+    response = service.answer("Mostre a média de notas por modelo candidato, separando por juiz avaliador.")
+
+    assert response["in_scope"] is True
+    assert response["answer"].startswith("Segue a média")
+    assert table in response["answer"]
+    assert len(llm.prompts) == 1
+
+
+def test_assistant_average_scores_rejects_llm_table_data_changes() -> None:
+    llm = SequencedFakeLlmClient(
+        [
+            (
+                "Segue a tabela:\n\n"
+                "dataset | modelo_candidato | juiz | papel_juiz | qtd_avaliações | média_nota\n"
+                "--- | --- | --- | --- | ---: | ---:\n"
+                "J1 | Jurema:7b | Judge A | principal | 2 | 5.0"
+            ),
+            (
+                "Segue a tabela correta:\n\n"
+                "dataset | modelo_candidato | juiz | papel_juiz | qtd_avaliações | média_nota\n"
+                "--- | --- | --- | --- | ---: | ---:\n"
+                "J1 | Jurema:7b | Judge A | principal | 2 | 4.5"
+            ),
+        ]
+    )
+    connection_factory = FakeConnectionFactory(
+        [
+            [[("Jurema:7b", "7B", "candidato")]],
+            [[("J1", "Jurema:7b", "Judge A", "principal", 2, 4.5)]],
+        ]
+    )
+    service = _assistant_service(llm_client=llm, connect_func=connection_factory)
+
+    response = service.answer("Mostre a média de notas por modelo candidato, separando por juiz avaliador.")
+
+    assert response["in_scope"] is True
+    assert "4.5" in response["answer"]
+    assert "5.0" not in response["answer"]
+    assert len(llm.prompts) == 2
 
 
 def test_assistant_allows_valid_av2_answer_with_error_terms_after_llm() -> None:
@@ -1199,6 +1328,7 @@ def test_assistant_allows_valid_av2_answer_with_error_terms_after_llm() -> None:
 
     assert response["in_scope"] is True
     assert response["answer"] == "J2: 8 notas 5 e 2 notas 1; estes erros representam respostas com nota 1."
+    assert len(llm.prompts) == 1
 
 
 def test_assistant_allows_candidate_model_summary_by_model_term() -> None:
