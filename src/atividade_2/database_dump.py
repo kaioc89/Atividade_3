@@ -55,7 +55,14 @@ class DatabaseDumpService:
         filename = f"atividade_2_{created_at:%Y%m%d_%H%M%S}.sql"
         self.output_dir.mkdir(parents=True, exist_ok=True)
         output_path = (self.output_dir / filename).resolve()
-        command = [pg_dump, settings.database_url, "--file", str(output_path)]
+        command = [
+            pg_dump,
+            settings.database_url,
+            "--no-owner",
+            "--no-privileges",
+            "--file",
+            str(output_path),
+        ]
         try:
             completed = subprocess.run(command, check=False, capture_output=True, text=True, timeout=300)
         except subprocess.TimeoutExpired as error:
