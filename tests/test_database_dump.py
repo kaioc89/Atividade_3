@@ -39,6 +39,44 @@ def test_create_dump_updates_root_backup_outside_prod(monkeypatch, tmp_path) -> 
     assert result.delivery == "local"
 
 
+def test_create_dump_omits_environment_specific_ownership_and_privileges(monkeypatch, tmp_path) -> None:
+    output_dir = tmp_path / "outputs" / "backup"
+    captured_commands = []
+
+    monkeypatch.setattr(database_dump.shutil, "which", lambda name: f"/usr/bin/{name}")
+
+    def fake_run(command, **kwargs):
+        captured_commands.append(command)
+        output_path = Path(command[command.index("--file") + 1])
+        output_path.write_text("SELECT 1;\n", encoding="utf-8")
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(database_dump.subprocess, "run", fake_run)
+
+    service = DatabaseDumpService(
+        output_dir=output_dir,
+        settings_loader=lambda: SimpleNamespace(
+            app_env="prod",
+            database_url="postgresql://postgres:postgres@localhost:5432/app_dev",
+            backup_root_file=str(tmp_path / "backup_atividade_2.sql"),
+        ),
+        now=lambda: database_dump.datetime(2026, 5, 2, 9, 30, 0),
+    )
+
+    service.create_dump()
+
+    assert captured_commands == [
+        [
+            "/usr/bin/pg_dump",
+            "postgresql://postgres:postgres@localhost:5432/app_dev",
+            "--no-owner",
+            "--no-privileges",
+            "--file",
+            str((output_dir / "atividade_2_20260502_093000.sql").resolve()),
+        ]
+    ]
+
+
 def test_create_dump_uses_browser_download_in_prod(monkeypatch, tmp_path) -> None:
     output_dir = tmp_path / "outputs" / "backup"
     root_backup = tmp_path / "backup_atividade_2.sql"
