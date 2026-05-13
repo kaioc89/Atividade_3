@@ -2,9 +2,9 @@
 -- PostgreSQL database dump
 --
 
-\restrict sRXvXTo1Rj0GT6aSZyLsiv6K2G6YDi3ZbH6e98V0f9JIXyQBCmh2yZfKDgv0Zfr
+\restrict 0W9pSFFut1XLdydqPzvsOq8fPiNNd3zmy9dFSda97TMA29Q2kQnlAbjSvZeLv9s
 
--- Dumped from database version 18.3 (Debian 18.3-1.pgdg13+1)
+-- Dumped from database version 18.3 (Debian 18.3-1.pgdg12+1)
 -- Dumped by pg_dump version 18.3 (Debian 18.3-1.pgdg13+1)
 
 SET statement_timeout = 0;
@@ -31,6 +31,20 @@ SET row_security = off;
 --
 
 COMMENT ON SCHEMA public IS '';
+
+
+--
+-- Name: pg_trgm; Type: EXTENSION; Schema: -; Owner: -
+--
+
+CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA public;
+
+
+--
+-- Name: EXTENSION pg_trgm; Type: COMMENT; Schema: -; Owner: -
+--
+
+COMMENT ON EXTENSION pg_trgm IS 'text similarity measurement and index searching based on trigrams';
 
 
 SET default_tablespace = '';
@@ -5325,6 +5339,184 @@ COPY public.meta_avaliacoes (id_meta_avaliacao, id_avaliacao, nm_avaliador, vl_n
 20	4839	Diego	5	Justo.\n\nHá algum aproveitamento pela conclusão correta, mas os fundamentos constitucionais centrais estão errados.	2026-05-05 00:04:38.628794
 21	4838	Diego	3	Superestimou\n\nGeneroso demais, tratando uma peça incompleta como aceitável.	2026-05-05 00:06:15.001355
 22	4837	Diego	5	Justo.\nA avaliação está proporcional aos acertos e erros da resposta.	2026-05-05 00:07:10.366014
+23	4530	Kaio	5	O juiz foi justo, pois a resposta apresenta erros graves	2026-05-10 23:54:32.314355
+24	4556	Kaio	5	O juiz avaliou a resposta corretamente, pois ele respondeu equivocadamente os dois itens da questão	2026-05-10 23:57:37.755469
+25	4495	Kaio	3	A resposta do modelo foi equivocada, o juiz avaliador foi benevolente em considerar a argumentação da resposta válida para aumentar a note por ter uma relação fraca com a resposta do gabarito.	2026-05-11 00:06:15.809703
+26	4534	Kaio	5	O juiz deu uma nota justa. O candidato acertou as perguntas, falhando na fundamentação legal no primeiro item e sem fornecer fundamentação legal no segundo item, mas argumentando corretamente.	2026-05-11 00:33:24.253257
+27	4500	Kaio	4	Pouco subestimada. A resposta dada pelo candidato está parcialmente correta e acredito que a nota 2 é pouco subestimada.	2026-05-11 00:36:02.25015
+28	4502	Kaio	2	O juiz superestimou a nota, pois a peça não contém conteúdo válido, apenas estrutura correta. Considero que merecia nota mínima.	2026-05-11 00:45:09.107506
+29	4536	Kaio	5	O juiz foi justo, identificando que a peça não atendeu aos requisitos do gabarito.	2026-05-11 00:46:09.458702
+30	4561	Kaio	2	O juiz subestimou a nota. O candidato respondeu corretamente às duas questões e citou incorretamente a fundamentação legal da primeira questão. Porém, a pontuação reservada para a fundamentação é baixa.	2026-05-11 01:08:07.113912
+31	4546	Kaio	2	O juiz subestimou a nota. O candidato respondeu corretamente às duas questões e citou incorretamente a fundamentação legal da primeira questão. Porém, a pontuação reservada para a fundamentação é baixa.	2026-05-11 01:08:29.304112
+32	4513	Kaio	5	O juiz foi justo. O candidato respondeu corretamente às duas questões e citou incorretamente a fundamentação legal da primeira questão. Porém, a pontuação reservada para a fundamentação é baixa. A argumentação da segunda pode ter alguma falha, mas está alinhada ao gabarito	2026-05-11 01:12:16.558168
+33	4614	Kaio	5	A avaliação está justa, pois o candidato acertou o primeiro item parcialmente e errou os demais.	2026-05-11 01:24:06.060304
+34	4565	Kaio	4	Apesar da linha de raciocínio do modelo ser coerente, a nota foi um pouco superestimada.	2026-05-11 01:25:20.37059
+35	4494	Kaio	2	O juiz avaliou incorretamente. Considerando que o candidato errou as duas perguntas, deveria ter recebido nota mínima.	2026-05-11 01:29:23.394027
+36	4557	Kaio	4	O juiz subestimou. O candidato acertou o primeiro item da questão. Deveria ter uma nota um pouco maior.	2026-05-11 01:46:11.731474
+37	4507	Kaio	5	Justo. A nota está coerente.	2026-05-11 01:47:04.318087
+38	4558	Kaio	5	Justo. A resposta está predominantemente equivocada.	2026-05-11 01:50:53.14131
+39	4515	Kaio	5	Justo. Há um pequeno aproveitamento da questão em relação ao gabarito que não pode ser descartado. Portanto, a nota 2 é justa.	2026-05-11 01:53:07.190821
+40	4515	Kaio	4	A nota foi um pouco superestimada. Apesar de um pequeno acerto, a resposta do candidato está predominantemente equivocada.	2026-05-11 01:55:22.480393
+41	4535	Kaio	5	Justo. A avaliação do juiz está correta, pois o candidato acertou uma pequena parte da questão.	2026-05-11 01:59:40.707153
+42	4499	Kaio	5	Justo. A avaliação do juiz está correta, pois o candidato acertou uma pequena parte da questão.	2026-05-11 02:00:23.890835
+43	4826	5	5	A avaliação foi justa, argumentação correta e aderente ao gabarito. A nota atribuída foi correta.	2026-05-11 23:43:00.221083
+44	4825	Paulo	2	A avaliação não foi justa, pois o candidato não detalhou adequadamente a fundamentação legal. A nota atribuída pelo juiz não foi coerente.	2026-05-11 23:55:55.508109
+45	4824	Paulo	5	A avaliação foi justa, argumentação correta e aderente ao gabarito. A nota atribuída foi coerente.	2026-05-12 00:02:20.437474
+46	4830	Paulo	4	A avaliação não foi justa, pois a maioria dos elementos da resposta do candidato continha a fundamentação legal adequada. A nota atribuída pelo juiz não foi coerente.	2026-05-12 00:07:25.472518
+47	4829	Paulo	5	A avaliação foi justa, argumentação correta e aderente ao gabarito. A nota atribuída foi coerente.	2026-05-12 00:13:42.495472
+48	4827	Paulo	5	A avaliação foi justa, argumentação correta e aderente ao gabarito. A nota atribuída foi coerente.	2026-05-12 00:17:04.744826
+49	4832	Paulo	5	A avaliação foi justa, argumentação correta e aderente ao gabarito. A nota atribuída foi coerente.	2026-05-12 00:18:21.75248
+50	4831	Paulo	5	A avaliação foi justa, argumentação correta e aderente ao gabarito. A nota atribuída foi coerente.	2026-05-12 00:19:30.389751
+51	4828	Paulo	5	A avaliação foi justa, argumentação correta e aderente ao gabarito. A nota atribuída foi coerente.	2026-05-12 00:20:08.51266
+52	4835	Paulo	5	A avaliação foi justa, argumentação correta e aderente ao gabarito. A nota atribuída foi coerente.	2026-05-12 00:21:08.193564
+53	4834	Paulo	4	A avaliação não foi justa, pois a maioria dos elementos da resposta do candidato continha a fundamentação legal adequada. A nota atribuída pelo juiz não foi coerente.	2026-05-12 00:26:09.385318
+54	4833	Paulo	5	A avaliação foi justa, argumentação correta e aderente ao gabarito. A nota atribuída foi coerente.	2026-05-12 00:27:25.975084
+55	4836	Paulo	5	A avaliação foi justa, argumentação correta e aderente ao gabarito. A nota atribuída foi coerente.	2026-05-12 00:28:03.909862
+56	4790	Paulo	5	A avaliação foi justa, argumentação correta e aderente ao gabarito. A nota atribuída foi coerente.	2026-05-12 00:28:51.314876
+57	4793	Paulo	5	A avaliação foi justa, argumentação correta e aderente ao gabarito. A nota atribuída foi coerente.	2026-05-12 00:33:07.71108
+58	4791	Paulo	5	A avaliação foi justa, argumentação correta e aderente ao gabarito. A nota atribuída foi coerente.	2026-05-12 00:34:14.808926
+59	4789	Paulo	5	A avaliação foi justa, argumentação correta e aderente ao gabarito. A nota atribuída foi coerente.	2026-05-12 00:35:19.4471
+60	4788	Paulo	5	A avaliação foi justa, argumentação correta e aderente ao gabarito. A nota atribuída foi coerente.	2026-05-12 00:35:53.461366
+61	4785	Paulo	5	A avaliação foi justa, argumentação correta e aderente ao gabarito. A nota atribuída foi coerente.	2026-05-12 00:36:32.678505
+62	4784	Paulo	2	A avaliação não foi justa, pois o candidato não detalhou adequadamente a fundamentação legal. A nota atribuída pelo juiz não foi coerente.	2026-05-12 00:37:36.477046
+63	4783	Paulo	5	A avaliação foi justa, argumentação correta e aderente ao gabarito. A nota atribuída foi coerente.	2026-05-12 00:39:20.527089
+64	4782	Paulo	5	A avaliação foi justa, argumentação correta e aderente ao gabarito. A nota atribuída foi coerente.	2026-05-12 00:40:45.637228
+65	4781	Paulo	2	A avaliação não foi justa, pois o candidato não detalhou adequadamente a fundamentação legal. A nota atribuída pelo juiz não foi coerente.	2026-05-12 00:42:11.90671
+66	4780	Paulo	5	A avaliação foi justa, argumentação correta e aderente ao gabarito. A nota atribuída foi coerente.	2026-05-12 00:42:56.909268
+67	4779	Paulo	5	A avaliação foi justa, argumentação correta e aderente ao gabarito. A nota atribuída foi coerente.	2026-05-12 00:43:39.912552
+68	4778	Paulo	5	A avaliação foi justa, argumentação correta e aderente ao gabarito. A nota atribuída foi coerente.	2026-05-12 00:47:50.451788
+69	4777	Paulo	5	A avaliação foi justa, argumentação correta e aderente ao gabarito. A nota atribuída foi coerente.	2026-05-12 00:48:23.870773
+70	4776	Paulo	5	A avaliação foi justa, argumentação correta e aderente ao gabarito. A nota atribuída foi coerente.	2026-05-12 00:48:50.315192
+71	4775	Paulo	5	A avaliação foi justa, argumentação correta e aderente ao gabarito. A nota atribuída foi coerente.	2026-05-12 00:49:38.245388
+72	4774	Paulo	5	A avaliação foi justa, argumentação correta e aderente ao gabarito. A nota atribuída foi coerente.	2026-05-12 00:50:11.263169
+73	4773	Paulo	5	A avaliação foi justa, argumentação correta e aderente ao gabarito. A nota atribuída foi coerente.	2026-05-12 00:50:34.154331
+74	4772	Paulo	5	A avaliação foi justa, argumentação correta e aderente ao gabarito. A nota atribuída foi coerente.	2026-05-12 00:51:25.215783
+75	4771	Paulo	5	A avaliação foi justa, argumentação correta e aderente ao gabarito. A nota atribuída foi coerente.	2026-05-12 00:51:55.259713
+76	4770	Paulo	5	A avaliação foi justa, argumentação correta e aderente ao gabarito. A nota atribuída foi coerente.	2026-05-12 00:52:29.659424
+77	4768	Paulo	5	A avaliação foi justa, argumentação correta e aderente ao gabarito. A nota atribuída foi coerente.	2026-05-12 00:52:51.911778
+78	4769	Paulo	5	A avaliação foi justa, argumentação correta e aderente ao gabarito. A nota atribuída foi coerente.	2026-05-12 00:53:15.869481
+79	4767	Paulo	5	A avaliação foi justa, argumentação correta e aderente ao gabarito. A nota atribuída foi coerente.	2026-05-12 00:53:42.821306
+80	4766	Paulo	5	A avaliação foi justa, argumentação correta e aderente ao gabarito. A nota atribuída foi coerente.	2026-05-12 00:54:05.306371
+81	4765	Paulo	5	A avaliação foi justa, argumentação correta e aderente ao gabarito. A nota atribuída foi coerente.	2026-05-12 00:54:25.06623
+82	4764	Paulo	5	A avaliação foi justa, argumentação correta e aderente ao gabarito. A nota atribuída foi coerente.	2026-05-12 00:54:55.276658
+83	4763	Paulo	5	A avaliação foi justa, argumentação correta e aderente ao gabarito. A nota atribuída foi coerente.	2026-05-12 00:55:20.940113
+84	4762	Paulo	5	A avaliação foi justa, argumentação correta e aderente ao gabarito. A nota atribuída foi coerente.	2026-05-12 00:55:48.259105
+85	4761	Paulo	5	A avaliação foi justa, argumentação correta e aderente ao gabarito. A nota atribuída foi coerente.	2026-05-12 00:56:11.927712
+86	4824	Paulo	5	peça pr	2026-05-12 01:00:01.410254
+87	4824	Paulo	5	A avaliação foi justa, argumentação correta e aderente ao gabarito. A nota atribuída foi coerente.	2026-05-12 01:00:23.003101
+88	4826	Paulo	5	A avaliação foi justa, argumentação correta e aderente ao gabarito. A nota atribuída foi coerente.	2026-05-12 01:03:07.246881
+89	4715	José Bruno	5	A resposta apresenta excelente organização, clareza e completude, com adequada descrição do instituto da fusão e dos procedimentos societários, contudo apresenta uma imprecisão jurídica em desacordo com a legislação atualizada pela Lei nº 14.451/2022.	2026-05-12 15:14:05.748342
+90	4718	José Bruno	4	Subestimou um pouco, embora aponte a pequena imprecisão na resposta, não houve reconhecimento suficiente da excelente organização, clareza e completude da resposta.	2026-05-12 15:20:55.487622
+91	4722	José Bruno	4	Pouco subestimada. O modelo demonstra maior esforço de fundamentação normativa que os demais, embora ainda incorra em imprecisão jurídica relevante.	2026-05-12 15:31:18.254568
+92	4730	José Bruno	5	O juiz foi justo. Reconheceu a estrutura argumentativa consistente, além do entendimento parcialmente desatualizado quanto ao quórum de aprovação da fusão, mantendo o critério de três quartos do capital social.	2026-05-12 15:34:26.494445
+128	4746	José Bruno	5	Justo. A resposta está tecnicamente precisa, com correta distinção entre responsabilidade do fabricante e do comerciante, adequada aplicação do CDC e indicação correta da ilegitimidade passiva com base no art. 339 do CPC	2026-05-12 17:45:07.801343
+93	4723	José Bruno	5	Muito justo. O juiz reconheceu que a resposta apresenta elevado nível técnico, com correta identificação da operação de fusão, fundamentação legal adequada e, principalmente, aplicação atualizada da legislação ao adotar o critério de maioria absoluta conforme a Lei nº 14.451/2022.	2026-05-12 15:36:40.256363
+94	4731	José Bruno	4	Pouco subestimada uma vez que a resposta demonstra precisão jurídica, completude e alta segurança técnica.	2026-05-12 15:37:59.690275
+95	4733	José Bruno	4	A resposta apresenta boa clareza e organização, porém incorre em erro jurídico relevante ao considerar válida a instalação da assembleia com quórum inferior ao exigido em primeira convocação.	2026-05-12 15:41:08.399094
+96	4732	José Bruno	4	Pouco subestimada. O juiz aponta o erro em um item, mas não reconhece a  clareza e organização do segundo item.	2026-05-12 15:42:35.138431
+97	4726	José Bruno	5	Justo. O juiz reconhece que a resposta apresenta boa clareza e organização, embora incorra em erro jurídico relevante.	2026-05-12 15:44:51.307231
+98	4724	José Bruno	5	Justo. Embora a resposta apresenta boa clareza e estrutura argumentativa, adota interpretação inadequada ao tentar validar a assembleia com quórum inferior ao legal, sob argumento de ausência de prejuízo.	2026-05-12 15:51:09.906573
+99	4727	José Bruno	5	Justo. O juiz reconhece a clareza e estrutura argumentativa, embora apresente algumas imprecisões na fundamentação legal.	2026-05-12 15:56:29.268186
+100	4725	José Bruno	5	Justo. O juiz reconhece que a resposta apresenta domínio técnico, adequada aplicação normativa e alta segurança jurídica.	2026-05-12 15:58:22.287679
+101	4728	José Bruno	5	Justo. O juiz aponta corretamente a necessidade de apresentação explicita do artigo específico sobre a redução do quórum de deliberação.	2026-05-12 16:00:29.957761
+102	4799	José Bruno	5	Justo. O juiz avalia corretamente de acordo com o gabarito. Reconhece a clareza, completude e elevada segurança técnica da resposta.	2026-05-12 16:03:18.531531
+103	4743	José Bruno	5	Justo. A resposta apresenta estrutura adequada de peça processual, correta identificação do recurso cabível e fundamentação consistente no Código de Defesa do Consumidor.	2026-05-12 16:04:24.72011
+104	4734	José Bruno	5	Justo. A resposta apresenta excelente organização e completude, com correta estrutura de apelação e adequada fundamentação jurídica.	2026-05-12 16:05:34.811091
+105	4800	José Bruno	5	Justo. A resposta apresenta excelente organização e completude, com correta estrutura de apelação e adequada fundamentação jurídica.	2026-05-12 16:06:46.112103
+106	4735	José Bruno	5	Justo. A resposta apresenta excelente estrutura de peça processual, com correta identificação da apelação, adequada organização formal e enfrentamento dos pontos da sentença. O juiz é acertivo ao apontar que apresenta algumas omissões e imprecisões menores.	2026-05-12 16:09:02.847402
+107	4801	José Bruno	5	Justo. O juiz reconhece a bos estrutura processual e organização e aponta corretamente algumas pequenas imprecisões.	2026-05-12 16:10:53.244265
+108	4802	José Bruno	5	Justo. Pois a resposta é clara e juridicamente correta, com adequada explicação da natureza subsidiária dos alimentos avoengos e correta orientação quanto à formulação do pedido, porém poderia apresentar fundamentação legal mais explícita conforme apontado pelo juiz.	2026-05-12 16:50:36.615904
+109	4736	José Bruno	5	Justo. Pois a resposta é clara e juridicamente correta, com adequada explicação da natureza subsidiária dos alimentos avoengos e correta orientação quanto à formulação do pedido.	2026-05-12 16:54:30.174046
+110	4794	José Bruno	5	Justo. Resposta completa, com correta identificação da natureza subsidiária da obrigação avoenga, adequada fundamentação legal e correta indicação do litisconsórcio.	2026-05-12 17:00:01.825282
+111	4737	José Bruno	1	Justo. O juiz aponta corretamente que a resposta do modelo demonstra elevado domínio técnico. Nota consistente com o que pede o gabarito.	2026-05-12 17:01:48.642186
+112	4795	José Bruno	5	Embora a nota seja justa, a justificativa está inconsistente pois a resposta do modelo é  tecnicamente completa e precisa, com detalhamento consistente da obrigação subsidiária dos avós e correta formulação do pedido.	2026-05-12 17:03:46.524957
+113	4738	José Bruno	1	Justo. O juiz apresenta a omissão da resposta conforme o gabarito corretamente, apesar da resposta ser tecnicamente completa e precisa.	2026-05-12 17:15:29.478848
+114	4739	José Bruno	5	Justo. Resposta correta e bem estruturada, mas com fundamentação normativa menos precisa.	2026-05-12 17:25:12.357682
+115	4796	José Bruno	5	Justo. O juiz reconhece que a resposta é correta e bem estruturada, mas com fundamentação normativa menos precisa ao priorizar atos infralegais em vez de dispositivos legais diretos.	2026-05-12 17:26:19.808287
+116	4797	José Bruno	5	Justo. Resposta completa e juridicamente precisa, com excelente fundamentação na legislação atual, especialmente após a Lei nº 14.382/2022, porém com algumas limitações apresentadas pelo juiz.	2026-05-12 17:28:06.796765
+117	4744	José Bruno	5	Justo. Resposta completa e juridicamente precisa. O Juiz avaliou bem a completude da fundamentação legal.	2026-05-12 17:29:54.473179
+118	4798	José Bruno	5	Justo. Resposta técnica, com fundamentação legal detalhada, mas com algumas imprecisões menores.	2026-05-12 17:31:49.285658
+119	4740	José Bruno	4	Pouco superestimada. Apesar da resposta altamente técnica, o juiz não avaliou as poucas imprecisões apresentadas na resposta.	2026-05-12 17:33:10.36109
+120	4803	José Bruno	5	Justo. A resposta está correta e bem estruturada, com adequada explicação da colação e das consequências da omissão de bens no inventário, embora com fundamentação legal menos detalhada.	2026-05-12 17:34:49.217099
+121	4741	José Bruno	1	Justo. Resposta correta e bem estruturada, com adequada explicação da colação e das consequências da omissão de bens no inventário como analisado conforme gabarito.	2026-05-12 17:35:57.968092
+122	4742	José Bruno	5	Justo. A resposta é completa, com excelente fundamentação legal e correta aplicação dos institutos da colação e dos sonegados.	2026-05-12 17:36:52.600759
+123	4804	José Bruno	5	Justo. O juiz apresenta corretamente algumas imprecisões conforme gabarito, apesar da resposta apresentar bom fundamento legal.	2026-05-12 17:38:24.745283
+124	4792	José Bruno	5	Justo. Resposta tecnicamente robusta, com fundamentação detalhada e correta aplicação das regras de colação e sucessão, demonstrando elevado nível de precisão jurídica. Correção correta em relação ao gabarito.	2026-05-12 17:39:40.808254
+125	4806	José Bruno	5	Justo. O juiz apresenta corretamente a necessidade de maior precisão na discussão sobre a sonegação.	2026-05-12 17:41:01.556872
+126	4745	José Bruno	5	Justo. A resposta apresenta boa estrutura e clareza, porém incorre em erro jurídico relevante.	2026-05-12 17:42:38.38235
+127	4805	José Bruno	5	Justo. A resposta apresenta boa estrutura e clareza, porém o equívoco compromete a precisão jurídica e a adequação ao caso concreto.	2026-05-12 17:43:48.232031
+129	4807	José Bruno	5	Justo. O juiz aponta as imprecisões corretamente, embora a resposta demonstre elevado domínio jurídico.	2026-05-12 17:53:00.743095
+130	4747	José Bruno	5	Justo. A resposta apresenta boa fundamentação e estrutura, mas contém inconsistência ao tratar a responsabilidade da concessionária como solidária em hipótese de defeito de fabricação, o que reduz a precisão jurídica. Ainda assim, demonstra boa compreensão geral do tema.	2026-05-12 17:55:18.615327
+131	4808	José Bruno	5	Justo. Apesar da bos fundamentação, apresenta imprecisões pontuais.	2026-05-12 17:56:10.789813
+132	4748	José Bruno	4	Pouco subestimada. A resposta está completa e tecnicamente adequada, com correta estrutura de apelação, identificação do instituto da requisição administrativa e fundamentação consistente na responsabilidade objetiva do Estado.	2026-05-12 17:57:41.438011
+133	4809	José Bruno	4	Pouco subestimada. A resposta está completa e tecnicamente adequada, com correta estrutura de apelação, identificação do instituto da requisição administrativa e fundamentação consistente na responsabilidade objetiva do Estado.	2026-05-12 17:58:39.047119
+134	4749	José Bruno	4	Pouco subestimada. A resposta está extremamente completa, com excelente fundamentação constitucional e infraconstitucional, incluindo referência à Lei nº 8.080/90. Demonstra domínio técnico e argumentativo.	2026-05-12 17:59:54.298113
+135	4704	Wagner	5	O juiz foi justo, pois houve problemas na fundamentação	2026-05-12 20:19:00.09219
+136	4854	Wagner	5	Juiz foi justo, pois houve problemas na fundamentação	2026-05-12 20:20:30.731775
+137	4855	Wagner	4	Menciona apenas alguns conceitos de forma correta, mas falha muito no quesito jurídico. Acredito que a nota justa seria 1. Portanto, juiz superestimou um pouco na avaliação.	2026-05-12 20:23:44.727846
+138	4561	Wagner	4	Acredito que uma nota 3 seria mais justa, apesar de conter alguns erros de fundamentação e de legislação, no geral a lógica parece correta.	2026-05-12 20:26:24.964898
+139	4733	Wagner	5	Somente Item B parece-me correto, então 2 foi justo.	2026-05-12 20:27:51.73139
+140	4533	Wagner	5	Resposta incorreta, juiz ok	2026-05-12 20:36:47.239621
+141	4706	Wagner	5	Resposta incorreta, juiz ok	2026-05-12 20:37:21.026719
+142	4621	Wagner	5	Resposta errada, juiz correto	2026-05-12 20:38:27.162154
+143	4624	Wagner	5	Candidato alucinou total, juiz correto	2026-05-12 20:39:00.332859
+144	4626	Wagner	5	Resposta errada, juiz ok	2026-05-12 20:39:22.521479
+145	4633	Wagner	5	Resposta errada, juiz correto	2026-05-12 20:39:42.099372
+146	4635	Wagner	5	Candidato alucinou, juiz foi correto	2026-05-12 20:40:05.250657
+147	4823	Wagner	5	Avaliação justa, pois resposta está adequada, mas não está 100%	2026-05-12 20:41:09.918236
+150	4710	Wagner	5	Candidato errou total, juiz correto/justo	2026-05-12 20:43:55.1551
+151	4449	Wagner	5	Tema correto, mas alucinou. Nota 2 justa	2026-05-12 20:44:51.777094
+152	4444	Wagner	5	Candidato errou, juiz foi justo	2026-05-12 20:45:19.865096
+153	4470	Wagner	5	Tema correto, mas alucinou na resposta. Juiz foi justo	2026-05-12 20:46:02.068008
+154	4720	Wagner	5	Candidato errado, juiz correto	2026-05-12 20:46:25.214802
+155	4810	José Bruno	4	Pouco subestimada. A resposta é extremamente completa, com excelente fundamentação constitucional e infraconstitucional, incluindo referência à Lei nº 8.080/90. Demonstra elevado domínio técnico e argumentativo.	2026-05-13 02:13:09.161014
+156	4813	José Bruno	4	Pouco subestimada. A resposta é bem estruturada e tecnicamente correta, com adequada identificação da peça e fundamentos jurídicos pertinentes.	2026-05-13 02:14:43.707498
+157	4786	José Bruno	5	Justo. O juiz reconhece que a resposta é bem estruturada e tecnicamente correta, com adequada identificação da peça e fundamentos jurídicos pertinentes.	2026-05-13 02:15:36.711399
+158	4811	José Bruno	5	Justo. A resposta é correta e bem estruturada, com adequada aplicação do princípio da independência das instâncias. O juiz reconhece. O juiz reconhece corretamente que poderia apresentar maior densidade de fundamentação legal específica.	2026-05-13 02:25:18.528694
+159	4750	José Bruno	5	Justo. A resposta é correta e bem estruturada, com adequada aplicação do princípio da independência das instâncias. Embora poderia apresentar maior densidade de fundamentação legal específica.	2026-05-13 02:26:37.59962
+160	4751	José Bruno	5	Justo. Resposta completa e tecnicamente precisa, com excelente fundamentação na Lei nº 8.112/90, demonstrando domínio do regime jurídico disciplinar e da independência das instâncias.	2026-05-13 02:27:36.838084
+161	4812	José Bruno	5	Justo. Resposta completa e tecnicamente precisa, com excelente fundamentação na Lei nº 8.112/90, demonstrando domínio do regime jurídico disciplinar e da independência das instâncias.	2026-05-13 02:28:08.764245
+162	4752	José Bruno	5	Justo. Resposta correta e tecnicamente consistente, com boa fundamentação, embora utilize base normativa menos específica ao caso em comparação com a legislação própria dos servidores públicos federais.	2026-05-13 02:29:00.792204
+163	4814	José Bruno	5	Justo. Resposta correta e tecnicamente consistente, com boa fundamentação, embora utilize base normativa menos específica ao caso em comparação com a legislação própria dos servidores públicos federais.	2026-05-13 02:29:23.706925
+164	4817	José Bruno	5	Resposta correta e prudente, reconhecendo a necessidade de consentimento conforme a base legal adotada. Poderia apresentar maior detalhamento normativo.	2026-05-13 02:32:14.757706
+165	4815	José Bruno	5	Resposta correta e prudente, reconhecendo a necessidade de consentimento conforme a base legal adotada. Poderia apresentar maior detalhamento normativo.	2026-05-13 02:33:16.447724
+166	4753	José Bruno	5	Resposta correta e prudente, reconhecendo a necessidade de consentimento conforme a base legal adotada. Poderia apresentar maior detalhamento normativo.	2026-05-13 02:33:45.222164
+167	4816	José Bruno	5	Apesar de bem estruturada, a resposta incorre em generalização ao dispensar consentimento para compartilhamento de dados no setor público, o que pode não se aplicar quando a base legal original for o consentimento.	2026-05-13 02:34:50.903158
+168	4754	José Bruno	5	Apesar de bem estruturada, a resposta incorre em generalização ao dispensar consentimento para compartilhamento de dados no setor público, o que pode não se aplicar quando a base legal original for o consentimento.	2026-05-13 02:35:20.341947
+169	4787	José Bruno	5	Resposta tecnicamente excelente, com correta aplicação da LGPD, especialmente quanto à necessidade de consentimento específico para compartilhamento e à revogabilidade do consentimento.	2026-05-13 02:36:56.804105
+170	4755	José Bruno	5	Resposta correta e bem estruturada, com adequada aplicação da inexigibilidade e do planejamento, embora com menor detalhamento normativo.	2026-05-13 02:38:10.153809
+171	4818	José Bruno	5	Resposta correta e bem estruturada, embora com menor detalhamento normativo.	2026-05-13 02:38:59.56509
+172	4820	José Bruno	5	Resposta tecnicamente precisa, com adequada fundamentação na Lei nº 14.133/2021 e correta aplicação do instituto da inexigibilidade.	2026-05-13 02:39:57.664416
+173	4819	José Bruno	5	O juiz aponta corretamente a falta de detalhamento de aspectos como a certificação de imóveis públicos vagos e disponíveis.	2026-05-13 02:42:28.8388
+174	4757	José Bruno	5	Resposta extremamente completa, com detalhamento técnico aprofundado dos requisitos da inexigibilidade e do estudo técnico preliminar, demonstrando elevado domínio jurídico.	2026-05-13 02:44:46.937803
+175	4758	José Bruno	5	Resposta correta e bem estruturada, mas com pouca fundamentação normativa explícita.	2026-05-13 02:46:17.976276
+176	4821	José Bruno	5	Resposta correta e bem estruturada, mas com pouca fundamentação normativa explícita.	2026-05-13 02:46:54.06016
+177	4822	José Bruno	5	Resposta adequada e tecnicamente correta, mas com imprecisões na fundamentação e pouca especificidade quanto aos requisitos legais e consequências práticas.	2026-05-13 02:47:52.484955
+178	4759	José Bruno	5	Boa resposta, com precisão jurídica, clareza e correta fundamentação no Decreto-Lei nº 3.365/1941.	2026-05-13 02:49:11.156871
+179	4760	José Bruno	5	Resposta bem fundamentada e consistente, mas com imprecisão ao exigir autorização judicial prévia para ingresso no imóvel.	2026-05-13 02:50:03.261949
+180	4673	Victor	5	Aplicou corretamente a nota ao constatar ausência de medida judicial cabível e critérios de Peça da rubrica.	2026-05-13 07:49:48.924631
+181	4637	Victor	5	Avaliou corretamente ao constatar erro no instituto central e confusão grave dos fundamentos, pois a resposta tratou de Agências Reguladoras em vez de IPVA	2026-05-13 07:57:33.305124
+182	4683	Victor	5	Avaliou corretamente ao constatar erro no instituto central e confusão grave dos fundamentos, pois a resposta trocou Direito Tributário/Constitucional por Direito Administrativo.	2026-05-13 08:08:04.415395
+183	4643	Victor	5	O juiz foi justo ao aplicar Nota 1. A rubrica de Peça exige acerto do instrumento processual' e 'estrutura mínima	2026-05-13 08:14:25.824478
+184	4692	Victor	5	Nota 2 está correta. Candidato passou perto no A, mas inventou no B. Juiz que deu 2 foi justo.	2026-05-13 08:34:29.597244
+185	4649	Victor	5	Nota 4 é a correta. Juiz acertou. O modelo sabe fazer peça, mas não domina súmula.	2026-05-13 08:38:56.905309
+186	4695	Victor	5	O juiz foi justo ao aplicar Nota 2. A rubrica prevê Nota 2 para 'acerto da tese, mas fundamentação vaga/incompleta ou dispositivo errado	2026-05-13 08:44:14.711123
+187	4657	Victor	5	O juiz foi justo ao aplicar Nota 3. A rubrica prevê Nota 3 para 'núcleo jurídico adequado e fundamentação suficiente, mas com omissões relevantes	2026-05-13 08:47:33.376344
+188	4599	Victor	5	O juiz foi justo ao aplicar Nota 4. A rubrica prevê Nota 4 para resposta 'correta e bem fundamentada, cobre pontos essenciais com norma precisa, apenas omissões não centrais.	2026-05-13 08:52:01.773858
+189	4661	Victor	5	O juiz foi justo ao aplicar Nota 4. A rubrica exige para Nota 4 'correta e bem fundamentada, cobre pontos essenciais, apenas omissões não centrais. Nota 4 está correta. Llama-3.3-70B-Instruct foi justo. Modelo jurema-7b sabe Direito Penal, mas tropeça em detalhe de CPP.	2026-05-13 08:57:35.942574
+190	4572	Victor	5	O juiz foi justo ao aplicar Nota 3. A rubrica prevê Nota 3 para 'núcleo jurídico adequado e fundamentação suficiente, mas com omissões relevantes'. O modelo acertou as teses materiais: Maria saiu em 2015 e aposentadoria é impenhorável.	2026-05-13 09:02:36.66542
+191	4667	Victor	5	Nota 1 correta. Llama-3.3-70B-Instruct acertou. Modelo tinyllama-1.1b delirou completo. Juiz não foi subestimado nem superestimado — foi preciso.	2026-05-13 19:30:29.251086
+192	4666	Victor	5	O juiz foi justo ao aplicar Nota 1. A rubrica define Nota 1 para 'erro no instituto jurídico central ou confusão grave.  Nota 1 correta. Llama-3.3-70B-Instruct acertou. qwen2-1.5b alucinou. Juiz não foi subestimado nem superestimado.	2026-05-13 19:35:15.787403
+193	4665	Victor	1	Nota 1 correta. Juiz Llama-3.3-70B-Instruct foi preciso e consistente. phi-3-mini alucinou. Juiz não foi subestimado nem superestimado.	2026-05-13 19:40:40.347545
+194	4620	Victor	5	Nota 1 obrigatória por alucinação total e erro no instituto central: gabarito exige Penal/Proc. Penal com Lei Maria da Penha; modelo respondeu Constitucional sobre Medida Provisória.	2026-05-13 19:42:48.314586
+195	4619	Victor	5	O juiz foi justo ao aplicar Nota 1 ao phi-3-mini. A rubrica prevê Nota 1 para erro no instituto central. O caso é de pornografia de vingança com incidência da Lei Maria da Penha. Gabarito exige art. 17 da Lei 11.340/06 e apelação supletiva. O modelo respondeu sobre Medida Provisória, art. 84 CF e TSE. É troca completa de matéria — Constitucional em vez de Penal. Qualquer nota superior seria injustiça com candidatos que acertaram e violaria a política anti-alucinação. Nota 1 correta.	2026-05-13 19:44:56.610872
+196	4698	Victor	5	Nota 1 correta. Juiz não foi subestimado nem superestimado. qwen2-1.5b alucinou 100% de novo.	2026-05-13 19:46:57.661249
+197	4669	Victor	1	Nota 1 correta. Juiz não foi subestimado nem superestimado. o modelo alucinou 100% de novo.	2026-05-13 19:47:34.356443
+198	4668	Victor	5	Nota 1 correta. Juiz preciso. modelo alucinou Constitucional em questão de Processo Penal de novo.	2026-05-13 19:49:01.471546
+199	4625	Victor	1	Nota 1 correta. Juiz preciso. tinyllama-1.1b alucinou 100%, igual ao qwen2-1.5b.	2026-05-13 19:51:39.435903
+200	4672	Victor	5	Nota 1 correta. Juiz preciso. tinyllama-1.1b alucinou + desviou do tema.	2026-05-13 19:52:56.51216
+201	4817	Wagner	5	Candidato falhou ao citar os artigos, mas acertou a lógica. Nota justa	2026-05-13 22:19:07.627396
+202	4819	Wagner	5	O canditato falha em poucos pontos, juiz foi coerente em sua avaliação	2026-05-13 22:20:39.790727
 \.
 
 
@@ -5345,9 +5537,6 @@ COPY public.modelos (id_modelo, nome_modelo, versao, parametro_precisao, tipo_mo
 10	gemma-2-2b-it	google/gemma-2-2b-it	FP32	candidato
 11	Jurema:7b	7B	INT4	candidato
 12	curio-edu-7b	mradermacher/Curio-edu-7b-GGUF:Curio-edu-7b.Q4_K_M	Q4_K_M	candidato
-13	gemini-3-pro	Gemini 3 Pro	N/A_API	candidato
-14	chatgpt-5.3	GPT-5.3 Chat / GPT-5.3 Instant	N/A_API	candidato
-15	grok-3	grok-3	N/A_API	candidato
 16	qwen2-1.5b	Qwen/Qwen2.5-1.5B-Instruct-GGUF	gguf-q4	candidato
 17	phi-3-mini	microsoft/Phi-3-mini-4k-instruct-gguf	gguf-q4	candidato
 18	tinyllama-1.1b	TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF	gguf-q4	candidato
@@ -5356,6 +5545,9 @@ COPY public.modelos (id_modelo, nome_modelo, versao, parametro_precisao, tipo_mo
 21	Unbabel/M-Prometheus-14B	Unbabel/M-Prometheus-14B	\N	juiz
 22	meta-llama/Llama-3.3-70B-Instruct	meta-llama/Llama-3.3-70B-Instruct	\N	juiz
 23	openai/gpt-oss-120b	openai/gpt-oss-120b	\N	juiz
+13	gemini-3-pro	Gemini 3 Pro	N/A_API	candidato
+14	chatgpt-5.3	GPT-5.3 Chat / GPT-5.3 Instant	N/A_API	candidato
+15	grok-3	grok-3	N/A_API	candidato
 \.
 
 
@@ -10282,7 +10474,7 @@ SELECT pg_catalog.setval('public.datasets_id_dataset_seq', 2, true);
 -- Name: meta_avaliacoes_id_meta_avaliacao_seq; Type: SEQUENCE SET; Schema: public; Owner: -
 --
 
-SELECT pg_catalog.setval('public.meta_avaliacoes_id_meta_avaliacao_seq', 22, true);
+SELECT pg_catalog.setval('public.meta_avaliacoes_id_meta_avaliacao_seq', 202, true);
 
 
 --
@@ -10519,5 +10711,5 @@ ALTER TABLE ONLY public.respostas_atividade_1
 -- PostgreSQL database dump complete
 --
 
-\unrestrict sRXvXTo1Rj0GT6aSZyLsiv6K2G6YDi3ZbH6e98V0f9JIXyQBCmh2yZfKDgv0Zfr
+\unrestrict 0W9pSFFut1XLdydqPzvsOq8fPiNNd3zmy9dFSda97TMA29Q2kQnlAbjSvZeLv9s
 
