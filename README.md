@@ -4,6 +4,11 @@ Implementação de framework **LLM-as-a-Judge** com persistência em PostgreSQL 
 
 Este repositório contém a fundação local do projeto e a pipeline inicial de julgamento por LLM: ambiente Python, testes, PostgreSQL local, restore do backup inicial, execução de juízes remotos HTTP, persistência das avaliações e geração de backups auditáveis.
 
+## Links
+- Aplicativo: https://topicos-av2.onrender.com/
+- Tutorial: https://drive.google.com/file/d/1zn6FkIB2tEC8DrpiqqPARJn5utK5VGru/view?usp=sharing
+- Vídeo: https://www.vidline.com/share/V0O6HJYW6N/baeaf4f0df82e55101bb35a1edeca104
+
 ## Requisitos
 
 - Python 3.11+
