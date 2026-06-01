@@ -31,6 +31,10 @@ from .judge_clients.remote_http import RemoteJudgeError
 from .meta_evaluations import MetaEvaluationService
 from .parser import JudgeParseError
 from .rag_curation import RagCurationService
+from .rag_embedding_configs import RagEmbeddingConfigService
+from .rag_embeddings import RagEmbeddingGenerationService
+from .rag_embedding_smoke import RagEmbeddingSmokeTestService
+from .rag_vector_queries import RagVectorQueryService
 from .repositories import JudgeRepository
 from .run_judge_service import RunJudgeRequest, RunJudgeResult, RunJudgeService
 from .config import load_settings
@@ -124,6 +128,32 @@ class MetaEvaluationPayload(BaseModel):
     evaluator_name: str
     score: int = Field(ge=1, le=5)
     rationale: str
+
+
+class RagEmbeddingConfigPayload(BaseModel):
+    dataset: str
+    provider: str
+    model_name: str
+    dimensions: int | None = Field(default=None, ge=1)
+    api_base_url: str | None = None
+    notes: str | None = None
+    updated_by: str
+
+
+class RagEmbeddingSmokeTestPayload(BaseModel):
+    dataset: str
+    sample_text: str | None = None
+
+
+class RagEmbeddingGenerationPayload(BaseModel):
+    dataset: str
+    batch_size: int | None = Field(default=None, ge=1)
+
+
+class RagVectorSearchPayload(BaseModel):
+    dataset: str
+    query_text: str = Field(min_length=1)
+    top_k: int = Field(default=5, ge=1, le=50)
 
 
 class AssistantPayload(BaseModel):
@@ -280,6 +310,10 @@ def create_app(
     judge_prompt_service: JudgePromptConfigService | None = None,
     meta_evaluation_service: MetaEvaluationService | None = None,
     rag_curation_service: RagCurationService | None = None,
+    rag_embedding_config_service: RagEmbeddingConfigService | None = None,
+    rag_embedding_smoke_test_service: RagEmbeddingSmokeTestService | None = None,
+    rag_embedding_generation_service: RagEmbeddingGenerationService | None = None,
+    rag_vector_query_service: RagVectorQueryService | None = None,
     audit_log_summary_service: AuditLogSummaryService | None = None,
     assistant_service: AssistantService | None = None,
 ) -> FastAPI:
@@ -297,6 +331,14 @@ def create_app(
     app.state.judge_prompt_service = judge_prompt_service or JudgePromptConfigService()
     app.state.meta_evaluation_service = meta_evaluation_service or MetaEvaluationService()
     app.state.rag_curation_service = rag_curation_service or RagCurationService()
+    app.state.rag_embedding_config_service = rag_embedding_config_service or RagEmbeddingConfigService()
+    app.state.rag_embedding_smoke_test_service = (
+        rag_embedding_smoke_test_service or RagEmbeddingSmokeTestService()
+    )
+    app.state.rag_embedding_generation_service = (
+        rag_embedding_generation_service or RagEmbeddingGenerationService()
+    )
+    app.state.rag_vector_query_service = rag_vector_query_service or RagVectorQueryService()
     app.state.audit_log_summary_service = audit_log_summary_service or AuditLogSummaryService()
     app.state.assistant_enabled = assistant_enabled
     app.state.assistant_service = assistant_service or AssistantService(
@@ -453,6 +495,79 @@ def create_app(
     def activate_rag_curation_run(run_id: int, dataset: str, request: Request) -> dict:
         try:
             return request.app.state.rag_curation_service.activate_run(run_id=run_id, dataset=dataset)
+        except (RuntimeError, ValueError) as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+
+    @app.get("/api/rag-embedding-config")
+    def get_rag_embedding_config(dataset: str, request: Request) -> dict:
+        try:
+            return request.app.state.rag_embedding_config_service.get(dataset=dataset)
+        except (RuntimeError, ValueError) as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+
+    @app.put("/api/rag-embedding-config", dependencies=[Depends(_require_csrf)])
+    def save_rag_embedding_config(payload: RagEmbeddingConfigPayload, request: Request) -> dict:
+        try:
+            return request.app.state.rag_embedding_config_service.save(
+                dataset=payload.dataset,
+                provider=payload.provider,
+                model_name=payload.model_name,
+                dimensions=payload.dimensions,
+                api_base_url=payload.api_base_url,
+                notes=payload.notes,
+                updated_by=payload.updated_by,
+            )
+        except (RuntimeError, ValueError) as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+
+    @app.post("/api/rag-embedding-config/smoke-test", dependencies=[Depends(_require_csrf)])
+    def run_rag_embedding_smoke_test(payload: RagEmbeddingSmokeTestPayload, request: Request) -> dict:
+        try:
+            return request.app.state.rag_embedding_smoke_test_service.run(
+                dataset=payload.dataset,
+                sample_text=payload.sample_text,
+            )
+        except (RuntimeError, ValueError) as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+
+    @app.post("/api/rag-vector/generate-embeddings", dependencies=[Depends(_require_csrf)])
+    def generate_rag_vector_embeddings(payload: RagEmbeddingGenerationPayload, request: Request) -> dict:
+        try:
+            result = request.app.state.rag_embedding_generation_service.run(
+                dataset=payload.dataset,
+                batch_size=payload.batch_size,
+            )
+        except (RuntimeError, ValueError) as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+        summary = result.get("summary")
+        return {
+            "summary": asdict(summary)
+            if summary is not None and hasattr(summary, "__dataclass_fields__")
+            else summary
+        }
+
+    @app.get("/api/rag-vector/preview")
+    def get_rag_vector_preview(request: Request, dataset: str, limit: int = 8) -> dict:
+        try:
+            data = request.app.state.rag_vector_query_service.preview(dataset=dataset, limit=limit)
+        except (RuntimeError, ValueError) as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+        vector_base = data.get("vector_base")
+        return {
+            **data,
+            "vector_base": asdict(vector_base)
+            if vector_base is not None and hasattr(vector_base, "__dataclass_fields__")
+            else vector_base,
+        }
+
+    @app.post("/api/rag-vector/search", dependencies=[Depends(_require_csrf)])
+    def search_rag_vector(payload: RagVectorSearchPayload, request: Request) -> dict:
+        try:
+            return request.app.state.rag_vector_query_service.search(
+                dataset=payload.dataset,
+                query_text=payload.query_text,
+                top_k=payload.top_k,
+            )
         except (RuntimeError, ValueError) as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
 
@@ -950,6 +1065,10 @@ _INDEX_HTML = """
     .tabs { display:flex; gap:8px; padding:12px 28px 0; background:#fff; border-bottom:1px solid var(--line); }
     .tab-button { min-height:34px; color:var(--muted); background:#fff; border-color:transparent; border-bottom:2px solid transparent; border-radius:0; }
     .tab-button.active { color:var(--accent); border-bottom-color:var(--accent); }
+    .rag-subtabs { display:flex; gap:8px; margin:0 0 16px; padding-bottom:10px; border-bottom:1px solid var(--line); overflow:auto; }
+    .rag-subtab-button { min-height:34px; color:var(--muted); background:#fff; border-color:var(--line); }
+    .rag-subtab-button.active { color:#fff; background:var(--accent); border-color:var(--accent); }
+    .rag-subpanel[hidden] { display:none; }
     .tab-panel[hidden] { display:none; }
     main { width:min(100%, 1440px); margin:0 auto; padding:20px; display:grid; grid-template-columns: minmax(320px,380px) minmax(0,1fr); gap:18px; }
     section, aside { background:#fff; border:1px solid var(--line); border-radius:8px; padding:16px; }
@@ -1239,7 +1358,7 @@ _INDEX_HTML = """
     <button class="tab-button" type="button" data-tab="history-panel">Execucoes anteriores</button>
       <button class="tab-button" type="button" data-tab="prompt-panel">Prompt Juizes</button>
       <button class="tab-button" type="button" data-tab="meta-panel">Meta-Avaliacao</button>
-      <button class="tab-button" type="button" data-tab="rag-curation-panel">Curadoria RAG</button>
+      <button class="tab-button" type="button" data-tab="rag-panel">RAG</button>
   </nav>
   <main id="dashboard-panel" class="dashboard-layout tab-panel">
     <aside class="dashboard-filters">
@@ -1950,183 +2069,391 @@ _INDEX_HTML = """
         </section>
       </div>
     </div>
-    <div id="rag-curation-panel" class="tab-panel" hidden>
-      <div class="prompt-layout">
-        <aside>
-          <h2>Curadoria RAG</h2>
-          <label>Dataset
-            <select id="rag_curation_dataset"></select>
-          </label>
-          <label>Importado por
-            <input id="rag_curation_imported_by" autocomplete="off" placeholder="Nome de quem esta importando o JSON">
-          </label>
-          <div class="actions">
-            <button class="secondary" id="rag_curation_reload" type="button">Recarregar</button>
-            <button class="secondary" id="rag_curation_pick_file" type="button">Selecionar JSON</button>
-            <button id="rag_curation_import" type="button">Importar JSON</button>
-          </div>
-          <input id="rag_curation_file" type="file" accept=".json,application/json,text/plain" hidden>
-          <div id="rag_curation_status" class="status prompt-status">Selecione um dataset para visualizar a curadoria importada.</div>
-          <div class="prompt-preview">
-            <div class="prompt-preview-card">
-              <h3>Cobertura por dataset</h3>
-              <div class="table-wrap prompt-log-table">
-                <table aria-label="Cobertura de curadoria por dataset">
-                  <thead>
-                    <tr>
-                      <th>dataset</th>
-                      <th>base</th>
-                      <th>curadas</th>
-                      <th>run ativa</th>
-                      <th>retrieval</th>
-                      <th>docs</th>
-                      <th>chunks</th>
-                      <th>vetorial</th>
-                      <th>ultima carga</th>
-                    </tr>
-                  </thead>
-                  <tbody id="rag_curation_datasets_body">
-                    <tr><td colspan="9" class="muted">Nenhuma cobertura carregada.</td></tr>
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
-        </aside>
+    <div id="rag-panel" class="tab-panel" hidden>
+      <main class="prompt-layout" style="display:block; width:min(100%, 1440px);">
         <section>
-          <div class="prompt-preview">
-            <div class="prompt-preview-card">
-              <h3>Versao ativa</h3>
-              <div class="muted" id="rag_curation_active_meta">Nenhuma versao ativa carregada.</div>
-              <table aria-label="Resumo da versao ativa da curadoria">
-                <tbody>
-                  <tr><th>Arquivo</th><td id="rag_curation_active_filename" class="muted">-</td></tr>
-                  <tr><th>Importado por</th><td id="rag_curation_active_imported_by" class="muted">-</td></tr>
-                  <tr><th>Importado em</th><td id="rag_curation_active_imported_at" class="muted">-</td></tr>
-                  <tr><th>Questoes curadas</th><td id="rag_curation_active_coverage" class="muted">-</td></tr>
-                  <tr><th>Itens importados</th><td id="rag_curation_active_item_count" class="muted">-</td></tr>
-                  <tr><th>Artigos curados</th><td id="rag_curation_active_article_count" class="muted">-</td></tr>
-                </tbody>
-              </table>
-            </div>
-            <div class="prompt-preview-card">
-              <h3>Base vetorial ativa</h3>
-              <div class="muted" id="rag_vector_active_meta">Nenhuma base vetorial ativa para esse dataset.</div>
-              <table aria-label="Resumo da base vetorial ativa">
-                <tbody>
-                  <tr><th>Run</th><td id="rag_vector_active_run" class="muted">-</td></tr>
-                  <tr><th>Status</th><td id="rag_vector_active_status" class="muted">-</td></tr>
-                  <tr><th>Estrategia</th><td id="rag_vector_active_strategy" class="muted">-</td></tr>
-                  <tr><th>Top-K</th><td id="rag_vector_active_top_k" class="muted">-</td></tr>
-                  <tr><th>Documentos</th><td id="rag_vector_active_document_count" class="muted">-</td></tr>
-                  <tr><th>Chunks</th><td id="rag_vector_active_chunk_count" class="muted">-</td></tr>
-                  <tr><th>Embeddings</th><td id="rag_vector_active_embedding_count" class="muted">-</td></tr>
-                  <tr><th>Modelo embedding</th><td id="rag_vector_active_embedding_model" class="muted">-</td></tr>
-                  <tr><th>Criada em</th><td id="rag_vector_active_created_at" class="muted">-</td></tr>
-                </tbody>
-              </table>
+          <div class="rag-subtabs" aria-label="Submenus de RAG">
+            <button class="rag-subtab-button active" type="button" data-rag-subtab="rag-curation-subpanel">Curadoria</button>
+            <button class="rag-subtab-button" type="button" data-rag-subtab="rag-embedding-subpanel">Modelo Embedding</button>
+            <button class="rag-subtab-button" type="button" data-rag-subtab="rag-vector-subpanel">Base Vetorial</button>
+            <button class="rag-subtab-button" type="button" data-rag-subtab="rag-query-subpanel">Consulta</button>
+          </div>
+
+          <div id="rag-curation-subpanel" class="rag-subpanel">
+            <div class="prompt-layout" style="padding:0; width:100%;">
+              <aside>
+                <h2>Curadoria RAG</h2>
+                <label>Dataset
+                  <select id="rag_curation_dataset"></select>
+                </label>
+                <label>Importado por
+                  <input id="rag_curation_imported_by" autocomplete="off" placeholder="Nome de quem esta importando o JSON">
+                </label>
+                <div class="actions">
+                  <button class="secondary" id="rag_curation_reload" type="button">Recarregar</button>
+                  <button class="secondary" id="rag_curation_pick_file" type="button">Selecionar JSON</button>
+                  <button id="rag_curation_import" type="button">Importar JSON</button>
+                </div>
+                <input id="rag_curation_file" type="file" accept=".json,application/json,text/plain" hidden>
+                <div id="rag_curation_status" class="status prompt-status">Selecione um dataset para visualizar a curadoria importada.</div>
+              </aside>
+              <section>
+                <div class="prompt-preview">
+                  <div class="prompt-preview-card">
+                    <h3>Versao ativa</h3>
+                    <div class="muted" id="rag_curation_active_meta">Nenhuma versao ativa carregada.</div>
+                    <table aria-label="Resumo da versao ativa da curadoria">
+                      <tbody>
+                        <tr><th>Arquivo</th><td id="rag_curation_active_filename" class="muted">-</td></tr>
+                        <tr><th>Importado por</th><td id="rag_curation_active_imported_by" class="muted">-</td></tr>
+                        <tr><th>Importado em</th><td id="rag_curation_active_imported_at" class="muted">-</td></tr>
+                        <tr><th>Questoes curadas</th><td id="rag_curation_active_coverage" class="muted">-</td></tr>
+                        <tr><th>Itens importados</th><td id="rag_curation_active_item_count" class="muted">-</td></tr>
+                        <tr><th>Artigos curados</th><td id="rag_curation_active_article_count" class="muted">-</td></tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+                <div style="height:16px"></div>
+                <h2>Importacoes recentes</h2>
+                <div class="table-wrap prompt-log-table rag-curation-table">
+                  <table aria-label="Historico de importacoes da curadoria RAG">
+                    <thead>
+                      <tr>
+                        <th>run</th>
+                        <th>quando</th>
+                        <th>quem</th>
+                        <th>arquivo</th>
+                        <th>itens</th>
+                        <th>artigos</th>
+                        <th>status</th>
+                        <th>acao</th>
+                      </tr>
+                    </thead>
+                    <tbody id="rag_curation_runs_body">
+                      <tr><td colspan="8" class="muted">Nenhuma importacao carregada.</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+                <div style="height:16px"></div>
+                <h2>Questoes curadas</h2>
+                <div class="table-wrap prompt-log-table rag-curation-table">
+                  <table aria-label="Lista de questoes curadas para RAG">
+                    <thead>
+                      <tr>
+                        <th>detalhe</th>
+                        <th>seq</th>
+                        <th>id_pergunta</th>
+                        <th>tipo</th>
+                        <th>disciplina</th>
+                        <th>tema</th>
+                        <th>curador</th>
+                        <th>norma</th>
+                        <th>artigos</th>
+                      </tr>
+                    </thead>
+                    <tbody id="rag_curation_items_body">
+                      <tr><td colspan="9" class="muted">Nenhuma curadoria carregada.</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+                <div style="height:16px"></div>
+                <div class="prompt-preview rag-curation-detail-grid">
+                  <div class="prompt-preview-card">
+                    <h3>Curadoria selecionada</h3>
+                    <div class="muted" id="rag_curation_detail_meta">Selecione uma questao curada para ver os detalhes.</div>
+                    <table aria-label="Resumo da curadoria selecionada">
+                      <tbody>
+                        <tr><th>Tipo</th><td id="rag_curation_detail_type" class="muted">-</td></tr>
+                        <tr><th>Disciplina</th><td id="rag_curation_detail_discipline" class="muted">-</td></tr>
+                        <tr><th>Assunto</th><td id="rag_curation_detail_subject" class="muted">-</td></tr>
+                        <tr><th>Tema</th><td id="rag_curation_detail_theme" class="muted">-</td></tr>
+                        <tr><th>Curador</th><td id="rag_curation_detail_curator" class="muted">-</td></tr>
+                        <tr><th>Classificada em</th><td id="rag_curation_detail_classified_at" class="muted">-</td></tr>
+                        <tr><th>Lei / norma</th><td id="rag_curation_detail_lei_norma" class="muted">-</td></tr>
+                        <tr><th>Fonte</th><td id="rag_curation_detail_url" class="muted">-</td></tr>
+                        <tr><th>URN</th><td id="rag_curation_detail_urn" class="muted">-</td></tr>
+                      </tbody>
+                    </table>
+                  </div>
+                  <div class="prompt-preview-card">
+                    <h3>Artigos curados</h3>
+                    <div class="table-wrap prompt-log-table rag-curation-articles-table">
+                      <table aria-label="Artigos curados da questao selecionada">
+                        <thead>
+                          <tr>
+                            <th>ordem</th>
+                            <th>artigo</th>
+                            <th>topico</th>
+                            <th>relevancia</th>
+                            <th>tipo</th>
+                          </tr>
+                        </thead>
+                        <tbody id="rag_curation_articles_body">
+                          <tr><td colspan="5" class="muted">Nenhum artigo carregado.</td></tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                  <div class="prompt-preview-card">
+                    <h3>Questao</h3>
+                    <pre id="rag_curation_detail_question">Selecione uma questao curada para ver o enunciado.</pre>
+                  </div>
+                  <div class="prompt-preview-card">
+                    <h3>Gabarito</h3>
+                    <pre id="rag_curation_detail_answer_key">Selecione uma questao curada para ver o gabarito.</pre>
+                  </div>
+                  <div class="prompt-preview-card">
+                    <h3>Metadados</h3>
+                    <pre id="rag_curation_detail_metadata">Selecione uma questao curada para ver os metadados.</pre>
+                  </div>
+                  <div class="prompt-preview-card">
+                    <h3>Payload bruto</h3>
+                    <pre id="rag_curation_detail_raw_payload">Selecione uma questao curada para ver o payload original.</pre>
+                  </div>
+                </div>
+              </section>
             </div>
           </div>
-          <div style="height:16px"></div>
-          <h2>Importacoes recentes</h2>
-          <div class="table-wrap prompt-log-table rag-curation-table">
-            <table aria-label="Historico de importacoes da curadoria RAG">
-              <thead>
-                <tr>
-                  <th>run</th>
-                  <th>quando</th>
-                  <th>quem</th>
-                  <th>arquivo</th>
-                  <th>itens</th>
-                  <th>artigos</th>
-                  <th>status</th>
-                  <th>acao</th>
-                </tr>
-              </thead>
-              <tbody id="rag_curation_runs_body">
-                <tr><td colspan="8" class="muted">Nenhuma importacao carregada.</td></tr>
-              </tbody>
-            </table>
+
+          <div id="rag-vector-subpanel" class="rag-subpanel" hidden>
+            <div class="prompt-layout" style="padding:0; width:100%;">
+              <aside>
+                <h2>Base Vetorial</h2>
+                <label>Dataset
+                  <select id="rag_vector_dataset"></select>
+                </label>
+                <div class="actions">
+                  <button class="secondary" id="rag_vector_reload" type="button">Recarregar</button>
+                  <button id="rag_vector_generate" type="button">Gerar embeddings</button>
+                </div>
+                <div id="rag_vector_status" class="status prompt-status">Selecione um dataset para visualizar a base vetorial.</div>
+                <div class="prompt-preview">
+                  <div class="prompt-preview-card">
+                    <h3>Cobertura por dataset</h3>
+                    <div class="table-wrap prompt-log-table">
+                      <table aria-label="Cobertura de curadoria por dataset">
+                        <thead>
+                          <tr>
+                            <th>dataset</th>
+                            <th>base</th>
+                            <th>curadas</th>
+                            <th>run ativa</th>
+                            <th>retrieval</th>
+                            <th>docs</th>
+                            <th>chunks</th>
+                            <th>vetorial</th>
+                            <th>ultima carga</th>
+                          </tr>
+                        </thead>
+                        <tbody id="rag_curation_datasets_body">
+                          <tr><td colspan="9" class="muted">Nenhuma cobertura carregada.</td></tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              </aside>
+              <section>
+                <div class="prompt-preview">
+                  <div class="prompt-preview-card">
+                    <h3>Base vetorial ativa</h3>
+                    <div class="muted" id="rag_vector_active_meta">Nenhuma base vetorial ativa para esse dataset.</div>
+                    <table aria-label="Resumo da base vetorial ativa">
+                      <tbody>
+                        <tr><th>Run</th><td id="rag_vector_active_run" class="muted">-</td></tr>
+                        <tr><th>Status</th><td id="rag_vector_active_status" class="muted">-</td></tr>
+                        <tr><th>Estrategia</th><td id="rag_vector_active_strategy" class="muted">-</td></tr>
+                        <tr><th>Top-K</th><td id="rag_vector_active_top_k" class="muted">-</td></tr>
+                        <tr><th>Documentos</th><td id="rag_vector_active_document_count" class="muted">-</td></tr>
+                        <tr><th>Chunks</th><td id="rag_vector_active_chunk_count" class="muted">-</td></tr>
+                        <tr><th>Embeddings</th><td id="rag_vector_active_embedding_count" class="muted">-</td></tr>
+                        <tr><th>Modelo embedding</th><td id="rag_vector_active_embedding_model" class="muted">-</td></tr>
+                        <tr><th>Criada em</th><td id="rag_vector_active_created_at" class="muted">-</td></tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </section>
+            </div>
           </div>
-          <div style="height:16px"></div>
-          <h2>Questoes curadas</h2>
-          <div class="table-wrap prompt-log-table rag-curation-table">
-            <table aria-label="Lista de questoes curadas para RAG">
-              <thead>
-                <tr>
-                  <th>detalhe</th>
-                  <th>seq</th>
-                  <th>id_pergunta</th>
-                  <th>tipo</th>
-                  <th>disciplina</th>
-                  <th>tema</th>
-                  <th>curador</th>
-                  <th>norma</th>
-                  <th>artigos</th>
-                </tr>
-              </thead>
-              <tbody id="rag_curation_items_body">
-                <tr><td colspan="9" class="muted">Nenhuma curadoria carregada.</td></tr>
-              </tbody>
-            </table>
+
+          <div id="rag-query-subpanel" class="rag-subpanel" hidden>
+            <div class="prompt-layout" style="padding:0; width:100%;">
+              <aside>
+                <h2>Consulta</h2>
+                <label>Dataset
+                  <select id="rag_query_dataset"></select>
+                </label>
+                <label>Top-K
+                  <input id="rag_query_top_k" type="number" min="1" max="50" step="1" value="5">
+                </label>
+                <label>Texto da consulta
+                  <textarea id="rag_query_text" placeholder="Ex.: improbidade administrativa, ato de agente publico e independencia das instancias"></textarea>
+                </label>
+                <div class="actions">
+                  <button class="secondary" id="rag_query_reload" type="button">Recarregar</button>
+                  <button id="rag_query_search" type="button">Buscar</button>
+                </div>
+                <div id="rag_query_status" class="status prompt-status">Selecione um dataset para inspecionar a base vetorial.</div>
+              </aside>
+              <section>
+                <div class="prompt-preview">
+                  <div class="prompt-preview-card">
+                    <h3>Resumo da consulta</h3>
+                    <div class="muted" id="rag_query_meta">Nenhuma consulta executada.</div>
+                    <table aria-label="Resumo da consulta vetorial">
+                      <tbody>
+                        <tr><th>Dataset</th><td id="rag_query_summary_dataset" class="muted">-</td></tr>
+                        <tr><th>Top-K</th><td id="rag_query_summary_top_k" class="muted">-</td></tr>
+                        <tr><th>Latencia</th><td id="rag_query_summary_latency" class="muted">-</td></tr>
+                        <tr><th>Dimensoes</th><td id="rag_query_summary_dimensions" class="muted">-</td></tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+                <div style="height:16px"></div>
+                <div class="prompt-preview">
+                  <div class="prompt-preview-card">
+                    <h3>Resultados da busca</h3>
+                    <div class="table-wrap prompt-log-table">
+                      <table aria-label="Resultados da busca vetorial">
+                        <thead>
+                          <tr>
+                            <th>rank</th>
+                            <th>score</th>
+                            <th>artigo</th>
+                            <th>topico</th>
+                            <th>texto</th>
+                          </tr>
+                        </thead>
+                        <tbody id="rag_query_results_body">
+                          <tr><td colspan="5" class="muted">Nenhuma busca executada.</td></tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+                <div style="height:16px"></div>
+                <div class="prompt-preview">
+                  <div class="prompt-preview-card">
+                    <h3>Amostra de documentos</h3>
+                    <div class="table-wrap prompt-log-table">
+                      <table aria-label="Amostra de documentos da base vetorial">
+                        <thead>
+                          <tr>
+                            <th>documento</th>
+                            <th>lei</th>
+                            <th>norma</th>
+                          </tr>
+                        </thead>
+                        <tbody id="rag_query_documents_body">
+                          <tr><td colspan="3" class="muted">Nenhum documento carregado.</td></tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+                <div style="height:16px"></div>
+                <div class="prompt-preview">
+                  <div class="prompt-preview-card">
+                    <h3>Amostra de chunks</h3>
+                    <div class="table-wrap prompt-log-table">
+                      <table aria-label="Amostra de chunks da base vetorial">
+                        <thead>
+                          <tr>
+                            <th>chunk</th>
+                            <th>artigo</th>
+                            <th>topico</th>
+                            <th>texto</th>
+                          </tr>
+                        </thead>
+                        <tbody id="rag_query_chunks_body">
+                          <tr><td colspan="4" class="muted">Nenhum chunk carregado.</td></tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              </section>
+            </div>
           </div>
-          <div style="height:16px"></div>
-          <div class="prompt-preview rag-curation-detail-grid">
-            <div class="prompt-preview-card">
-              <h3>Curadoria selecionada</h3>
-              <div class="muted" id="rag_curation_detail_meta">Selecione uma questao curada para ver os detalhes.</div>
-              <table aria-label="Resumo da curadoria selecionada">
-                <tbody>
-                  <tr><th>Tipo</th><td id="rag_curation_detail_type" class="muted">-</td></tr>
-                  <tr><th>Disciplina</th><td id="rag_curation_detail_discipline" class="muted">-</td></tr>
-                  <tr><th>Assunto</th><td id="rag_curation_detail_subject" class="muted">-</td></tr>
-                  <tr><th>Tema</th><td id="rag_curation_detail_theme" class="muted">-</td></tr>
-                  <tr><th>Curador</th><td id="rag_curation_detail_curator" class="muted">-</td></tr>
-                  <tr><th>Classificada em</th><td id="rag_curation_detail_classified_at" class="muted">-</td></tr>
-                  <tr><th>Lei / norma</th><td id="rag_curation_detail_lei_norma" class="muted">-</td></tr>
-                  <tr><th>Fonte</th><td id="rag_curation_detail_url" class="muted">-</td></tr>
-                  <tr><th>URN</th><td id="rag_curation_detail_urn" class="muted">-</td></tr>
-                </tbody>
-              </table>
-            </div>
-            <div class="prompt-preview-card">
-              <h3>Artigos curados</h3>
-              <div class="table-wrap prompt-log-table rag-curation-articles-table">
-                <table aria-label="Artigos curados da questao selecionada">
-                  <thead>
-                    <tr>
-                      <th>ordem</th>
-                      <th>artigo</th>
-                      <th>topico</th>
-                      <th>relevancia</th>
-                      <th>tipo</th>
-                    </tr>
-                  </thead>
-                  <tbody id="rag_curation_articles_body">
-                    <tr><td colspan="5" class="muted">Nenhum artigo carregado.</td></tr>
-                  </tbody>
-                </table>
-              </div>
-            </div>
-            <div class="prompt-preview-card">
-              <h3>Questao</h3>
-              <pre id="rag_curation_detail_question">Selecione uma questao curada para ver o enunciado.</pre>
-            </div>
-            <div class="prompt-preview-card">
-              <h3>Gabarito</h3>
-              <pre id="rag_curation_detail_answer_key">Selecione uma questao curada para ver o gabarito.</pre>
-            </div>
-            <div class="prompt-preview-card">
-              <h3>Metadados</h3>
-              <pre id="rag_curation_detail_metadata">Selecione uma questao curada para ver os metadados.</pre>
-            </div>
-            <div class="prompt-preview-card">
-              <h3>Payload bruto</h3>
-              <pre id="rag_curation_detail_raw_payload">Selecione uma questao curada para ver o payload original.</pre>
+
+          <div id="rag-embedding-subpanel" class="rag-subpanel" hidden>
+            <div class="prompt-layout" style="padding:0; width:100%;">
+              <aside>
+                <h2>Modelo Embedding</h2>
+                <label>Dataset
+                  <select id="rag_embedding_dataset"></select>
+                </label>
+                <label>Alterado por
+                  <input id="rag_embedding_updated_by" autocomplete="off" placeholder="Nome de quem alterou a configuracao">
+                </label>
+                <div class="actions">
+                  <button class="secondary" id="rag_embedding_reload" type="button">Recarregar</button>
+                  <button class="secondary" id="rag_embedding_test" type="button">Testar API</button>
+                  <button id="rag_embedding_save" type="button">Salvar configuracao</button>
+                </div>
+                <div id="rag_embedding_status" class="status prompt-status">Selecione um dataset para configurar o modelo de embedding.</div>
+              </aside>
+              <section>
+                <div class="prompt-preview">
+                  <div class="prompt-preview-card">
+                    <h3>Configuracao ativa</h3>
+                    <div class="muted" id="rag_embedding_meta">Nenhuma configuracao carregada.</div>
+                    <table aria-label="Resumo da configuracao de embedding">
+                      <tbody>
+                        <tr><th>Provider</th><td id="rag_embedding_provider_summary" class="muted">-</td></tr>
+                        <tr><th>Modelo</th><td id="rag_embedding_model_summary" class="muted">-</td></tr>
+                        <tr><th>Dimensoes</th><td id="rag_embedding_dimensions_summary" class="muted">-</td></tr>
+                        <tr><th>API base</th><td id="rag_embedding_api_base_summary" class="muted">-</td></tr>
+                        <tr><th>Atualizada por</th><td id="rag_embedding_updated_by_summary" class="muted">-</td></tr>
+                        <tr><th>Atualizada em</th><td id="rag_embedding_updated_at_summary" class="muted">-</td></tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+                <div style="height:16px"></div>
+                <div class="prompt-preview">
+                  <div class="prompt-preview-card">
+                    <h3>Smoke test da API</h3>
+                    <div class="muted" id="rag_embedding_test_meta">Nenhum teste executado.</div>
+                    <table aria-label="Resumo do smoke test de embedding">
+                      <tbody>
+                        <tr><th>Endpoint</th><td id="rag_embedding_test_endpoint" class="muted">-</td></tr>
+                        <tr><th>Latencia</th><td id="rag_embedding_test_latency" class="muted">-</td></tr>
+                        <tr><th>Dimensoes retornadas</th><td id="rag_embedding_test_dimensions" class="muted">-</td></tr>
+                        <tr><th>Testado em</th><td id="rag_embedding_test_time" class="muted">-</td></tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+                <div style="height:16px"></div>
+                <div class="prompt-preview">
+                  <div class="prompt-preview-card">
+                    <h3>Formulario</h3>
+                    <label>Provider
+                      <input id="rag_embedding_provider" autocomplete="off" placeholder="openai">
+                    </label>
+                    <label>Modelo
+                      <input id="rag_embedding_model_name" autocomplete="off" placeholder="text-embedding-3-small">
+                    </label>
+                    <label>Dimensoes
+                      <input id="rag_embedding_dimensions" type="number" min="1" step="1" placeholder="1536">
+                    </label>
+                    <label>API base URL
+                      <input id="rag_embedding_api_base_url" autocomplete="off" placeholder="https://api.openai.com/v1">
+                    </label>
+                    <label>Notas
+                      <textarea id="rag_embedding_notes" placeholder="Observacoes sobre a escolha do modelo de embedding"></textarea>
+                    </label>
+                  </div>
+                </div>
+              </section>
             </div>
           </div>
         </section>
-      </div>
+      </main>
     </div>
   <div class="assistant-widget" aria-live="polite"__ASSISTANT_WIDGET_HIDDEN__>
     <section id="assistant-chat-panel" class="assistant-panel" aria-label="Chat do assistente" hidden>
@@ -2227,6 +2554,7 @@ _INDEX_HTML = """
     let promptOptionsLoaded = false;
     let metaOptionsLoaded = false;
     let ragCurationOptionsLoaded = false;
+    let ragEmbeddingConfigLoaded = false;
     let metaHistoryLoaded = false;
     let metaHistoryRecords = [];
     let metaHistoryFilteredRecords = [];
@@ -2250,6 +2578,12 @@ _INDEX_HTML = """
 
     function value(id) { return document.getElementById(id).value; }
     function setText(id, text) { document.getElementById(id).textContent = text ?? "-"; }
+
+    function truncateText(text, maxLength = 180) {
+      const normalized = String(text ?? "");
+      if (normalized.length <= maxLength) return normalized;
+      return `${normalized.slice(0, maxLength - 3)}...`;
+    }
     function display(value) { return value === null || value === undefined || value === "" ? "-" : value; }
     function friendlyErrorMessage(message) {
       const raw = String(message || "");
@@ -2279,6 +2613,15 @@ _INDEX_HTML = """
 
     function selectedValues(id) {
       return Array.from(document.getElementById(id).selectedOptions).map((option) => option.value).filter(Boolean);
+    }
+
+    function syncRagDatasetSelects(dataset) {
+      for (const id of ["rag_curation_dataset", "rag_vector_dataset", "rag_query_dataset", "rag_embedding_dataset"]) {
+        const select = document.getElementById(id);
+        if (select && Array.from(select.options).some((option) => option.value === dataset)) {
+          select.value = dataset;
+        }
+      }
     }
 
     function dashboardQuery() {
@@ -4155,6 +4498,7 @@ _INDEX_HTML = """
 
     async function loadRagCurationOptions(preferredDataset = null) {
       setText("rag_curation_status", "Carregando cobertura da curadoria...");
+      setText("rag_vector_status", "Carregando base vetorial...");
       try {
         const response = await fetch("/api/rag-curation/options");
         const data = await response.json();
@@ -4165,18 +4509,31 @@ _INDEX_HTML = """
           label: `${display(entry.dataset)} | ${display(entry.dataset_name)} (${display(entry.curated_questions)}/${display(entry.total_questions)})`
         }));
         populateSelect("rag_curation_dataset", options, "value", "label");
+        populateSelect("rag_vector_dataset", options, "value", "label");
+        populateSelect("rag_query_dataset", options, "value", "label");
+        populateSelect("rag_embedding_dataset", options, "value", "label");
         renderRagCurationDatasetCoverage(ragCurationDatasetOptions);
         ragCurationOptionsLoaded = true;
         const selectedDataset = preferredDataset || value("rag_curation_dataset");
         if (selectedDataset) {
-          document.getElementById("rag_curation_dataset").value = selectedDataset;
+          syncRagDatasetSelects(selectedDataset);
           await loadRagCurationDataset(selectedDataset);
+          await loadRagVectorPreview(selectedDataset);
+          await loadRagEmbeddingConfig(selectedDataset);
         } else {
           setText("rag_curation_status", "Nenhum dataset disponivel para curadoria.");
-          renderRagCurationDatasetState(null, [], []);
+          setText("rag_vector_status", "Nenhum dataset disponivel para base vetorial.");
+          setText("rag_query_status", "Nenhum dataset disponivel para consulta vetorial.");
+          setText("rag_embedding_status", "Nenhum dataset disponivel para configuracao de embedding.");
+          renderRagCurationDatasetState(null, [], [], null);
+          renderRagVectorPreview(null);
+          renderRagEmbeddingConfig(null);
         }
       } catch (error) {
         setText("rag_curation_status", friendlyErrorMessage(error.message));
+        setText("rag_vector_status", friendlyErrorMessage(error.message));
+        setText("rag_query_status", friendlyErrorMessage(error.message));
+        setText("rag_embedding_status", friendlyErrorMessage(error.message));
       }
     }
 
@@ -4184,9 +4541,12 @@ _INDEX_HTML = """
       if (!dataset) {
         renderRagCurationDatasetState(null, [], [], null);
         setText("rag_curation_status", "Selecione um dataset para visualizar a curadoria.");
+        setText("rag_vector_status", "Selecione um dataset para visualizar a base vetorial.");
         return;
       }
+      syncRagDatasetSelects(dataset);
       setText("rag_curation_status", "Carregando curadoria...");
+      setText("rag_vector_status", "Carregando base vetorial...");
       try {
         const response = await fetch(`/api/rag-curation?dataset=${encodeURIComponent(dataset)}`);
         const data = await response.json();
@@ -4200,9 +4560,15 @@ _INDEX_HTML = """
         } else {
           setText("rag_curation_status", `Nenhuma versao ativa encontrada para ${display(dataset)}.`);
         }
+        if (data.vector_base) {
+          setText("rag_vector_status", `Base vetorial de ${display(dataset)} carregada com ${display(data.vector_base.document_count)} documentos e ${display(data.vector_base.chunk_count)} chunks.`);
+        } else {
+          setText("rag_vector_status", `Nenhuma base vetorial ativa encontrada para ${display(dataset)}.`);
+        }
       } catch (error) {
         renderRagCurationDatasetState(null, [], [], null);
         setText("rag_curation_status", friendlyErrorMessage(error.message));
+        setText("rag_vector_status", friendlyErrorMessage(error.message));
       }
     }
 
@@ -4309,6 +4675,280 @@ _INDEX_HTML = """
       setText("rag_vector_active_embedding_count", display(vectorBase.embedding_count));
       setText("rag_vector_active_embedding_model", display(vectorBase.embedding_model));
       setText("rag_vector_active_created_at", formatDateTime(vectorBase.created_at));
+    }
+
+    function renderRagVectorPreview(data) {
+      const documentsBody = document.getElementById("rag_query_documents_body");
+      const chunksBody = document.getElementById("rag_query_chunks_body");
+      documentsBody.textContent = "";
+      chunksBody.textContent = "";
+      if (!data || !Array.isArray(data.documents) || !data.documents.length) {
+        appendTableMessage(documentsBody, 3, "Nenhum documento carregado.");
+      } else {
+        for (const entry of data.documents) {
+          const row = document.createElement("tr");
+          appendCell(row, display(entry.document_key));
+          appendCell(row, display(entry.lei));
+          appendCell(row, display(entry.norma));
+          documentsBody.appendChild(row);
+        }
+      }
+      if (!data || !Array.isArray(data.chunks) || !data.chunks.length) {
+        appendTableMessage(chunksBody, 4, "Nenhum chunk carregado.");
+      } else {
+        for (const entry of data.chunks) {
+          const row = document.createElement("tr");
+          appendCell(row, display(entry.chunk_id));
+          appendCell(row, display(entry.artigo));
+          appendCell(row, display(entry.topico));
+          appendCell(row, truncateText(entry.chunk_text, 180));
+          chunksBody.appendChild(row);
+        }
+      }
+    }
+
+    function renderRagQueryResults(data) {
+      const body = document.getElementById("rag_query_results_body");
+      body.textContent = "";
+      if (!data || !Array.isArray(data.results) || !data.results.length) {
+        appendTableMessage(body, 5, "Nenhuma busca executada.");
+      } else {
+        for (const entry of data.results) {
+          const row = document.createElement("tr");
+          appendCell(row, display(entry.rank));
+          appendCell(row, entry.similarity !== null && entry.similarity !== undefined ? entry.similarity.toFixed(4) : "-");
+          appendCell(row, display(entry.artigo));
+          appendCell(row, display(entry.topico));
+          appendCell(row, truncateText(entry.chunk_text, 220));
+          body.appendChild(row);
+        }
+      }
+      if (!data) {
+        setText("rag_query_meta", "Nenhuma consulta executada.");
+        setText("rag_query_summary_dataset", "-");
+        setText("rag_query_summary_top_k", "-");
+        setText("rag_query_summary_latency", "-");
+        setText("rag_query_summary_dimensions", "-");
+        return;
+      }
+      setText("rag_query_meta", `${display(data.dataset)} | ${display(data.query)}`);
+      setText("rag_query_summary_dataset", display(data.dataset));
+      setText("rag_query_summary_top_k", display(data.top_k));
+      setText("rag_query_summary_latency", data.latency_ms !== null && data.latency_ms !== undefined ? `${data.latency_ms} ms` : "-");
+      setText("rag_query_summary_dimensions", display(data.returned_dimensions));
+    }
+
+    async function loadRagVectorPreview(dataset = value("rag_query_dataset")) {
+      if (!dataset) {
+        renderRagVectorPreview(null);
+        renderRagQueryResults(null);
+        setText("rag_query_status", "Selecione um dataset para inspecionar a base vetorial.");
+        return;
+      }
+      syncRagDatasetSelects(dataset);
+      setText("rag_query_status", "Carregando amostras da base vetorial...");
+      try {
+        const response = await fetch(`/api/rag-vector/preview?dataset=${encodeURIComponent(dataset)}&limit=8`);
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.detail || "Falha ao carregar a base vetorial.");
+        renderRagVectorPreview(data);
+        renderRagQueryResults(null);
+        const docs = Array.isArray(data.documents) ? data.documents.length : 0;
+        const chunks = Array.isArray(data.chunks) ? data.chunks.length : 0;
+        setText("rag_query_status", `Amostra carregada para ${display(dataset)} (${docs} documentos, ${chunks} chunks).`);
+      } catch (error) {
+        renderRagVectorPreview(null);
+        renderRagQueryResults(null);
+        setText("rag_query_status", friendlyErrorMessage(error.message));
+      }
+    }
+
+    async function generateRagEmbeddings() {
+      const dataset = value("rag_vector_dataset");
+      if (!dataset) {
+        setText("rag_vector_status", "Selecione um dataset para gerar embeddings.");
+        return;
+      }
+      try {
+        setText("rag_vector_status", `Gerando embeddings para ${display(dataset)}...`);
+        const data = await postJson("/api/rag-vector/generate-embeddings", {
+          dataset,
+          batch_size: 16,
+        });
+        const summary = data.summary || null;
+        await loadRagCurationDataset(dataset);
+        await loadRagVectorPreview(dataset);
+        setText(
+          "rag_vector_status",
+          summary
+            ? `Embeddings gerados para ${display(dataset)}: ${display(summary.generated_embeddings)} chunks com ${display(summary.embedding_model)}.`
+            : `Embeddings gerados para ${display(dataset)}.`
+        );
+      } catch (error) {
+        setText("rag_vector_status", friendlyErrorMessage(error.message));
+      }
+    }
+
+    async function searchRagVector() {
+      const dataset = value("rag_query_dataset");
+      const queryText = value("rag_query_text").trim();
+      const topK = Number(value("rag_query_top_k") || 5);
+      if (!dataset) {
+        setText("rag_query_status", "Selecione um dataset para consultar.");
+        return;
+      }
+      if (!queryText) {
+        setText("rag_query_status", "Informe um texto para buscar na base vetorial.");
+        return;
+      }
+      try {
+        setText("rag_query_status", `Consultando a base vetorial de ${display(dataset)}...`);
+        const data = await postJson("/api/rag-vector/search", {
+          dataset,
+          query_text: queryText,
+          top_k: topK,
+        });
+        renderRagQueryResults(data);
+        setText("rag_query_status", `Consulta concluida para ${display(dataset)} com top-k ${display(topK)}.`);
+      } catch (error) {
+        renderRagQueryResults(null);
+        setText("rag_query_status", friendlyErrorMessage(error.message));
+      }
+    }
+
+    async function loadRagEmbeddingConfig(dataset = value("rag_embedding_dataset")) {
+      if (!dataset) {
+        renderRagEmbeddingSmokeResult(null);
+        renderRagEmbeddingConfig(null);
+        setText("rag_embedding_status", "Selecione um dataset para configurar o embedding.");
+        return;
+      }
+      syncRagDatasetSelects(dataset);
+      setText("rag_embedding_status", "Carregando configuracao de embedding...");
+      renderRagEmbeddingSmokeResult(null);
+      try {
+        const response = await fetch(`/api/rag-embedding-config?dataset=${encodeURIComponent(dataset)}`);
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.detail || "Falha ao carregar configuracao de embedding.");
+        ragEmbeddingConfigLoaded = true;
+        renderRagEmbeddingConfig(data.record || null);
+        setText(
+          "rag_embedding_status",
+          data.record
+            ? `Configuracao de embedding de ${display(dataset)} carregada.`
+            : `Nenhuma configuracao de embedding encontrada para ${display(dataset)}.`
+        );
+      } catch (error) {
+        renderRagEmbeddingConfig(null);
+        setText("rag_embedding_status", friendlyErrorMessage(error.message));
+      }
+    }
+
+    function renderRagEmbeddingConfig(record) {
+      if (!record) {
+        setText("rag_embedding_meta", "Nenhuma configuracao carregada.");
+        setText("rag_embedding_provider_summary", "-");
+        setText("rag_embedding_model_summary", "-");
+        setText("rag_embedding_dimensions_summary", "-");
+        setText("rag_embedding_api_base_summary", "-");
+        setText("rag_embedding_updated_by_summary", "-");
+        setText("rag_embedding_updated_at_summary", "-");
+        document.getElementById("rag_embedding_provider").value = "";
+        document.getElementById("rag_embedding_model_name").value = "";
+        document.getElementById("rag_embedding_dimensions").value = "";
+        document.getElementById("rag_embedding_api_base_url").value = "";
+        document.getElementById("rag_embedding_notes").value = "";
+        return;
+      }
+      setText("rag_embedding_meta", `${display(record.dataset)} | ${display(record.dataset_name)} | config ${display(record.config_id || "default")}`);
+      setText("rag_embedding_provider_summary", display(record.provider));
+      setText("rag_embedding_model_summary", display(record.model_name));
+      setText("rag_embedding_dimensions_summary", display(record.dimensions));
+      setText("rag_embedding_api_base_summary", display(record.api_base_url));
+      setText("rag_embedding_updated_by_summary", display(record.updated_by));
+      setText("rag_embedding_updated_at_summary", formatDateTime(record.updated_at));
+      document.getElementById("rag_embedding_provider").value = record.provider || "";
+      document.getElementById("rag_embedding_model_name").value = record.model_name || "";
+      document.getElementById("rag_embedding_dimensions").value = record.dimensions || "";
+      document.getElementById("rag_embedding_api_base_url").value = record.api_base_url || "";
+      document.getElementById("rag_embedding_notes").value = record.notes || "";
+    }
+
+    function renderRagEmbeddingSmokeResult(result) {
+      if (!result) {
+        setText("rag_embedding_test_meta", "Nenhum teste executado.");
+        setText("rag_embedding_test_endpoint", "-");
+        setText("rag_embedding_test_latency", "-");
+        setText("rag_embedding_test_dimensions", "-");
+        setText("rag_embedding_test_time", "-");
+        return;
+      }
+      setText(
+        "rag_embedding_test_meta",
+        `${display(result.dataset)} | ${display(result.provider)} | ${display(result.model_name)}`
+      );
+      setText("rag_embedding_test_endpoint", display(result.endpoint_host || result.endpoint_url));
+      setText(
+        "rag_embedding_test_latency",
+        result.latency_ms !== null && result.latency_ms !== undefined ? `${result.latency_ms} ms` : "-"
+      );
+      setText("rag_embedding_test_dimensions", display(result.returned_dimensions));
+      setText("rag_embedding_test_time", formatDateTime(result.tested_at));
+    }
+
+    async function saveRagEmbeddingConfig() {
+      const dataset = value("rag_embedding_dataset");
+      const updatedBy = value("rag_embedding_updated_by").trim();
+      if (!dataset) {
+        setText("rag_embedding_status", "Selecione um dataset para configurar o embedding.");
+        return;
+      }
+      if (!updatedBy) {
+        setText("rag_embedding_status", "Informe quem alterou a configuracao do embedding.");
+        return;
+      }
+      const rawDimensions = value("rag_embedding_dimensions").trim();
+      const dimensions = rawDimensions ? Number(rawDimensions) : null;
+      try {
+        setText("rag_embedding_status", `Salvando configuracao de embedding para ${display(dataset)}...`);
+        const data = await putJson("/api/rag-embedding-config", {
+          dataset,
+          provider: value("rag_embedding_provider").trim(),
+          model_name: value("rag_embedding_model_name").trim(),
+          dimensions: dimensions,
+          api_base_url: value("rag_embedding_api_base_url").trim() || null,
+          notes: value("rag_embedding_notes").trim() || null,
+          updated_by: updatedBy,
+        });
+        renderRagEmbeddingConfig(data.record || null);
+        setText("rag_embedding_status", `Configuracao de embedding salva para ${display(dataset)}.`);
+      } catch (error) {
+        setText("rag_embedding_status", friendlyErrorMessage(error.message));
+      }
+    }
+
+    async function testRagEmbeddingConfig() {
+      const dataset = value("rag_embedding_dataset");
+      if (!dataset) {
+        setText("rag_embedding_status", "Selecione um dataset para testar o embedding.");
+        return;
+      }
+      try {
+        setText("rag_embedding_status", `Testando API de embedding para ${display(dataset)}...`);
+        renderRagEmbeddingSmokeResult(null);
+        const data = await postJson("/api/rag-embedding-config/smoke-test", {
+          dataset,
+        });
+        renderRagEmbeddingSmokeResult(data.result || null);
+        const dims = data.result?.returned_dimensions;
+        setText(
+          "rag_embedding_status",
+          `Smoke test concluido para ${display(dataset)}${dims ? ` (${dims} dimensoes).` : "."}`
+        );
+      } catch (error) {
+        renderRagEmbeddingSmokeResult(null);
+        setText("rag_embedding_status", friendlyErrorMessage(error.message));
+      }
     }
 
     function renderRagCurationRuns(rows) {
@@ -5184,13 +5824,33 @@ _INDEX_HTML = """
       }
     }
 
+    function switchRagSubtab(targetId) {
+      for (const button of document.querySelectorAll(".rag-subtab-button")) {
+        const active = button.dataset.ragSubtab === targetId;
+        button.classList.toggle("active", active);
+        button.setAttribute("aria-selected", String(active));
+      }
+      for (const panel of document.querySelectorAll(".rag-subpanel")) {
+        panel.hidden = panel.id !== targetId;
+      }
+      if (targetId === "rag-vector-subpanel") {
+        loadRagCurationDataset(value("rag_vector_dataset") || value("rag_curation_dataset"));
+      }
+      if (targetId === "rag-query-subpanel") {
+        loadRagVectorPreview(value("rag_query_dataset") || value("rag_curation_dataset"));
+      }
+      if (targetId === "rag-embedding-subpanel") {
+        loadRagEmbeddingConfig(value("rag_embedding_dataset") || value("rag_curation_dataset"));
+      }
+    }
+
     function switchTab(targetId) {
       activateTab(targetId);
       if (targetId === "dashboard-panel") loadDashboard();
       if (targetId === "history-panel") loadHistory();
       if (targetId === "prompt-panel" && !promptOptionsLoaded) loadPromptOptions();
       if (targetId === "meta-panel" && !metaOptionsLoaded) loadMetaOptions();
-      if (targetId === "rag-curation-panel" && !ragCurationOptionsLoaded) loadRagCurationOptions();
+      if (targetId === "rag-panel" && !ragCurationOptionsLoaded) loadRagCurationOptions();
     }
 
     async function loadConfig() {
@@ -5431,14 +6091,27 @@ _INDEX_HTML = """
     for (const button of document.querySelectorAll(".tab-button")) {
       button.onclick = () => switchTab(button.dataset.tab);
     }
+    for (const button of document.querySelectorAll(".rag-subtab-button")) {
+      button.onclick = () => switchRagSubtab(button.dataset.ragSubtab);
+    }
     document.getElementById("assistant-chat-toggle").onclick = () => toggleAssistantChat();
     document.getElementById("assistant-chat-close").onclick = () => toggleAssistantChat(false);
     document.getElementById("assistant-chat-form").onsubmit = submitAssistantMessage;
     document.getElementById("prompt_dataset").onchange = () => loadPromptConfig();
     document.getElementById("prompt_reload").onclick = () => loadPromptConfig();
     document.getElementById("prompt_save").onclick = () => savePromptConfig();
-    document.getElementById("rag_curation_dataset").onchange = () => loadRagCurationDataset();
-    document.getElementById("rag_curation_reload").onclick = () => loadRagCurationDataset();
+    document.getElementById("rag_curation_dataset").onchange = () => loadRagCurationDataset(value("rag_curation_dataset"));
+    document.getElementById("rag_curation_reload").onclick = () => loadRagCurationDataset(value("rag_curation_dataset"));
+    document.getElementById("rag_vector_dataset").onchange = () => loadRagCurationDataset(value("rag_vector_dataset"));
+    document.getElementById("rag_vector_reload").onclick = () => loadRagCurationDataset(value("rag_vector_dataset"));
+    document.getElementById("rag_vector_generate").onclick = () => generateRagEmbeddings();
+    document.getElementById("rag_query_dataset").onchange = () => loadRagVectorPreview(value("rag_query_dataset"));
+    document.getElementById("rag_query_reload").onclick = () => loadRagVectorPreview(value("rag_query_dataset"));
+    document.getElementById("rag_query_search").onclick = () => searchRagVector();
+    document.getElementById("rag_embedding_dataset").onchange = () => loadRagEmbeddingConfig(value("rag_embedding_dataset"));
+    document.getElementById("rag_embedding_reload").onclick = () => loadRagEmbeddingConfig(value("rag_embedding_dataset"));
+    document.getElementById("rag_embedding_test").onclick = () => testRagEmbeddingConfig();
+    document.getElementById("rag_embedding_save").onclick = () => saveRagEmbeddingConfig();
     document.getElementById("rag_curation_pick_file").onclick = () => {
       clearRagCurationFileSelection();
       document.getElementById("rag_curation_file").click();

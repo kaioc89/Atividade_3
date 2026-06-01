@@ -1072,6 +1072,188 @@ class FakeRagCurationService:
         return self.get(dataset=dataset)
 
 
+class FakeRagEmbeddingConfigService:
+    def __init__(self) -> None:
+        self.saved = []
+
+    def get(self, *, dataset: str) -> dict:
+        return {
+            "record": {
+                "config_id": 11,
+                "dataset": dataset,
+                "dataset_name": "OAB_Bench" if dataset == "J1" else "OAB_Exames",
+                "provider": "openai",
+                "model_name": "text-embedding-3-small",
+                "dimensions": 1536,
+                "api_base_url": "https://api.openai.com/v1",
+                "notes": "Configuracao inicial da AV3.",
+                "updated_by": "Diego",
+                "updated_at": "2026-06-01T20:10:00",
+            }
+        }
+
+    def save(
+        self,
+        *,
+        dataset: str,
+        provider: str,
+        model_name: str,
+        dimensions: int | None,
+        api_base_url: str | None,
+        notes: str | None,
+        updated_by: str,
+    ) -> dict:
+        self.saved.append((dataset, provider, model_name, dimensions, api_base_url, notes, updated_by))
+        return {
+            "record": {
+                "config_id": 12,
+                "dataset": dataset,
+                "dataset_name": "OAB_Bench" if dataset == "J1" else "OAB_Exames",
+                "provider": provider,
+                "model_name": model_name,
+                "dimensions": dimensions,
+                "api_base_url": api_base_url,
+                "notes": notes,
+                "updated_by": updated_by,
+                "updated_at": "2026-06-01T20:20:00",
+            }
+        }
+
+
+class FakeRagEmbeddingSmokeTestService:
+    def __init__(self) -> None:
+        self.calls = []
+
+    def run(self, *, dataset: str, sample_text: str | None = None) -> dict:
+        self.calls.append((dataset, sample_text))
+        return {
+            "result": {
+                "dataset": dataset,
+                "dataset_name": "OAB_Bench" if dataset == "J1" else "OAB_Exames",
+                "provider": "openai",
+                "model_name": "text-embedding-3-small",
+                "requested_dimensions": 1536,
+                "returned_dimensions": 1536,
+                "endpoint_url": "https://api.openai.com/v1/embeddings",
+                "endpoint_host": "api.openai.com",
+                "latency_ms": 321,
+                "sample_text": sample_text or "texto de teste",
+                "tested_at": "2026-06-01T22:45:00",
+            }
+        }
+
+
+class FakeRagEmbeddingGenerationService:
+    def __init__(self) -> None:
+        self.calls = []
+
+    def run(self, *, dataset: str, batch_size: int | None = None) -> dict:
+        self.calls.append((dataset, batch_size))
+        return {
+            "summary": {
+                "dataset": dataset,
+                "dataset_name": "OAB_Bench" if dataset == "J1" else "OAB_Exames",
+                "retrieval_run_id": 21,
+                "retrieval_name": "j1_curated_v1" if dataset == "J1" else "j2_curated_v1",
+                "import_run_id": 7,
+                "embedding_model": "text-embedding-3-small",
+                "provider": "openai",
+                "api_base_url": "https://api.openai.com/v1",
+                "requested_dimensions": 1536,
+                "generated_embeddings": 234,
+                "total_chunks": 234,
+                "latency_ms": 987,
+                "created_at": "2026-06-01T23:30:00",
+            }
+        }
+
+
+class FakeRagVectorQueryService:
+    def __init__(self) -> None:
+        self.preview_calls = []
+        self.search_calls = []
+
+    def preview(self, *, dataset: str, limit: int = 8) -> dict:
+        self.preview_calls.append((dataset, limit))
+        return {
+            "dataset": dataset,
+            "vector_base": {
+                "dataset": dataset,
+                "dataset_name": "OAB_Bench" if dataset == "J1" else "OAB_Exames",
+                "import_run_id": 7,
+                "active_curation_run_id": 7,
+                "matches_active_curation": True,
+                "retrieval_run_id": 21,
+                "retrieval_name": "j1_curated_v1",
+                "retrieval_strategy": "curated_articles_v1",
+                "embedding_model": "text-embedding-3-small",
+                "top_k": 5,
+                "vector_enabled": True,
+                "lexical_enabled": False,
+                "rerank_enabled": False,
+                "document_count": 70,
+                "chunk_count": 234,
+                "embedding_count": 234,
+                "status": "pronta_com_embeddings",
+                "created_at": "2026-06-01T23:30:00",
+            },
+            "documents": [
+                {
+                    "document_id": 1,
+                    "document_key": "J1:lei:8429-1992",
+                    "lei": "Lei 8.429/1992",
+                    "norma": "Lei de Improbidade Administrativa",
+                    "url": "https://www.planalto.gov.br",
+                    "urn": "urn:lex:br:federal:lei:1992-06-02;8429",
+                }
+            ],
+            "chunks": [
+                {
+                    "chunk_id": 11,
+                    "chunk_kind": "curated_article",
+                    "artigo": "art. 11, VII",
+                    "topico": "Atos de improbidade",
+                    "relevancia": "alta",
+                    "tipo": "principal",
+                    "chunk_text": "Norma: Lei de Improbidade Administrativa...",
+                    "document_id": 1,
+                    "lei": "Lei 8.429/1992",
+                    "norma": "Lei de Improbidade Administrativa",
+                }
+            ],
+        }
+
+    def search(self, *, dataset: str, query_text: str, top_k: int = 5) -> dict:
+        self.search_calls.append((dataset, query_text, top_k))
+        return {
+            "dataset": dataset,
+            "query": query_text,
+            "top_k": top_k,
+            "latency_ms": 654,
+            "returned_dimensions": 1536,
+            "results": [
+                {
+                    "rank": 1,
+                    "chunk_id": 11,
+                    "chunk_kind": "curated_article",
+                    "artigo": "art. 11, VII",
+                    "topico": "Atos de improbidade",
+                    "relevancia": "alta",
+                    "tipo": "principal",
+                    "chunk_text": "Norma: Lei de Improbidade Administrativa...",
+                    "document_id": 1,
+                    "document_key": "J1:lei:8429-1992",
+                    "lei": "Lei 8.429/1992",
+                    "norma": "Lei de Improbidade Administrativa",
+                    "url": "https://www.planalto.gov.br",
+                    "urn": "urn:lex:br:federal:lei:1992-06-02;8429",
+                    "distance": 0.11,
+                    "similarity": 0.89,
+                }
+            ],
+        }
+
+
 def test_web_index_contains_progress_element() -> None:
     client = TestClient(create_app(FakeRunJudgeService()))
 
@@ -1344,30 +1526,74 @@ def test_web_index_contains_meta_evaluation_tab() -> None:
 
 
 def test_web_index_contains_rag_curation_tab() -> None:
-    client = TestClient(create_app(FakeRunJudgeService(), rag_curation_service=FakeRagCurationService()))
+    client = TestClient(
+        create_app(
+            FakeRunJudgeService(),
+            rag_curation_service=FakeRagCurationService(),
+            rag_embedding_config_service=FakeRagEmbeddingConfigService(),
+            rag_embedding_smoke_test_service=FakeRagEmbeddingSmokeTestService(),
+            rag_embedding_generation_service=FakeRagEmbeddingGenerationService(),
+            rag_vector_query_service=FakeRagVectorQueryService(),
+        )
+    )
 
     response = client.get("/")
 
     assert response.status_code == 200
-    assert 'data-tab="rag-curation-panel">Curadoria RAG</button>' in response.text
+    assert 'data-tab="rag-panel">RAG</button>' in response.text
+    assert 'data-rag-subtab="rag-curation-subpanel">Curadoria</button>' in response.text
+    assert 'data-rag-subtab="rag-vector-subpanel">Base Vetorial</button>' in response.text
+    assert 'data-rag-subtab="rag-query-subpanel">Consulta</button>' in response.text
+    assert 'data-rag-subtab="rag-embedding-subpanel">Modelo Embedding</button>' in response.text
     assert 'id="rag_curation_dataset"' in response.text
+    assert 'id="rag_vector_dataset"' in response.text
+    assert 'id="rag_query_dataset"' in response.text
+    assert 'id="rag_embedding_dataset"' in response.text
     assert 'id="rag_curation_imported_by"' in response.text
     assert 'id="rag_curation_import"' in response.text
     assert 'id="rag_curation_runs_body"' in response.text
     assert 'id="rag_curation_items_body"' in response.text
     assert 'id="rag_curation_articles_body"' in response.text
     assert 'id="rag_vector_active_run"' in response.text
+    assert 'id="rag_vector_generate"' in response.text
     assert "Base vetorial ativa" in response.text
+    assert 'id="rag_query_documents_body"' in response.text
+    assert 'id="rag_query_chunks_body"' in response.text
+    assert 'id="rag_query_results_body"' in response.text
+    assert 'id="rag_embedding_provider"' in response.text
+    assert 'id="rag_embedding_model_name"' in response.text
+    assert 'id="rag_embedding_test"' in response.text
+    assert 'id="rag_embedding_test_endpoint"' in response.text
+    assert 'id="rag_embedding_save"' in response.text
     assert "function loadRagCurationOptions" in response.text
     assert "function importRagCurationFile" in response.text
     assert "function activateRagCurationRun" in response.text
     assert "function renderRagCurationDetail" in response.text
     assert "function renderRagVectorBase" in response.text
+    assert "function loadRagVectorPreview" in response.text
+    assert "function generateRagEmbeddings" in response.text
+    assert "function searchRagVector" in response.text
+    assert "function switchRagSubtab" in response.text
+    assert "function loadRagEmbeddingConfig" in response.text
+    assert "function testRagEmbeddingConfig" in response.text
 
 
 def test_rag_curation_endpoints_return_options_import_and_activate() -> None:
     rag_service = FakeRagCurationService()
-    client = TestClient(create_app(FakeRunJudgeService(), rag_curation_service=rag_service))
+    embedding_service = FakeRagEmbeddingConfigService()
+    smoke_service = FakeRagEmbeddingSmokeTestService()
+    generation_service = FakeRagEmbeddingGenerationService()
+    query_service = FakeRagVectorQueryService()
+    client = TestClient(
+        create_app(
+            FakeRunJudgeService(),
+            rag_curation_service=rag_service,
+            rag_embedding_config_service=embedding_service,
+            rag_embedding_smoke_test_service=smoke_service,
+            rag_embedding_generation_service=generation_service,
+            rag_vector_query_service=query_service,
+        )
+    )
     token = client.get("/api/config").json()["csrf_token"]
 
     options = client.get("/api/rag-curation/options")
@@ -1379,6 +1605,10 @@ def test_rag_curation_endpoints_return_options_import_and_activate() -> None:
     assert current.json()["active"]["active_run_id"] == 7
     assert current.json()["vector_base"]["retrieval_run_id"] == 21
     assert current.json()["vector_base"]["status"] == "materializada_sem_embeddings"
+
+    embedding = client.get("/api/rag-embedding-config", params={"dataset": "J1"})
+    assert embedding.status_code == 200
+    assert embedding.json()["record"]["model_name"] == "text-embedding-3-small"
 
     detail = client.get("/api/rag-curation/items/101", params={"dataset": "J1"})
     assert detail.status_code == 200
@@ -1405,6 +1635,54 @@ def test_rag_curation_endpoints_return_options_import_and_activate() -> None:
     )
     assert activated.status_code == 200
     assert rag_service.activated_runs[-1] == (7, "J1")
+
+    saved_embedding = client.put(
+        "/api/rag-embedding-config",
+        headers={"x-csrf-token": token},
+        json={
+            "dataset": "J1",
+            "provider": "openai",
+            "model_name": "text-embedding-3-large",
+            "dimensions": 3072,
+            "api_base_url": "https://api.openai.com/v1",
+            "notes": "upgrade",
+            "updated_by": "Diego",
+        },
+    )
+    assert saved_embedding.status_code == 200
+    assert embedding_service.saved[-1][2] == "text-embedding-3-large"
+
+    smoke = client.post(
+        "/api/rag-embedding-config/smoke-test",
+        headers={"x-csrf-token": token},
+        json={"dataset": "J1"},
+    )
+    assert smoke.status_code == 200
+    assert smoke.json()["result"]["returned_dimensions"] == 1536
+    assert smoke_service.calls[-1][0] == "J1"
+
+    generated = client.post(
+        "/api/rag-vector/generate-embeddings",
+        headers={"x-csrf-token": token},
+        json={"dataset": "J1", "batch_size": 16},
+    )
+    assert generated.status_code == 200
+    assert generated.json()["summary"]["generated_embeddings"] == 234
+    assert generation_service.calls[-1] == ("J1", 16)
+
+    preview = client.get("/api/rag-vector/preview", params={"dataset": "J1", "limit": 4})
+    assert preview.status_code == 200
+    assert preview.json()["documents"][0]["document_key"] == "J1:lei:8429-1992"
+    assert query_service.preview_calls[-1] == ("J1", 4)
+
+    search = client.post(
+        "/api/rag-vector/search",
+        headers={"x-csrf-token": token},
+        json={"dataset": "J1", "query_text": "improbidade administrativa", "top_k": 5},
+    )
+    assert search.status_code == 200
+    assert search.json()["results"][0]["similarity"] == 0.89
+    assert query_service.search_calls[-1] == ("J1", "improbidade administrativa", 5)
 
 
 def test_web_index_contains_controlled_operational_log_enrichment() -> None:

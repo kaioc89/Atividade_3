@@ -20,6 +20,8 @@ from .contracts import (
     RagCurationImportRunRecord,
     RagCurationItemDetail,
     RagCurationItemSummary,
+    RagEmbeddingGenerationSummary,
+    RagEmbeddingModelConfigRecord,
     RagBaseMaterializationSummary,
     RagVectorBaseSummary,
     StoredJudgeRole,
@@ -750,9 +752,31 @@ class JudgeRepository:
         )
         cursor.execute(
             """
+            CREATE TABLE IF NOT EXISTS av3.embedding_model_configs (
+                id_embedding_config SERIAL PRIMARY KEY,
+                dataset_code VARCHAR(10) NOT NULL UNIQUE,
+                dataset_name VARCHAR(80) NOT NULL,
+                provider VARCHAR(60) NOT NULL,
+                model_name VARCHAR(160) NOT NULL,
+                dimensions INTEGER NULL CHECK (dimensions IS NULL OR dimensions >= 1),
+                api_base_url TEXT NULL,
+                notes TEXT NULL,
+                updated_by VARCHAR(120) NOT NULL DEFAULT 'system',
+                updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+            );
+            """
+        )
+        cursor.execute(
+            """
             CREATE UNIQUE INDEX IF NOT EXISTS idx_retrieval_runs_active_dataset
             ON av3.retrieval_runs (dataset_code)
             WHERE ativo;
+            """
+        )
+        cursor.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_embedding_model_configs_dataset
+            ON av3.embedding_model_configs (dataset_code, updated_at DESC);
             """
         )
         cursor.execute(
@@ -2230,6 +2254,418 @@ class JudgeRepository:
             created_at=row[13].isoformat() if row[13] is not None else None,
         )
 
+    def get_rag_embedding_model_config(self, *, dataset: str) -> RagEmbeddingModelConfigRecord | None:
+        dataset_code = dataset.upper()
+        dataset_name = DATASET_ALIASES.get(dataset_code, dataset_code)
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT
+                    id_embedding_config,
+                    dataset_code,
+                    dataset_name,
+                    provider,
+                    model_name,
+                    dimensions,
+                    api_base_url,
+                    notes,
+                    updated_by,
+                    updated_at
+                FROM av3.embedding_model_configs
+                WHERE dataset_code = %s
+                LIMIT 1;
+                """,
+                (dataset_code,),
+            )
+            row = cursor.fetchone()
+        if row is None:
+            return RagEmbeddingModelConfigRecord(
+                config_id=0,
+                dataset=dataset_code,
+                dataset_name=dataset_name,
+                provider="openai",
+                model_name="text-embedding-3-small",
+                dimensions=None,
+                api_base_url=None,
+                notes="Configuracao padrao sugerida para a AV3.",
+                updated_by="system-default",
+                updated_at=None,
+            )
+        return RagEmbeddingModelConfigRecord(
+            config_id=int(row[0]),
+            dataset=row[1],
+            dataset_name=row[2],
+            provider=row[3],
+            model_name=row[4],
+            dimensions=int(row[5]) if row[5] is not None else None,
+            api_base_url=row[6],
+            notes=row[7],
+            updated_by=row[8],
+            updated_at=row[9].isoformat() if row[9] is not None else None,
+        )
+
+    def upsert_rag_embedding_model_config(
+        self,
+        *,
+        dataset: str,
+        provider: str,
+        model_name: str,
+        dimensions: int | None,
+        api_base_url: str | None,
+        notes: str | None,
+        updated_by: str,
+    ) -> RagEmbeddingModelConfigRecord:
+        dataset_code = dataset.upper()
+        dataset_name = DATASET_ALIASES.get(dataset_code, dataset_code)
+        provider = provider.strip()
+        model_name = model_name.strip()
+        updated_by = updated_by.strip()
+        if not provider:
+            raise ValueError("Informe o provider do modelo de embedding.")
+        if not model_name:
+            raise ValueError("Informe o nome do modelo de embedding.")
+        if not updated_by:
+            raise ValueError("Informe quem alterou a configuracao do embedding.")
+        with self.connection:
+            with self.connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    INSERT INTO av3.embedding_model_configs
+                        (
+                            dataset_code,
+                            dataset_name,
+                            provider,
+                            model_name,
+                            dimensions,
+                            api_base_url,
+                            notes,
+                            updated_by,
+                            updated_at
+                        )
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NOW())
+                    ON CONFLICT (dataset_code)
+                    DO UPDATE SET
+                        dataset_name = EXCLUDED.dataset_name,
+                        provider = EXCLUDED.provider,
+                        model_name = EXCLUDED.model_name,
+                        dimensions = EXCLUDED.dimensions,
+                        api_base_url = EXCLUDED.api_base_url,
+                        notes = EXCLUDED.notes,
+                        updated_by = EXCLUDED.updated_by,
+                        updated_at = NOW()
+                    RETURNING
+                        id_embedding_config,
+                        dataset_code,
+                        dataset_name,
+                        provider,
+                        model_name,
+                        dimensions,
+                        api_base_url,
+                        notes,
+                        updated_by,
+                        updated_at;
+                    """,
+                    (
+                        dataset_code,
+                        dataset_name,
+                        provider,
+                        model_name,
+                        dimensions,
+                        api_base_url,
+                        notes,
+                        updated_by,
+                    ),
+                )
+                row = cursor.fetchone()
+        return RagEmbeddingModelConfigRecord(
+            config_id=int(row[0]),
+            dataset=row[1],
+            dataset_name=row[2],
+            provider=row[3],
+            model_name=row[4],
+            dimensions=int(row[5]) if row[5] is not None else None,
+            api_base_url=row[6],
+            notes=row[7],
+            updated_by=row[8],
+            updated_at=row[9].isoformat() if row[9] is not None else None,
+        )
+
+    def list_rag_chunks_for_active_vector_base(self, *, dataset: str) -> list[dict[str, Any]]:
+        vector_summary = self.get_rag_vector_base_summary(dataset=dataset)
+        if vector_summary is None:
+            raise ValueError(f"No active vector base found for {dataset.upper()}.")
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT
+                    c.id_chunk,
+                    c.chunk_text
+                FROM av3.rag_chunks c
+                JOIN av3.rag_documents d ON d.id_document = c.id_document
+                WHERE d.id_import_run = %s
+                  AND d.dataset_code = %s
+                ORDER BY c.id_chunk;
+                """,
+                (vector_summary.import_run_id, vector_summary.dataset),
+            )
+            rows = cursor.fetchall()
+        return [
+            {
+                "chunk_id": int(row[0]),
+                "chunk_text": row[1],
+            }
+            for row in rows
+        ]
+
+    def list_rag_vector_documents_preview(self, *, dataset: str, limit: int = 8) -> list[dict[str, Any]]:
+        vector_summary = self.get_rag_vector_base_summary(dataset=dataset)
+        if vector_summary is None:
+            return []
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT
+                    d.id_document,
+                    d.document_key,
+                    d.lei,
+                    d.norma,
+                    d.source_url,
+                    d.urn
+                FROM av3.rag_documents d
+                WHERE d.id_import_run = %s
+                  AND d.dataset_code = %s
+                ORDER BY d.id_document
+                LIMIT %s;
+                """,
+                (vector_summary.import_run_id, vector_summary.dataset, max(1, int(limit))),
+            )
+            rows = cursor.fetchall()
+        return [
+            {
+                "document_id": int(row[0]),
+                "document_key": row[1],
+                "lei": row[2],
+                "norma": row[3],
+                "url": row[4],
+                "urn": row[5],
+            }
+            for row in rows
+        ]
+
+    def list_rag_vector_chunks_preview(self, *, dataset: str, limit: int = 8) -> list[dict[str, Any]]:
+        vector_summary = self.get_rag_vector_base_summary(dataset=dataset)
+        if vector_summary is None:
+            return []
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT
+                    c.id_chunk,
+                    c.source_kind,
+                    c.artigo,
+                    c.topico,
+                    c.relevancia,
+                    c.tipo,
+                    c.chunk_text,
+                    d.id_document,
+                    d.lei,
+                    d.norma
+                FROM av3.rag_chunks c
+                JOIN av3.rag_documents d ON d.id_document = c.id_document
+                WHERE d.id_import_run = %s
+                  AND d.dataset_code = %s
+                ORDER BY c.id_chunk
+                LIMIT %s;
+                """,
+                (vector_summary.import_run_id, vector_summary.dataset, max(1, int(limit))),
+            )
+            rows = cursor.fetchall()
+        return [
+            {
+                "chunk_id": int(row[0]),
+                "chunk_kind": row[1],
+                "artigo": row[2],
+                "topico": row[3],
+                "relevancia": row[4],
+                "tipo": row[5],
+                "chunk_text": row[6],
+                "document_id": int(row[7]),
+                "lei": row[8],
+                "norma": row[9],
+            }
+            for row in rows
+        ]
+
+    def replace_rag_embeddings_for_active_vector_base(
+        self,
+        *,
+        dataset: str,
+        embedding_model: str,
+        embedding_dimensions: int | None,
+        provider: str,
+        api_base_url: str | None,
+        embeddings: list[dict[str, Any]],
+        latency_ms: int,
+    ) -> RagEmbeddingGenerationSummary:
+        vector_summary = self.get_rag_vector_base_summary(dataset=dataset)
+        if vector_summary is None:
+            raise ValueError(f"No active vector base found for {dataset.upper()}.")
+        if not embeddings:
+            raise ValueError("No embeddings were generated.")
+        dataset_code = vector_summary.dataset
+        model_name = embedding_model.strip()
+        provider_name = provider.strip()
+        if not model_name:
+            raise ValueError("embedding_model must not be empty.")
+        if not provider_name:
+            raise ValueError("provider must not be empty.")
+
+        with self.connection:
+            with self.connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    DELETE FROM av3.rag_embeddings
+                    WHERE id_chunk IN (
+                        SELECT c.id_chunk
+                        FROM av3.rag_chunks c
+                        JOIN av3.rag_documents d ON d.id_document = c.id_document
+                        WHERE d.id_import_run = %s
+                          AND d.dataset_code = %s
+                    )
+                      AND embedding_model = %s;
+                    """,
+                    (vector_summary.import_run_id, dataset_code, model_name),
+                )
+                for item in embeddings:
+                    chunk_id = int(item["chunk_id"])
+                    vector = item["embedding"]
+                    vector_literal = _vector_literal(vector)
+                    cursor.execute(
+                        """
+                        INSERT INTO av3.rag_embeddings
+                            (
+                                id_chunk,
+                                embedding_model,
+                                embedding_dimensions,
+                                embedding_vector,
+                                metadata_jsonb
+                            )
+                        VALUES (%s, %s, %s, %s::vector, %s::jsonb);
+                        """,
+                        (
+                            chunk_id,
+                            model_name,
+                            embedding_dimensions,
+                            vector_literal,
+                            jsonb_dumps(
+                                {
+                                    "provider": provider_name,
+                                    "api_base_url": api_base_url,
+                                }
+                            ),
+                        ),
+                    )
+                cursor.execute(
+                    """
+                    UPDATE av3.retrieval_runs
+                    SET embedding_model = %s
+                    WHERE id_retrieval_run = %s;
+                    """,
+                    (model_name, vector_summary.retrieval_run_id),
+                )
+
+        refreshed_summary = self.get_rag_vector_base_summary(dataset=dataset_code)
+        return RagEmbeddingGenerationSummary(
+            dataset=dataset_code,
+            dataset_name=vector_summary.dataset_name,
+            retrieval_run_id=vector_summary.retrieval_run_id,
+            retrieval_name=vector_summary.retrieval_name,
+            import_run_id=vector_summary.import_run_id,
+            embedding_model=model_name,
+            provider=provider_name,
+            api_base_url=api_base_url,
+            requested_dimensions=embedding_dimensions,
+            generated_embeddings=len(embeddings),
+            total_chunks=refreshed_summary.chunk_count if refreshed_summary is not None else len(embeddings),
+            latency_ms=latency_ms,
+            created_at=refreshed_summary.created_at if refreshed_summary is not None else vector_summary.created_at,
+        )
+
+    def search_rag_chunks_by_embedding(
+        self,
+        *,
+        dataset: str,
+        embedding_model: str,
+        query_vector: list[float],
+        top_k: int,
+    ) -> list[dict[str, Any]]:
+        vector_summary = self.get_rag_vector_base_summary(dataset=dataset)
+        if vector_summary is None:
+            raise ValueError(f"No active vector base found for {dataset.upper()}.")
+        vector_literal = _vector_literal(query_vector)
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT
+                    c.id_chunk,
+                    c.source_kind,
+                    c.artigo,
+                    c.topico,
+                    c.relevancia,
+                    c.tipo,
+                    c.chunk_text,
+                    d.id_document,
+                    d.document_key,
+                    d.lei,
+                    d.norma,
+                    d.source_url,
+                    d.urn,
+                    (e.embedding_vector <=> %s::vector) AS distance
+                FROM av3.rag_embeddings e
+                JOIN av3.rag_chunks c ON c.id_chunk = e.id_chunk
+                JOIN av3.rag_documents d ON d.id_document = c.id_document
+                WHERE d.id_import_run = %s
+                  AND d.dataset_code = %s
+                  AND e.embedding_model = %s
+                ORDER BY e.embedding_vector <=> %s::vector ASC, c.id_chunk ASC
+                LIMIT %s;
+                """,
+                (
+                    vector_literal,
+                    vector_summary.import_run_id,
+                    vector_summary.dataset,
+                    embedding_model,
+                    vector_literal,
+                    max(1, int(top_k)),
+                ),
+            )
+            rows = cursor.fetchall()
+        results: list[dict[str, Any]] = []
+        for index, row in enumerate(rows, start=1):
+            distance = float(row[13]) if row[13] is not None else None
+            similarity = None if distance is None else max(0.0, 1.0 - distance)
+            results.append(
+                {
+                    "rank": index,
+                    "chunk_id": int(row[0]),
+                    "chunk_kind": row[1],
+                    "artigo": row[2],
+                    "topico": row[3],
+                    "relevancia": row[4],
+                    "tipo": row[5],
+                    "chunk_text": row[6],
+                    "document_id": int(row[7]),
+                    "document_key": row[8],
+                    "lei": row[9],
+                    "norma": row[10],
+                    "url": row[11],
+                    "urn": row[12],
+                    "distance": distance,
+                    "similarity": similarity,
+                }
+            )
+        return results
+
     def list_rag_curation_runs(self, *, dataset: str, limit: int = 20) -> list[RagCurationImportRunRecord]:
         with self.connection.cursor() as cursor:
             cursor.execute(
@@ -2814,6 +3250,10 @@ def _sha256_text(value: str) -> str:
     import hashlib
 
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
+def _vector_literal(values: list[float]) -> str:
+    return "[" + ",".join(format(float(value), ".12g") for value in values) + "]"
 
 
 def _rag_document_key(
