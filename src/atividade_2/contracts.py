@@ -40,6 +40,7 @@ class JudgeSettings:
     database_url: str
     backup_root_file: str
     judge_provider: JudgeProvider
+    embedding_api_key: str | None
     remote_judge_base_url: str | None
     remote_judge_api_key: str | None
     remote_judge_endpoints: dict[str, RemoteJudgeEndpoint]
@@ -315,6 +316,41 @@ class RagVectorBaseSummary:
     chunk_count: int
     embedding_count: int
     status: str
+    created_at: str | None
+
+
+@dataclass(frozen=True)
+class RagEmbeddingModelConfigRecord:
+    """Persisted embedding-model configuration for one dataset."""
+
+    config_id: int
+    dataset: str
+    dataset_name: str
+    provider: str
+    model_name: str
+    dimensions: int | None
+    api_base_url: str | None
+    notes: str | None
+    updated_by: str
+    updated_at: str | None
+
+
+@dataclass(frozen=True)
+class RagEmbeddingGenerationSummary:
+    """Summary of one embedding-generation execution for a dataset."""
+
+    dataset: str
+    dataset_name: str
+    retrieval_run_id: int
+    retrieval_name: str
+    import_run_id: int
+    embedding_model: str
+    provider: str
+    api_base_url: str | None
+    requested_dimensions: int | None
+    generated_embeddings: int
+    total_chunks: int
+    latency_ms: int
     created_at: str | None
 
 

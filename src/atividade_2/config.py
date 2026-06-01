@@ -91,6 +91,7 @@ def load_settings(dotenv_path: str | Path | None = ".env", env: Mapping[str, str
         database_url=values.get("DATABASE_URL", DEFAULT_DATABASE_URL),
         backup_root_file=values.get("BACKUP_ROOT_FILE", "backup_atividade_2.sql"),
         judge_provider=provider,  # type: ignore[arg-type]
+        embedding_api_key=_empty_to_none(values.get("EMBEDDING_API_KEY")),
         remote_judge_base_url=_empty_to_none(values.get("REMOTE_JUDGE_BASE_URL")),
         remote_judge_api_key=_empty_to_none(values.get("REMOTE_JUDGE_API_KEY")),
         remote_judge_endpoints=_parse_remote_judge_endpoints(values),

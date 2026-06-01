@@ -149,6 +149,24 @@ def build_parser() -> argparse.ArgumentParser:
         help="Chunking strategy label recorded in rag_chunks and retrieval_runs.",
     )
     materialize_rag.set_defaults(handler=materialize_rag_base_command)
+
+    generate_rag_embeddings = subparsers.add_parser(
+        "generate-rag-embeddings",
+        help="Generate embeddings for the active materialized AV3 RAG base.",
+    )
+    generate_rag_embeddings.add_argument(
+        "--dataset",
+        choices=["J1", "J2", "OAB_Bench", "OAB_Exames"],
+        required=True,
+        help="Materialized dataset to embed. J1 maps to OAB_Bench; J2 maps to OAB_Exames.",
+    )
+    generate_rag_embeddings.add_argument(
+        "--batch-size",
+        type=_positive_int,
+        default=32,
+        help="Maximum chunk texts per embedding request.",
+    )
+    generate_rag_embeddings.set_defaults(handler=generate_rag_embeddings_command)
     return parser
 
 
@@ -291,6 +309,30 @@ def materialize_rag_base_command(args: argparse.Namespace) -> int:
     print(f"- chunk_count: {summary.chunk_count}")
     print(f"- embedding_count: {summary.embedding_count}")
     print(f"- vector_extension_enabled: {summary.vector_extension_enabled}")
+    return 0
+
+
+def generate_rag_embeddings_command(args: argparse.Namespace) -> int:
+    """Populate av3.rag_embeddings for one materialized dataset."""
+    from .rag_embeddings import RagEmbeddingGenerationService
+
+    result = RagEmbeddingGenerationService().run(
+        dataset=args.dataset,
+        batch_size=args.batch_size,
+    )
+    summary = result["summary"]
+
+    print("RAG embeddings generated:")
+    print(f"- dataset: {summary.dataset} ({summary.dataset_name})")
+    print(f"- import_run_id: {summary.import_run_id}")
+    print(f"- retrieval_run_id: {summary.retrieval_run_id}")
+    print(f"- retrieval_name: {summary.retrieval_name}")
+    print(f"- embedding_model: {summary.embedding_model}")
+    print(f"- provider: {summary.provider}")
+    print(f"- requested_dimensions: {summary.requested_dimensions}")
+    print(f"- generated_embeddings: {summary.generated_embeddings}")
+    print(f"- total_chunks: {summary.total_chunks}")
+    print(f"- latency_ms: {summary.latency_ms}")
     return 0
 
 

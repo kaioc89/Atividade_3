@@ -239,6 +239,20 @@ CREATE TABLE av3.curadoria_artigos (
 -- =========================
 -- 10. AV3 vector-ready RAG base
 -- =========================
+CREATE TABLE av3.embedding_model_configs (
+    id_embedding_config SERIAL PRIMARY KEY,
+    dataset_code VARCHAR(10) NOT NULL UNIQUE,
+    dataset_name VARCHAR(80) NOT NULL,
+    provider VARCHAR(60) NOT NULL,
+    model_name VARCHAR(160) NOT NULL,
+    dimensions INTEGER
+        CHECK (dimensions IS NULL OR dimensions >= 1),
+    api_base_url TEXT,
+    notes TEXT,
+    updated_by VARCHAR(120) NOT NULL DEFAULT 'system',
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE av3.rag_documents (
     id_document SERIAL PRIMARY KEY,
     id_import_run INTEGER NOT NULL
@@ -394,6 +408,10 @@ ON av3.rag_chunks(id_pergunta, source_kind);
 -- Embeddings lookup by chunk and model.
 CREATE INDEX idx_rag_embeddings_chunk_model
 ON av3.rag_embeddings(id_chunk, embedding_model);
+
+-- Embedding model configuration history by dataset.
+CREATE INDEX idx_embedding_model_configs_dataset
+ON av3.embedding_model_configs(dataset_code, updated_at DESC);
 
 -- Retrieval runs by source import and dataset.
 CREATE INDEX idx_retrieval_runs_import_dataset
