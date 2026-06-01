@@ -122,6 +122,33 @@ def build_parser() -> argparse.ArgumentParser:
         help="Directory or JSON/JSONL file with historical parsed/raw judge outputs. May be repeated.",
     )
     import_details.set_defaults(handler=import_evaluation_details_command)
+
+    materialize_rag = subparsers.add_parser(
+        "materialize-rag-base",
+        help="Materialize active AV3 curation into rag_documents, rag_chunks, and a retrieval_run.",
+    )
+    materialize_rag.add_argument(
+        "--dataset",
+        choices=["J1", "J2", "OAB_Bench", "OAB_Exames"],
+        required=True,
+        help="Curated dataset to materialize. J1 maps to OAB_Bench; J2 maps to OAB_Exames.",
+    )
+    materialize_rag.add_argument(
+        "--retrieval-name",
+        help="Optional retrieval run name. Defaults to <dataset>_curated_v1.",
+    )
+    materialize_rag.add_argument(
+        "--top-k",
+        type=_positive_int,
+        default=5,
+        help="Top-k value stored on the generated retrieval run.",
+    )
+    materialize_rag.add_argument(
+        "--chunking-strategy",
+        default="curated_articles_v1",
+        help="Chunking strategy label recorded in rag_chunks and retrieval_runs.",
+    )
+    materialize_rag.set_defaults(handler=materialize_rag_base_command)
     return parser
 
 
@@ -231,6 +258,40 @@ def import_evaluation_details_command(args: argparse.Namespace) -> int:
     for problem in report.problems:
         print(f"- {problem}")
     return 1 if report.problems else 0
+
+
+def materialize_rag_base_command(args: argparse.Namespace) -> int:
+    """Build the initial AV3 RAG base from the active imported curation."""
+    from .rag_curation import resolve_rag_curation_dataset
+    from .repositories import JudgeRepository
+
+    dataset_code = resolve_rag_curation_dataset(args.dataset)
+    settings = load_settings()
+    connection = connect(settings.database_url)
+    try:
+        repository = JudgeRepository(connection)
+        repository.ensure_schema()
+        summary = repository.materialize_rag_base_from_active_curation(
+            dataset=dataset_code,
+            retrieval_name=args.retrieval_name,
+            top_k=args.top_k,
+            chunking_strategy=args.chunking_strategy,
+        )
+    finally:
+        connection.close()
+
+    print("RAG base materialized:")
+    print(f"- dataset: {summary.dataset} ({summary.dataset_name})")
+    print(f"- import_run_id: {summary.import_run_id}")
+    print(f"- retrieval_run_id: {summary.retrieval_run_id}")
+    print(f"- retrieval_name: {summary.retrieval_name}")
+    print(f"- chunking_strategy: {summary.chunking_strategy}")
+    print(f"- top_k: {summary.top_k}")
+    print(f"- document_count: {summary.document_count}")
+    print(f"- chunk_count: {summary.chunk_count}")
+    print(f"- embedding_count: {summary.embedding_count}")
+    print(f"- vector_extension_enabled: {summary.vector_extension_enabled}")
+    return 0
 
 
 def _print_resolved_run(resolved: ResolvedRun) -> None:

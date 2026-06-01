@@ -883,6 +883,195 @@ class FakeMetaEvaluationService:
         }
 
 
+class FakeRagCurationService:
+    def __init__(self) -> None:
+        self.import_calls = []
+        self.activated_runs = []
+
+    def options(self) -> dict:
+        return {
+            "datasets": [
+                {
+                    "dataset": "J1",
+                    "dataset_name": "OAB_Bench",
+                    "total_questions": 70,
+                    "curated_questions": 12,
+                    "active_run_id": 7,
+                    "active_filename": "curadorias_j1.json",
+                    "active_imported_by": "Diego",
+                    "active_imported_at": "2026-06-01T10:00:00",
+                    "active_item_count": 12,
+                    "active_article_count": 48,
+                    "vector_status": "materializada_sem_embeddings",
+                    "vector_retrieval_run_id": 21,
+                    "vector_retrieval_name": "j1_curated_v1",
+                    "vector_document_count": 70,
+                    "vector_chunk_count": 234,
+                    "vector_embedding_count": 0,
+                },
+                {
+                    "dataset": "J2",
+                    "dataset_name": "OAB_Exames",
+                    "total_questions": 738,
+                    "curated_questions": 17,
+                    "active_run_id": 8,
+                    "active_filename": "curadorias_j2.json",
+                    "active_imported_by": "Diego",
+                    "active_imported_at": "2026-06-01T10:05:00",
+                    "active_item_count": 17,
+                    "active_article_count": 61,
+                    "vector_status": "desatualizada",
+                    "vector_retrieval_run_id": 22,
+                    "vector_retrieval_name": "j2_curated_v1",
+                    "vector_document_count": 449,
+                    "vector_chunk_count": 851,
+                    "vector_embedding_count": 0,
+                },
+            ]
+        }
+
+    def get(self, *, dataset: str) -> dict:
+        return {
+            "dataset": dataset,
+            "active": {
+                "dataset": dataset,
+                "dataset_name": "OAB_Bench" if dataset == "J1" else "OAB_Exames",
+                "total_questions": 70 if dataset == "J1" else 738,
+                "curated_questions": 12 if dataset == "J1" else 17,
+                "active_run_id": 7 if dataset == "J1" else 8,
+                "active_filename": f"curadorias_{dataset.lower()}.json",
+                "active_imported_by": "Diego",
+                "active_imported_at": "2026-06-01T10:00:00",
+                "active_item_count": 12 if dataset == "J1" else 17,
+                "active_article_count": 48 if dataset == "J1" else 61,
+                "vector_status": "materializada_sem_embeddings" if dataset == "J1" else "desatualizada",
+                "vector_retrieval_run_id": 21 if dataset == "J1" else 22,
+                "vector_retrieval_name": f"{dataset.lower()}_curated_v1",
+                "vector_document_count": 70 if dataset == "J1" else 449,
+                "vector_chunk_count": 234 if dataset == "J1" else 851,
+                "vector_embedding_count": 0,
+            },
+            "vector_base": {
+                "dataset": dataset,
+                "dataset_name": "OAB_Bench" if dataset == "J1" else "OAB_Exames",
+                "import_run_id": 7 if dataset == "J1" else 8,
+                "active_curation_run_id": 7 if dataset == "J1" else 8,
+                "matches_active_curation": dataset == "J1",
+                "retrieval_run_id": 21 if dataset == "J1" else 22,
+                "retrieval_name": f"{dataset.lower()}_curated_v1",
+                "retrieval_strategy": "curated_articles_v1",
+                "embedding_model": None,
+                "top_k": 5,
+                "vector_enabled": True,
+                "lexical_enabled": False,
+                "rerank_enabled": False,
+                "document_count": 70 if dataset == "J1" else 449,
+                "chunk_count": 234 if dataset == "J1" else 851,
+                "embedding_count": 0,
+                "status": "materializada_sem_embeddings" if dataset == "J1" else "desatualizada",
+                "created_at": "2026-06-01T10:15:00",
+            },
+            "runs": [
+                {
+                    "run_id": 7 if dataset == "J1" else 8,
+                    "dataset": dataset,
+                    "dataset_name": "OAB_Bench" if dataset == "J1" else "OAB_Exames",
+                    "filename": f"curadorias_{dataset.lower()}.json",
+                    "payload_hash": "abc123",
+                    "imported_by": "Diego",
+                    "imported_at": "2026-06-01T10:00:00",
+                    "item_count": 12 if dataset == "J1" else 17,
+                    "article_count": 48 if dataset == "J1" else 61,
+                    "active": True,
+                }
+            ],
+            "items": [
+                {
+                    "curation_id": 101 if dataset == "J1" else 201,
+                    "run_id": 7 if dataset == "J1" else 8,
+                    "dataset": dataset,
+                    "question_id": 95 if dataset == "J1" else 985,
+                    "question_external_id": "questao-externa",
+                    "question_sequence": 95 if dataset == "J1" else 985,
+                    "question_type": "QUESTAO" if dataset == "J1" else "OBJETIVA",
+                    "discipline": "Direito Administrativo",
+                    "subject": "Improbidade",
+                    "theme": "Lei 8.429/1992",
+                    "curator": "Wagner",
+                    "classified_at": "2026-05-30T12:00:00",
+                    "primary_norma": "Lei de Improbidade Administrativa",
+                    "article_count": 4,
+                }
+            ],
+        }
+
+    def detail(self, *, curation_id: int, dataset: str) -> dict:
+        return {
+            "detail": {
+                "curation_id": curation_id,
+                "run_id": 7 if dataset == "J1" else 8,
+                "dataset": dataset,
+                "question_id": 95 if dataset == "J1" else 985,
+                "question_external_id": "questao-externa",
+                "question_sequence": 95 if dataset == "J1" else 985,
+                "question_type": "QUESTAO" if dataset == "J1" else "OBJETIVA",
+                "prompt_system": "prompt original",
+                "question_text": "Enunciado da questao curada",
+                "answer_key": {"resposta": "gabarito"} if dataset == "J1" else "A",
+                "perguntas": [{"ordem": 1, "texto": "subpergunta"}] if dataset == "J1" else None,
+                "alternativas": None if dataset == "J1" else {"A": "alternativa correta"},
+                "total_points": 5.0 if dataset == "J1" else None,
+                "difficulty_level": "alta",
+                "difficulty_scale": 4,
+                "difficulty_criteria": ["fundamentacao", "tecnica"],
+                "discipline": "Direito Administrativo",
+                "subject": "Improbidade",
+                "theme": "Lei 8.429/1992",
+                "norma": "Lei de Improbidade Administrativa",
+                "lei": "Lei 8.429/1992",
+                "url": "https://www.planalto.gov.br/ccivil_03/leis/l8429.htm",
+                "urn": "urn:lex:br:federal:lei:1992-06-02;8429",
+                "curator": "Wagner",
+                "classified_at": "2026-05-30T12:00:00",
+                "metadata": {"dataset": dataset, "numero_questao_sequencial": 95 if dataset == "J1" else 985},
+                "raw_payload": {"id": "questao-externa", "tipo_questao": "QUESTAO"},
+                "articles": [
+                    {
+                        "ordem": 1,
+                        "artigo": "art. 11, VII",
+                        "topico": "Atos de improbidade",
+                        "relevancia": "alta",
+                        "tipo": "principal",
+                    }
+                ],
+            }
+        }
+
+    def import_json(self, *, filename: str, imported_by: str, raw_text: str) -> dict:
+        self.import_calls.append((filename, imported_by, raw_text))
+        return {
+            "action": "imported",
+            "dataset": "J1",
+            "run": {
+                "run_id": 9,
+                "dataset": "J1",
+                "dataset_name": "OAB_Bench",
+                "filename": filename,
+                "payload_hash": "hash",
+                "imported_by": imported_by,
+                "imported_at": "2026-06-01T11:00:00",
+                "item_count": 12,
+                "article_count": 48,
+                "active": True,
+            },
+            **self.get(dataset="J1"),
+        }
+
+    def activate_run(self, *, run_id: int, dataset: str) -> dict:
+        self.activated_runs.append((run_id, dataset))
+        return self.get(dataset=dataset)
+
+
 def test_web_index_contains_progress_element() -> None:
     client = TestClient(create_app(FakeRunJudgeService()))
 
@@ -1152,6 +1341,70 @@ def test_web_index_contains_meta_evaluation_tab() -> None:
     assert 'id="meta_history_next"' in response.text
     assert 'data-meta-history-sort="created_at"' in response.text
     assert response.text.index("Meta-avaliacoes registradas") < response.text.index("Avaliacao selecionada")
+
+
+def test_web_index_contains_rag_curation_tab() -> None:
+    client = TestClient(create_app(FakeRunJudgeService(), rag_curation_service=FakeRagCurationService()))
+
+    response = client.get("/")
+
+    assert response.status_code == 200
+    assert 'data-tab="rag-curation-panel">Curadoria RAG</button>' in response.text
+    assert 'id="rag_curation_dataset"' in response.text
+    assert 'id="rag_curation_imported_by"' in response.text
+    assert 'id="rag_curation_import"' in response.text
+    assert 'id="rag_curation_runs_body"' in response.text
+    assert 'id="rag_curation_items_body"' in response.text
+    assert 'id="rag_curation_articles_body"' in response.text
+    assert 'id="rag_vector_active_run"' in response.text
+    assert "Base vetorial ativa" in response.text
+    assert "function loadRagCurationOptions" in response.text
+    assert "function importRagCurationFile" in response.text
+    assert "function activateRagCurationRun" in response.text
+    assert "function renderRagCurationDetail" in response.text
+    assert "function renderRagVectorBase" in response.text
+
+
+def test_rag_curation_endpoints_return_options_import_and_activate() -> None:
+    rag_service = FakeRagCurationService()
+    client = TestClient(create_app(FakeRunJudgeService(), rag_curation_service=rag_service))
+    token = client.get("/api/config").json()["csrf_token"]
+
+    options = client.get("/api/rag-curation/options")
+    assert options.status_code == 200
+    assert options.json()["datasets"][0]["dataset"] == "J1"
+
+    current = client.get("/api/rag-curation", params={"dataset": "J1"})
+    assert current.status_code == 200
+    assert current.json()["active"]["active_run_id"] == 7
+    assert current.json()["vector_base"]["retrieval_run_id"] == 21
+    assert current.json()["vector_base"]["status"] == "materializada_sem_embeddings"
+
+    detail = client.get("/api/rag-curation/items/101", params={"dataset": "J1"})
+    assert detail.status_code == 200
+    assert detail.json()["detail"]["question_sequence"] == 95
+
+    imported = client.post(
+        "/api/rag-curation/import",
+        headers={
+            "x-csrf-token": token,
+            "x-curation-filename": "curadorias_j1.json",
+            "x-curation-imported-by": "Diego",
+            "content-type": "application/json",
+        },
+        content='[{"metadados":{"dataset":"J1","numero_questao_sequencial":95}}]',
+    )
+    assert imported.status_code == 200
+    assert rag_service.import_calls[-1][0] == "curadorias_j1.json"
+    assert rag_service.import_calls[-1][1] == "Diego"
+
+    activated = client.post(
+        "/api/rag-curation/runs/7/activate",
+        params={"dataset": "J1"},
+        headers={"x-csrf-token": token},
+    )
+    assert activated.status_code == 200
+    assert rag_service.activated_runs[-1] == (7, "J1")
 
 
 def test_web_index_contains_controlled_operational_log_enrichment() -> None:

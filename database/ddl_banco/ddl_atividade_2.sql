@@ -154,6 +154,177 @@ CREATE TABLE meta_avaliacoes (
 );
 
 -- =========================
+-- 9. AV3 RAG curation imports
+-- =========================
+CREATE SCHEMA IF NOT EXISTS av3;
+CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA public;
+
+CREATE TABLE av3.curadoria_import_runs (
+    id_import_run SERIAL PRIMARY KEY,
+    dataset_code VARCHAR(10) NOT NULL,
+    dataset_name VARCHAR(100) NOT NULL,
+    filename TEXT NOT NULL,
+    payload_hash CHAR(64) NOT NULL,
+    imported_by VARCHAR(120) NOT NULL,
+    imported_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    item_count INTEGER NOT NULL
+        CHECK (item_count >= 0),
+    article_count INTEGER NOT NULL
+        CHECK (article_count >= 0),
+    ativo BOOLEAN NOT NULL DEFAULT FALSE,
+    UNIQUE (dataset_code, payload_hash)
+);
+
+CREATE TABLE av3.curadoria_import_items_raw (
+    id_raw_item SERIAL PRIMARY KEY,
+    id_import_run INTEGER NOT NULL
+        REFERENCES av3.curadoria_import_runs(id_import_run)
+        ON DELETE CASCADE,
+    dataset_code VARCHAR(10) NOT NULL,
+    question_external_id TEXT NOT NULL,
+    question_sequence INTEGER NOT NULL,
+    id_pergunta INTEGER
+        REFERENCES perguntas(id_pergunta),
+    payload_hash CHAR(64) NOT NULL,
+    payload_jsonb JSONB NOT NULL
+);
+
+CREATE TABLE av3.curadoria_questoes (
+    id_curadoria SERIAL PRIMARY KEY,
+    id_import_run INTEGER NOT NULL
+        REFERENCES av3.curadoria_import_runs(id_import_run)
+        ON DELETE CASCADE,
+    dataset_code VARCHAR(10) NOT NULL,
+    id_pergunta INTEGER NOT NULL
+        REFERENCES perguntas(id_pergunta),
+    question_external_id TEXT NOT NULL,
+    question_sequence INTEGER NOT NULL,
+    tipo_questao TEXT NOT NULL,
+    prompt_system TEXT,
+    questao TEXT NOT NULL,
+    gabarito_jsonb JSONB NOT NULL,
+    perguntas_jsonb JSONB,
+    alternativas_jsonb JSONB,
+    pontuacao_total NUMERIC(10,2),
+    dificuldade_nivel TEXT,
+    dificuldade_escala INTEGER,
+    dificuldade_criterios_jsonb JSONB NOT NULL DEFAULT '[]'::jsonb,
+    disciplina TEXT,
+    assunto TEXT,
+    tema TEXT,
+    norma TEXT,
+    lei TEXT,
+    url TEXT,
+    urn TEXT,
+    curador TEXT,
+    dt_classificacao TIMESTAMP,
+    metadados_jsonb JSONB NOT NULL DEFAULT '{}'::jsonb,
+    raw_payload_jsonb JSONB NOT NULL DEFAULT '{}'::jsonb,
+    payload_hash CHAR(64) NOT NULL
+);
+
+CREATE TABLE av3.curadoria_artigos (
+    id_curadoria_artigo SERIAL PRIMARY KEY,
+    id_curadoria INTEGER NOT NULL
+        REFERENCES av3.curadoria_questoes(id_curadoria)
+        ON DELETE CASCADE,
+    ordem INTEGER NOT NULL
+        CHECK (ordem >= 1),
+    artigo TEXT NOT NULL,
+    topico TEXT,
+    relevancia TEXT,
+    tipo TEXT
+);
+
+-- =========================
+-- 10. AV3 vector-ready RAG base
+-- =========================
+CREATE TABLE av3.rag_documents (
+    id_document SERIAL PRIMARY KEY,
+    id_import_run INTEGER NOT NULL
+        REFERENCES av3.curadoria_import_runs(id_import_run)
+        ON DELETE CASCADE,
+    dataset_code VARCHAR(10) NOT NULL,
+    dataset_name VARCHAR(100) NOT NULL,
+    document_key CHAR(64) NOT NULL,
+    source_name TEXT NOT NULL,
+    source_type VARCHAR(40) NOT NULL,
+    source_url TEXT,
+    title TEXT NOT NULL,
+    lei TEXT,
+    norma TEXT,
+    urn TEXT,
+    temporal_reason TEXT,
+    inclusion_criteria TEXT,
+    metadata_jsonb JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (id_import_run, document_key)
+);
+
+CREATE TABLE av3.rag_chunks (
+    id_chunk SERIAL PRIMARY KEY,
+    id_document INTEGER NOT NULL
+        REFERENCES av3.rag_documents(id_document)
+        ON DELETE CASCADE,
+    id_curadoria INTEGER
+        REFERENCES av3.curadoria_questoes(id_curadoria)
+        ON DELETE SET NULL,
+    id_curadoria_artigo INTEGER
+        REFERENCES av3.curadoria_artigos(id_curadoria_artigo)
+        ON DELETE SET NULL,
+    id_pergunta INTEGER
+        REFERENCES perguntas(id_pergunta)
+        ON DELETE SET NULL,
+    chunk_index INTEGER NOT NULL,
+    chunk_text TEXT NOT NULL,
+    token_count INTEGER NOT NULL DEFAULT 0,
+    chunking_strategy VARCHAR(60) NOT NULL,
+    source_kind VARCHAR(40) NOT NULL,
+    artigo TEXT,
+    topico TEXT,
+    relevancia VARCHAR(40),
+    tipo VARCHAR(40),
+    tema TEXT,
+    assunto TEXT,
+    metadata_jsonb JSONB NOT NULL DEFAULT '{}'::jsonb,
+    content_hash CHAR(64) NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (id_document, chunk_index)
+);
+
+CREATE TABLE av3.rag_embeddings (
+    id_embedding SERIAL PRIMARY KEY,
+    id_chunk INTEGER NOT NULL
+        REFERENCES av3.rag_chunks(id_chunk)
+        ON DELETE CASCADE,
+    embedding_model VARCHAR(120) NOT NULL,
+    embedding_dimensions INTEGER,
+    embedding_vector vector,
+    metadata_jsonb JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (id_chunk, embedding_model)
+);
+
+CREATE TABLE av3.retrieval_runs (
+    id_retrieval_run SERIAL PRIMARY KEY,
+    id_import_run INTEGER NOT NULL
+        REFERENCES av3.curadoria_import_runs(id_import_run)
+        ON DELETE CASCADE,
+    dataset_code VARCHAR(10) NOT NULL,
+    name VARCHAR(160) NOT NULL,
+    retrieval_strategy VARCHAR(60) NOT NULL,
+    embedding_model VARCHAR(120),
+    top_k INTEGER NOT NULL
+        CHECK (top_k >= 1),
+    vector_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    lexical_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+    rerank_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+    ativo BOOLEAN NOT NULL DEFAULT FALSE,
+    metadata_jsonb JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- =========================
 -- Indexes
 -- =========================
 
@@ -185,3 +356,45 @@ ON avaliacoes_juiz(id_modelo_juiz);
 -- Meta-evaluations by evaluated row.
 CREATE INDEX idx_meta_avaliacoes_avaliacao
 ON meta_avaliacoes(id_avaliacao);
+
+-- Active RAG curation import per dataset.
+CREATE UNIQUE INDEX idx_curadoria_import_runs_active_dataset
+ON av3.curadoria_import_runs(dataset_code)
+WHERE ativo;
+
+-- Raw imported items by run.
+CREATE INDEX idx_curadoria_import_items_run
+ON av3.curadoria_import_items_raw(id_import_run);
+
+-- Normalized curated questions by dataset and run.
+CREATE INDEX idx_curadoria_questoes_dataset
+ON av3.curadoria_questoes(dataset_code, id_import_run, question_sequence);
+
+-- Curated articles by curation entry.
+CREATE INDEX idx_curadoria_artigos_curadoria
+ON av3.curadoria_artigos(id_curadoria, ordem);
+
+-- Active retrieval run per dataset.
+CREATE UNIQUE INDEX idx_retrieval_runs_active_dataset
+ON av3.retrieval_runs(dataset_code)
+WHERE ativo;
+
+-- Materialized RAG documents by import run and dataset.
+CREATE INDEX idx_rag_documents_import_dataset
+ON av3.rag_documents(id_import_run, dataset_code);
+
+-- Materialized chunks by document and order.
+CREATE INDEX idx_rag_chunks_document
+ON av3.rag_chunks(id_document, chunk_index);
+
+-- Materialized chunks by related question.
+CREATE INDEX idx_rag_chunks_question
+ON av3.rag_chunks(id_pergunta, source_kind);
+
+-- Embeddings lookup by chunk and model.
+CREATE INDEX idx_rag_embeddings_chunk_model
+ON av3.rag_embeddings(id_chunk, embedding_model);
+
+-- Retrieval runs by source import and dataset.
+CREATE INDEX idx_retrieval_runs_import_dataset
+ON av3.retrieval_runs(id_import_run, dataset_code, created_at DESC);

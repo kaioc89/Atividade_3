@@ -30,6 +30,7 @@ from .judge_prompt_configs import JudgePromptConfigService
 from .judge_clients.remote_http import RemoteJudgeError
 from .meta_evaluations import MetaEvaluationService
 from .parser import JudgeParseError
+from .rag_curation import RagCurationService
 from .repositories import JudgeRepository
 from .run_judge_service import RunJudgeRequest, RunJudgeResult, RunJudgeService
 from .config import load_settings
@@ -278,6 +279,7 @@ def create_app(
     database_reset_service: DatabaseResetService | None = None,
     judge_prompt_service: JudgePromptConfigService | None = None,
     meta_evaluation_service: MetaEvaluationService | None = None,
+    rag_curation_service: RagCurationService | None = None,
     audit_log_summary_service: AuditLogSummaryService | None = None,
     assistant_service: AssistantService | None = None,
 ) -> FastAPI:
@@ -294,6 +296,7 @@ def create_app(
     app.state.database_reset_service = database_reset_service or DatabaseResetService()
     app.state.judge_prompt_service = judge_prompt_service or JudgePromptConfigService()
     app.state.meta_evaluation_service = meta_evaluation_service or MetaEvaluationService()
+    app.state.rag_curation_service = rag_curation_service or RagCurationService()
     app.state.audit_log_summary_service = audit_log_summary_service or AuditLogSummaryService()
     app.state.assistant_enabled = assistant_enabled
     app.state.assistant_service = assistant_service or AssistantService(
@@ -403,6 +406,55 @@ def create_app(
             return request.app.state.meta_evaluation_service.history()
         except (RuntimeError, ValueError) as error:
             raise HTTPException(status_code=503, detail=str(error)) from error
+
+    @app.get("/api/rag-curation/options")
+    def get_rag_curation_options(request: Request) -> dict:
+        try:
+            return request.app.state.rag_curation_service.options()
+        except (RuntimeError, ValueError) as error:
+            raise HTTPException(status_code=503, detail=str(error)) from error
+
+    @app.get("/api/rag-curation")
+    def get_rag_curation(dataset: str, request: Request) -> dict:
+        try:
+            return request.app.state.rag_curation_service.get(dataset=dataset)
+        except (RuntimeError, ValueError) as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+
+    @app.get("/api/rag-curation/items/{curation_id}")
+    def get_rag_curation_detail(curation_id: int, dataset: str, request: Request) -> dict:
+        try:
+            return request.app.state.rag_curation_service.detail(curation_id=curation_id, dataset=dataset)
+        except (RuntimeError, ValueError) as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+
+    @app.post("/api/rag-curation/import", dependencies=[Depends(_require_csrf)])
+    async def import_rag_curation(request: Request) -> dict:
+        filename = request.headers.get("x-curation-filename", "")
+        imported_by = request.headers.get("x-curation-imported-by", "")
+        if not filename.lower().endswith(".json"):
+            raise HTTPException(status_code=400, detail="Selecione um arquivo .json de curadoria.")
+        try:
+            body = await request.body()
+            if not body:
+                raise HTTPException(status_code=400, detail="Arquivo de curadoria vazio.")
+            text = body.decode("utf-8")
+            return request.app.state.rag_curation_service.import_json(
+                filename=filename,
+                imported_by=imported_by,
+                raw_text=text,
+            )
+        except UnicodeDecodeError as error:
+            raise HTTPException(status_code=400, detail="O arquivo de curadoria deve estar em UTF-8.") from error
+        except (RuntimeError, ValueError) as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+
+    @app.post("/api/rag-curation/runs/{run_id}/activate", dependencies=[Depends(_require_csrf)])
+    def activate_rag_curation_run(run_id: int, dataset: str, request: Request) -> dict:
+        try:
+            return request.app.state.rag_curation_service.activate_run(run_id=run_id, dataset=dataset)
+        except (RuntimeError, ValueError) as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
 
     @app.get("/api/operational-log-summary")
     def get_operational_log_summary(request: Request) -> dict:
@@ -964,12 +1016,16 @@ _INDEX_HTML = """
     .database-actions-menu button.danger { color:var(--bad); }
     .database-actions-menu button.danger:hover { background:#fff5f5; }
     .prompt-layout { width:min(100%, 1440px); margin:0 auto; padding:20px; display:grid; grid-template-columns:minmax(320px,420px) minmax(0,1fr); gap:18px; }
+    .prompt-layout > section, .prompt-layout > aside { min-width:0; }
     .prompt-status { margin-top:10px; }
     .prompt-log-table table { min-width:1480px; }
-    .prompt-preview { margin-top:18px; display:grid; gap:10px; }
-    .prompt-preview-card { border:1px solid var(--line); border-radius:8px; background:#fff; padding:12px; }
+    .prompt-preview { margin-top:18px; display:grid; grid-template-columns:repeat(auto-fit, minmax(280px,1fr)); gap:10px; align-items:start; }
+    .prompt-preview-card { border:1px solid var(--line); border-radius:8px; background:#fff; padding:12px; min-width:0; overflow:hidden; }
     .prompt-preview-card h3 { margin:0 0 8px; font-size:13px; }
     .prompt-preview-card pre { margin:0; white-space:pre-wrap; word-break:break-word; max-height:320px; overflow:auto; }
+    .rag-curation-table table { min-width:980px; }
+    .rag-curation-articles-table table { min-width:720px; }
+    .rag-curation-detail-grid { grid-template-columns:repeat(auto-fit, minmax(320px,1fr)); }
     .meta-mode-switch { width:min(100%, 1440px); margin:0 auto; padding:20px 20px 0; display:flex; gap:8px; }
     .meta-mode-button { min-height:34px; border-color:var(--line); background:#fff; color:var(--muted); }
     .meta-mode-button.active { border-color:var(--accent); color:#fff; background:var(--accent); }
@@ -1183,6 +1239,7 @@ _INDEX_HTML = """
     <button class="tab-button" type="button" data-tab="history-panel">Execucoes anteriores</button>
       <button class="tab-button" type="button" data-tab="prompt-panel">Prompt Juizes</button>
       <button class="tab-button" type="button" data-tab="meta-panel">Meta-Avaliacao</button>
+      <button class="tab-button" type="button" data-tab="rag-curation-panel">Curadoria RAG</button>
   </nav>
   <main id="dashboard-panel" class="dashboard-layout tab-panel">
     <aside class="dashboard-filters">
@@ -1893,6 +1950,184 @@ _INDEX_HTML = """
         </section>
       </div>
     </div>
+    <div id="rag-curation-panel" class="tab-panel" hidden>
+      <div class="prompt-layout">
+        <aside>
+          <h2>Curadoria RAG</h2>
+          <label>Dataset
+            <select id="rag_curation_dataset"></select>
+          </label>
+          <label>Importado por
+            <input id="rag_curation_imported_by" autocomplete="off" placeholder="Nome de quem esta importando o JSON">
+          </label>
+          <div class="actions">
+            <button class="secondary" id="rag_curation_reload" type="button">Recarregar</button>
+            <button class="secondary" id="rag_curation_pick_file" type="button">Selecionar JSON</button>
+            <button id="rag_curation_import" type="button">Importar JSON</button>
+          </div>
+          <input id="rag_curation_file" type="file" accept=".json,application/json,text/plain" hidden>
+          <div id="rag_curation_status" class="status prompt-status">Selecione um dataset para visualizar a curadoria importada.</div>
+          <div class="prompt-preview">
+            <div class="prompt-preview-card">
+              <h3>Cobertura por dataset</h3>
+              <div class="table-wrap prompt-log-table">
+                <table aria-label="Cobertura de curadoria por dataset">
+                  <thead>
+                    <tr>
+                      <th>dataset</th>
+                      <th>base</th>
+                      <th>curadas</th>
+                      <th>run ativa</th>
+                      <th>retrieval</th>
+                      <th>docs</th>
+                      <th>chunks</th>
+                      <th>vetorial</th>
+                      <th>ultima carga</th>
+                    </tr>
+                  </thead>
+                  <tbody id="rag_curation_datasets_body">
+                    <tr><td colspan="9" class="muted">Nenhuma cobertura carregada.</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </aside>
+        <section>
+          <div class="prompt-preview">
+            <div class="prompt-preview-card">
+              <h3>Versao ativa</h3>
+              <div class="muted" id="rag_curation_active_meta">Nenhuma versao ativa carregada.</div>
+              <table aria-label="Resumo da versao ativa da curadoria">
+                <tbody>
+                  <tr><th>Arquivo</th><td id="rag_curation_active_filename" class="muted">-</td></tr>
+                  <tr><th>Importado por</th><td id="rag_curation_active_imported_by" class="muted">-</td></tr>
+                  <tr><th>Importado em</th><td id="rag_curation_active_imported_at" class="muted">-</td></tr>
+                  <tr><th>Questoes curadas</th><td id="rag_curation_active_coverage" class="muted">-</td></tr>
+                  <tr><th>Itens importados</th><td id="rag_curation_active_item_count" class="muted">-</td></tr>
+                  <tr><th>Artigos curados</th><td id="rag_curation_active_article_count" class="muted">-</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="prompt-preview-card">
+              <h3>Base vetorial ativa</h3>
+              <div class="muted" id="rag_vector_active_meta">Nenhuma base vetorial ativa para esse dataset.</div>
+              <table aria-label="Resumo da base vetorial ativa">
+                <tbody>
+                  <tr><th>Run</th><td id="rag_vector_active_run" class="muted">-</td></tr>
+                  <tr><th>Status</th><td id="rag_vector_active_status" class="muted">-</td></tr>
+                  <tr><th>Estrategia</th><td id="rag_vector_active_strategy" class="muted">-</td></tr>
+                  <tr><th>Top-K</th><td id="rag_vector_active_top_k" class="muted">-</td></tr>
+                  <tr><th>Documentos</th><td id="rag_vector_active_document_count" class="muted">-</td></tr>
+                  <tr><th>Chunks</th><td id="rag_vector_active_chunk_count" class="muted">-</td></tr>
+                  <tr><th>Embeddings</th><td id="rag_vector_active_embedding_count" class="muted">-</td></tr>
+                  <tr><th>Modelo embedding</th><td id="rag_vector_active_embedding_model" class="muted">-</td></tr>
+                  <tr><th>Criada em</th><td id="rag_vector_active_created_at" class="muted">-</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <div style="height:16px"></div>
+          <h2>Importacoes recentes</h2>
+          <div class="table-wrap prompt-log-table rag-curation-table">
+            <table aria-label="Historico de importacoes da curadoria RAG">
+              <thead>
+                <tr>
+                  <th>run</th>
+                  <th>quando</th>
+                  <th>quem</th>
+                  <th>arquivo</th>
+                  <th>itens</th>
+                  <th>artigos</th>
+                  <th>status</th>
+                  <th>acao</th>
+                </tr>
+              </thead>
+              <tbody id="rag_curation_runs_body">
+                <tr><td colspan="8" class="muted">Nenhuma importacao carregada.</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div style="height:16px"></div>
+          <h2>Questoes curadas</h2>
+          <div class="table-wrap prompt-log-table rag-curation-table">
+            <table aria-label="Lista de questoes curadas para RAG">
+              <thead>
+                <tr>
+                  <th>detalhe</th>
+                  <th>seq</th>
+                  <th>id_pergunta</th>
+                  <th>tipo</th>
+                  <th>disciplina</th>
+                  <th>tema</th>
+                  <th>curador</th>
+                  <th>norma</th>
+                  <th>artigos</th>
+                </tr>
+              </thead>
+              <tbody id="rag_curation_items_body">
+                <tr><td colspan="9" class="muted">Nenhuma curadoria carregada.</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div style="height:16px"></div>
+          <div class="prompt-preview rag-curation-detail-grid">
+            <div class="prompt-preview-card">
+              <h3>Curadoria selecionada</h3>
+              <div class="muted" id="rag_curation_detail_meta">Selecione uma questao curada para ver os detalhes.</div>
+              <table aria-label="Resumo da curadoria selecionada">
+                <tbody>
+                  <tr><th>Tipo</th><td id="rag_curation_detail_type" class="muted">-</td></tr>
+                  <tr><th>Disciplina</th><td id="rag_curation_detail_discipline" class="muted">-</td></tr>
+                  <tr><th>Assunto</th><td id="rag_curation_detail_subject" class="muted">-</td></tr>
+                  <tr><th>Tema</th><td id="rag_curation_detail_theme" class="muted">-</td></tr>
+                  <tr><th>Curador</th><td id="rag_curation_detail_curator" class="muted">-</td></tr>
+                  <tr><th>Classificada em</th><td id="rag_curation_detail_classified_at" class="muted">-</td></tr>
+                  <tr><th>Lei / norma</th><td id="rag_curation_detail_lei_norma" class="muted">-</td></tr>
+                  <tr><th>Fonte</th><td id="rag_curation_detail_url" class="muted">-</td></tr>
+                  <tr><th>URN</th><td id="rag_curation_detail_urn" class="muted">-</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="prompt-preview-card">
+              <h3>Artigos curados</h3>
+              <div class="table-wrap prompt-log-table rag-curation-articles-table">
+                <table aria-label="Artigos curados da questao selecionada">
+                  <thead>
+                    <tr>
+                      <th>ordem</th>
+                      <th>artigo</th>
+                      <th>topico</th>
+                      <th>relevancia</th>
+                      <th>tipo</th>
+                    </tr>
+                  </thead>
+                  <tbody id="rag_curation_articles_body">
+                    <tr><td colspan="5" class="muted">Nenhum artigo carregado.</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            <div class="prompt-preview-card">
+              <h3>Questao</h3>
+              <pre id="rag_curation_detail_question">Selecione uma questao curada para ver o enunciado.</pre>
+            </div>
+            <div class="prompt-preview-card">
+              <h3>Gabarito</h3>
+              <pre id="rag_curation_detail_answer_key">Selecione uma questao curada para ver o gabarito.</pre>
+            </div>
+            <div class="prompt-preview-card">
+              <h3>Metadados</h3>
+              <pre id="rag_curation_detail_metadata">Selecione uma questao curada para ver os metadados.</pre>
+            </div>
+            <div class="prompt-preview-card">
+              <h3>Payload bruto</h3>
+              <pre id="rag_curation_detail_raw_payload">Selecione uma questao curada para ver o payload original.</pre>
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
   <div class="assistant-widget" aria-live="polite"__ASSISTANT_WIDGET_HIDDEN__>
     <section id="assistant-chat-panel" class="assistant-panel" aria-label="Chat do assistente" hidden>
       <div class="assistant-head">
@@ -1991,9 +2226,11 @@ _INDEX_HTML = """
     let runHistoryPromise = null;
     let promptOptionsLoaded = false;
     let metaOptionsLoaded = false;
+    let ragCurationOptionsLoaded = false;
     let metaHistoryLoaded = false;
     let metaHistoryRecords = [];
     let metaHistoryFilteredRecords = [];
+    let ragCurationDatasetOptions = [];
     let selectedMetaHistoryId = null;
     let metaHistorySort = {key: "created_at", direction: "desc"};
     let metaEvaluationOptions = [];
@@ -3916,6 +4153,383 @@ _INDEX_HTML = """
       else renderMetaEvaluationState(null, []);
     }
 
+    async function loadRagCurationOptions(preferredDataset = null) {
+      setText("rag_curation_status", "Carregando cobertura da curadoria...");
+      try {
+        const response = await fetch("/api/rag-curation/options");
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.detail || "Falha ao carregar datasets de curadoria.");
+        ragCurationDatasetOptions = data.datasets || [];
+        const options = ragCurationDatasetOptions.map((entry) => ({
+          value: entry.dataset,
+          label: `${display(entry.dataset)} | ${display(entry.dataset_name)} (${display(entry.curated_questions)}/${display(entry.total_questions)})`
+        }));
+        populateSelect("rag_curation_dataset", options, "value", "label");
+        renderRagCurationDatasetCoverage(ragCurationDatasetOptions);
+        ragCurationOptionsLoaded = true;
+        const selectedDataset = preferredDataset || value("rag_curation_dataset");
+        if (selectedDataset) {
+          document.getElementById("rag_curation_dataset").value = selectedDataset;
+          await loadRagCurationDataset(selectedDataset);
+        } else {
+          setText("rag_curation_status", "Nenhum dataset disponivel para curadoria.");
+          renderRagCurationDatasetState(null, [], []);
+        }
+      } catch (error) {
+        setText("rag_curation_status", friendlyErrorMessage(error.message));
+      }
+    }
+
+    async function loadRagCurationDataset(dataset = value("rag_curation_dataset")) {
+      if (!dataset) {
+        renderRagCurationDatasetState(null, [], [], null);
+        setText("rag_curation_status", "Selecione um dataset para visualizar a curadoria.");
+        return;
+      }
+      setText("rag_curation_status", "Carregando curadoria...");
+      try {
+        const response = await fetch(`/api/rag-curation?dataset=${encodeURIComponent(dataset)}`);
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.detail || "Falha ao carregar curadoria.");
+        renderRagCurationDatasetState(data.active, data.runs || [], data.items || [], data.vector_base || null);
+        if (data.active) {
+          setText(
+            "rag_curation_status",
+            `Curadoria ativa de ${display(dataset)} carregada com ${display(data.active.curated_questions)} questoes curadas.`
+          );
+        } else {
+          setText("rag_curation_status", `Nenhuma versao ativa encontrada para ${display(dataset)}.`);
+        }
+      } catch (error) {
+        renderRagCurationDatasetState(null, [], [], null);
+        setText("rag_curation_status", friendlyErrorMessage(error.message));
+      }
+    }
+
+    function renderRagCurationDatasetCoverage(rows) {
+      const body = document.getElementById("rag_curation_datasets_body");
+      body.textContent = "";
+      if (!rows.length) {
+        appendTableMessage(body, 9, "Nenhum dataset de curadoria encontrado.");
+        return;
+      }
+      rows.forEach((entry) => {
+        const row = document.createElement("tr");
+        appendCell(row, display(entry.dataset));
+        appendCell(row, display(entry.dataset_name));
+        appendCell(row, `${display(entry.curated_questions)} / ${display(entry.total_questions)}`);
+        appendCell(row, entry.active_run_id ? `run ${display(entry.active_run_id)}` : "-");
+        appendCell(
+          row,
+          entry.vector_retrieval_run_id
+            ? `${display(entry.vector_retrieval_name)} (#${display(entry.vector_retrieval_run_id)})`
+            : "-"
+        );
+        appendCell(row, display(entry.vector_document_count));
+        appendCell(row, display(entry.vector_chunk_count));
+        appendCell(row, formatRagVectorStatus(entry.vector_status));
+        appendCell(row, formatDateTime(entry.active_imported_at));
+        body.appendChild(row);
+      });
+    }
+
+    function renderRagCurationDatasetState(active, runs, items, vectorBase) {
+      renderRagCurationActiveSummary(active);
+      renderRagVectorBase(vectorBase);
+      renderRagCurationRuns(runs || []);
+      renderRagCurationItems(items || []);
+      renderRagCurationDetail(null);
+    }
+
+    function formatRagVectorStatus(status) {
+      switch (status) {
+        case "pronta_com_embeddings":
+          return "pronta com embeddings";
+        case "materializada_sem_embeddings":
+          return "materializada sem embeddings";
+        case "desatualizada":
+          return "desatualizada";
+        case "nao_materializada":
+          return "nao materializada";
+        default:
+          return display(status);
+      }
+    }
+
+    function renderRagCurationActiveSummary(active) {
+      if (!active) {
+        setText("rag_curation_active_meta", "Nenhuma versao ativa carregada.");
+        setText("rag_curation_active_filename", "-");
+        setText("rag_curation_active_imported_by", "-");
+        setText("rag_curation_active_imported_at", "-");
+        setText("rag_curation_active_coverage", "-");
+        setText("rag_curation_active_item_count", "-");
+        setText("rag_curation_active_article_count", "-");
+        return;
+      }
+      setText(
+        "rag_curation_active_meta",
+        `${display(active.dataset)} | ${display(active.dataset_name)} | run ${display(active.active_run_id)}`
+      );
+      setText("rag_curation_active_filename", display(active.active_filename));
+      setText("rag_curation_active_imported_by", display(active.active_imported_by));
+      setText("rag_curation_active_imported_at", formatDateTime(active.active_imported_at));
+      setText(
+        "rag_curation_active_coverage",
+        `${display(active.curated_questions)} / ${display(active.total_questions)} questoes`
+      );
+      setText("rag_curation_active_item_count", display(active.active_item_count));
+      setText("rag_curation_active_article_count", display(active.active_article_count));
+    }
+
+    function renderRagVectorBase(vectorBase) {
+      if (!vectorBase) {
+        setText("rag_vector_active_meta", "Nenhuma base vetorial ativa para esse dataset.");
+        setText("rag_vector_active_run", "-");
+        setText("rag_vector_active_status", "-");
+        setText("rag_vector_active_strategy", "-");
+        setText("rag_vector_active_top_k", "-");
+        setText("rag_vector_active_document_count", "-");
+        setText("rag_vector_active_chunk_count", "-");
+        setText("rag_vector_active_embedding_count", "-");
+        setText("rag_vector_active_embedding_model", "-");
+        setText("rag_vector_active_created_at", "-");
+        return;
+      }
+      setText(
+        "rag_vector_active_meta",
+        `${display(vectorBase.dataset)} | retrieval #${display(vectorBase.retrieval_run_id)} | import run ${display(vectorBase.import_run_id)}`
+      );
+      setText("rag_vector_active_run", display(vectorBase.retrieval_name));
+      setText("rag_vector_active_status", formatRagVectorStatus(vectorBase.status));
+      setText("rag_vector_active_strategy", display(vectorBase.retrieval_strategy));
+      setText("rag_vector_active_top_k", display(vectorBase.top_k));
+      setText("rag_vector_active_document_count", display(vectorBase.document_count));
+      setText("rag_vector_active_chunk_count", display(vectorBase.chunk_count));
+      setText("rag_vector_active_embedding_count", display(vectorBase.embedding_count));
+      setText("rag_vector_active_embedding_model", display(vectorBase.embedding_model));
+      setText("rag_vector_active_created_at", formatDateTime(vectorBase.created_at));
+    }
+
+    function renderRagCurationRuns(rows) {
+      const body = document.getElementById("rag_curation_runs_body");
+      body.textContent = "";
+      if (!rows.length) {
+        appendTableMessage(body, 8, "Nenhuma importacao registrada para esse dataset.");
+        return;
+      }
+      rows.forEach((entry) => {
+        const row = document.createElement("tr");
+        appendCell(row, display(entry.run_id));
+        appendCell(row, formatDateTime(entry.imported_at));
+        appendCell(row, display(entry.imported_by));
+        appendCell(row, display(entry.filename));
+        appendCell(row, display(entry.item_count));
+        appendCell(row, display(entry.article_count));
+        appendCell(row, entry.active ? "ativa" : "historica");
+        const actionCell = document.createElement("td");
+        if (entry.active) {
+          actionCell.textContent = "Ativa";
+        } else {
+          const button = document.createElement("button");
+          button.type = "button";
+          button.className = "secondary";
+          button.textContent = "Ativar";
+          button.onclick = () => activateRagCurationRun(entry.run_id);
+          actionCell.appendChild(button);
+        }
+        row.appendChild(actionCell);
+        body.appendChild(row);
+      });
+    }
+
+    function renderRagCurationItems(rows) {
+      const body = document.getElementById("rag_curation_items_body");
+      body.textContent = "";
+      if (!rows.length) {
+        appendTableMessage(body, 9, "Nenhuma questao curada disponivel na versao ativa.");
+        return;
+      }
+      rows.forEach((entry) => {
+        const row = document.createElement("tr");
+        const detailCell = document.createElement("td");
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "detail-button";
+        button.textContent = "Ver";
+        button.onclick = () => loadRagCurationDetail(entry.curation_id);
+        detailCell.appendChild(button);
+        row.appendChild(detailCell);
+        appendCell(row, display(entry.question_sequence));
+        appendCell(row, display(entry.question_id));
+        appendCell(row, display(entry.question_type));
+        appendCell(row, display(entry.discipline));
+        appendCell(row, display(entry.theme));
+        appendCell(row, display(entry.curator));
+        appendCell(row, display(entry.primary_norma));
+        appendCell(row, display(entry.article_count));
+        body.appendChild(row);
+      });
+    }
+
+    async function loadRagCurationDetail(curationId) {
+      const dataset = value("rag_curation_dataset");
+      if (!dataset || !curationId) {
+        renderRagCurationDetail(null);
+        return;
+      }
+      try {
+        const response = await fetch(`/api/rag-curation/items/${encodeURIComponent(curationId)}?dataset=${encodeURIComponent(dataset)}`);
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.detail || "Falha ao carregar detalhe da curadoria.");
+        renderRagCurationDetail(data.detail || null);
+      } catch (error) {
+        renderRagCurationDetail(null);
+        setText("rag_curation_status", friendlyErrorMessage(error.message));
+      }
+    }
+
+    function renderRagCurationDetail(detail) {
+      if (!detail) {
+        setText("rag_curation_detail_meta", "Selecione uma questao curada para ver os detalhes.");
+        setText("rag_curation_detail_type", "-");
+        setText("rag_curation_detail_discipline", "-");
+        setText("rag_curation_detail_subject", "-");
+        setText("rag_curation_detail_theme", "-");
+        setText("rag_curation_detail_curator", "-");
+        setText("rag_curation_detail_classified_at", "-");
+        setText("rag_curation_detail_lei_norma", "-");
+        setText("rag_curation_detail_url", "-");
+        setText("rag_curation_detail_urn", "-");
+        setText("rag_curation_detail_question", "Selecione uma questao curada para ver o enunciado.");
+        setText("rag_curation_detail_answer_key", "Selecione uma questao curada para ver o gabarito.");
+        setText("rag_curation_detail_metadata", "Selecione uma questao curada para ver os metadados.");
+        setText("rag_curation_detail_raw_payload", "Selecione uma questao curada para ver o payload original.");
+        renderRagCurationArticles([]);
+        return;
+      }
+      setText(
+        "rag_curation_detail_meta",
+        `Dataset ${display(detail.dataset)} | curadoria ${display(detail.curation_id)} | questao ${display(detail.question_sequence)} | id_pergunta ${display(detail.question_id)}`
+      );
+      setText("rag_curation_detail_type", display(detail.question_type));
+      setText("rag_curation_detail_discipline", display(detail.discipline));
+      setText("rag_curation_detail_subject", display(detail.subject));
+      setText("rag_curation_detail_theme", display(detail.theme));
+      setText("rag_curation_detail_curator", display(detail.curator));
+      setText("rag_curation_detail_classified_at", formatDateTime(detail.classified_at));
+      setText(
+        "rag_curation_detail_lei_norma",
+        `${detail.lei ? `${detail.lei} | ` : ""}${display(detail.norma)}`
+      );
+      setText("rag_curation_detail_url", display(detail.url));
+      setText("rag_curation_detail_urn", display(detail.urn));
+      setText("rag_curation_detail_question", detail.question_text || "-");
+      setText("rag_curation_detail_answer_key", formatStructuredValue(detail.answer_key));
+      setText("rag_curation_detail_metadata", formatStructuredValue(detail.metadata));
+      setText("rag_curation_detail_raw_payload", formatStructuredValue(detail.raw_payload));
+      renderRagCurationArticles(detail.articles || []);
+    }
+
+    function renderRagCurationArticles(rows) {
+      const body = document.getElementById("rag_curation_articles_body");
+      body.textContent = "";
+      if (!rows.length) {
+        appendTableMessage(body, 5, "Nenhum artigo curado disponivel.");
+        return;
+      }
+      rows.forEach((entry) => {
+        const row = document.createElement("tr");
+        appendCell(row, display(entry.ordem));
+        appendCell(row, display(entry.artigo));
+        appendCell(row, display(entry.topico));
+        appendCell(row, display(entry.relevancia));
+        appendCell(row, display(entry.tipo));
+        body.appendChild(row);
+      });
+    }
+
+    function formatStructuredValue(value) {
+      if (value === null || value === undefined || value === "") return "-";
+      if (typeof value === "string") return value;
+      try {
+        return JSON.stringify(value, null, 2);
+      } catch (error) {
+        return String(value);
+      }
+    }
+
+    async function postRagCurationFile(file, importedBy, retryOnCsrf = true) {
+      if (!csrfToken) await loadConfig();
+      const response = await fetch("/api/rag-curation/import", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-csrf-token": csrfToken,
+          "x-curation-filename": file.name,
+          "x-curation-imported-by": importedBy,
+        },
+        body: await file.arrayBuffer(),
+      });
+      const data = await response.json();
+      if (response.status === 403 && data.detail === "Invalid CSRF token." && retryOnCsrf) {
+        await loadConfig();
+        return postRagCurationFile(file, importedBy, false);
+      }
+      if (!response.ok) throw new Error(data.detail || "Falha ao importar curadoria.");
+      return data;
+    }
+
+    function clearRagCurationFileSelection() {
+      const input = document.getElementById("rag_curation_file");
+      input.value = "";
+    }
+
+    async function importRagCurationFile() {
+      const file = document.getElementById("rag_curation_file").files?.[0];
+      const importedBy = value("rag_curation_imported_by").trim();
+      if (!importedBy) {
+        setText("rag_curation_status", "Informe quem esta importando a curadoria.");
+        return;
+      }
+      if (!file) {
+        setText("rag_curation_status", "Selecione um arquivo JSON de curadoria.");
+        return;
+      }
+      try {
+        setText("rag_curation_status", `Importando ${file.name}...`);
+        const data = await postRagCurationFile(file, importedBy);
+        await loadRagCurationOptions(data.dataset || value("rag_curation_dataset"));
+        setText(
+          "rag_curation_status",
+          data.action === "activated_existing"
+            ? `JSON ja conhecido. Run existente reativada para ${display(data.dataset)}.`
+            : `Curadoria importada com sucesso para ${display(data.dataset)} a partir de ${display(data.run?.filename)}.`
+        );
+        clearRagCurationFileSelection();
+      } catch (error) {
+        setText("rag_curation_status", friendlyErrorMessage(error.message));
+      }
+    }
+
+    async function activateRagCurationRun(runId) {
+      const dataset = value("rag_curation_dataset");
+      if (!dataset || !runId) return;
+      try {
+        setText("rag_curation_status", `Ativando run ${display(runId)}...`);
+        const response = await fetch(`/api/rag-curation/runs/${encodeURIComponent(runId)}/activate?dataset=${encodeURIComponent(dataset)}`, {
+          method: "POST",
+          headers: {"x-csrf-token": csrfToken},
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.detail || "Falha ao ativar a run de curadoria.");
+        await loadRagCurationOptions(dataset);
+        setText("rag_curation_status", `Run ${display(runId)} ativada para ${display(dataset)}.`);
+      } catch (error) {
+        setText("rag_curation_status", friendlyErrorMessage(error.message));
+      }
+    }
+
     async function loadMetaEvaluation() {
       const evaluationId = getMetaEvaluationId();
       if (!evaluationId) {
@@ -4576,6 +5190,7 @@ _INDEX_HTML = """
       if (targetId === "history-panel") loadHistory();
       if (targetId === "prompt-panel" && !promptOptionsLoaded) loadPromptOptions();
       if (targetId === "meta-panel" && !metaOptionsLoaded) loadMetaOptions();
+      if (targetId === "rag-curation-panel" && !ragCurationOptionsLoaded) loadRagCurationOptions();
     }
 
     async function loadConfig() {
@@ -4822,6 +5437,18 @@ _INDEX_HTML = """
     document.getElementById("prompt_dataset").onchange = () => loadPromptConfig();
     document.getElementById("prompt_reload").onclick = () => loadPromptConfig();
     document.getElementById("prompt_save").onclick = () => savePromptConfig();
+    document.getElementById("rag_curation_dataset").onchange = () => loadRagCurationDataset();
+    document.getElementById("rag_curation_reload").onclick = () => loadRagCurationDataset();
+    document.getElementById("rag_curation_pick_file").onclick = () => {
+      clearRagCurationFileSelection();
+      document.getElementById("rag_curation_file").click();
+    };
+    document.getElementById("rag_curation_import").onclick = () => importRagCurationFile();
+    document.getElementById("rag_curation_file").onchange = () => {
+      const file = document.getElementById("rag_curation_file").files?.[0];
+      if (!file) return;
+      setText("rag_curation_status", `Arquivo selecionado: ${file.name}. Clique em Importar JSON para concluir.`);
+    };
     document.getElementById("meta_evaluation_select").onfocus = () => renderMetaEvaluationOptions();
     document.getElementById("meta_evaluation_select").oninput = () => {
       selectedMetaEvaluationId = "";
