@@ -16,6 +16,12 @@ from .contracts import (
     MetaEvaluationRecord,
     MetaEvaluationSubject,
     ModelSpec,
+    RagCurationDatasetSummary,
+    RagCurationImportRunRecord,
+    RagCurationItemDetail,
+    RagCurationItemSummary,
+    RagBaseMaterializationSummary,
+    RagVectorBaseSummary,
     StoredJudgeRole,
 )
 from .evaluation_details import EvaluationDetails, jsonb_dumps
@@ -544,6 +550,242 @@ class JudgeRepository:
             """
         )
 
+    def _ensure_rag_curation_schema(self, cursor: Any) -> None:
+        cursor.execute("CREATE SCHEMA IF NOT EXISTS av3;")
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS av3.curadoria_import_runs (
+                id_import_run SERIAL PRIMARY KEY,
+                dataset_code VARCHAR(10) NOT NULL,
+                dataset_name VARCHAR(80) NOT NULL,
+                filename TEXT NOT NULL,
+                payload_hash CHAR(64) NOT NULL,
+                imported_by VARCHAR(120) NOT NULL,
+                imported_at TIMESTAMP NOT NULL DEFAULT NOW(),
+                item_count INTEGER NOT NULL,
+                article_count INTEGER NOT NULL,
+                ativo BOOLEAN NOT NULL DEFAULT FALSE,
+                UNIQUE (dataset_code, payload_hash)
+            );
+            """
+        )
+        cursor.execute(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_curadoria_import_runs_active_dataset
+            ON av3.curadoria_import_runs (dataset_code)
+            WHERE ativo;
+            """
+        )
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS av3.curadoria_import_items_raw (
+                id_raw_item SERIAL PRIMARY KEY,
+                id_import_run INTEGER NOT NULL
+                    REFERENCES av3.curadoria_import_runs(id_import_run) ON DELETE CASCADE,
+                dataset_code VARCHAR(10) NOT NULL,
+                question_external_id TEXT NOT NULL,
+                question_sequence INTEGER NOT NULL,
+                id_pergunta INTEGER NOT NULL REFERENCES perguntas(id_pergunta),
+                payload_hash CHAR(64) NOT NULL,
+                payload_jsonb JSONB NOT NULL,
+                created_at TIMESTAMP NOT NULL DEFAULT NOW()
+            );
+            """
+        )
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS av3.curadoria_questoes (
+                id_curadoria SERIAL PRIMARY KEY,
+                id_import_run INTEGER NOT NULL
+                    REFERENCES av3.curadoria_import_runs(id_import_run) ON DELETE CASCADE,
+                dataset_code VARCHAR(10) NOT NULL,
+                dataset_name VARCHAR(80) NOT NULL,
+                id_pergunta INTEGER NOT NULL REFERENCES perguntas(id_pergunta),
+                question_external_id TEXT NOT NULL,
+                question_sequence INTEGER NOT NULL,
+                tipo_questao TEXT NOT NULL,
+                prompt_system TEXT,
+                questao TEXT NOT NULL,
+                gabarito_jsonb JSONB NOT NULL,
+                perguntas_jsonb JSONB,
+                alternativas_jsonb JSONB,
+                pontuacao_total NUMERIC(10,4),
+                dificuldade_nivel VARCHAR(40),
+                dificuldade_escala INTEGER,
+                dificuldade_criterios_jsonb JSONB NOT NULL DEFAULT '[]'::jsonb,
+                disciplina TEXT,
+                assunto TEXT,
+                tema TEXT,
+                norma TEXT,
+                lei TEXT,
+                url TEXT,
+                urn TEXT,
+                curador VARCHAR(120),
+                dt_classificacao TIMESTAMP,
+                metadados_jsonb JSONB NOT NULL DEFAULT '{}'::jsonb,
+                raw_payload_jsonb JSONB NOT NULL,
+                payload_hash CHAR(64) NOT NULL,
+                created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+                UNIQUE (id_import_run, dataset_code, question_sequence)
+            );
+            """
+        )
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS av3.curadoria_artigos (
+                id_curadoria_artigo SERIAL PRIMARY KEY,
+                id_curadoria INTEGER NOT NULL
+                    REFERENCES av3.curadoria_questoes(id_curadoria) ON DELETE CASCADE,
+                ordem INTEGER NOT NULL,
+                artigo TEXT NOT NULL,
+                topico TEXT,
+                relevancia VARCHAR(40),
+                tipo VARCHAR(40)
+            );
+            """
+        )
+        cursor.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_curadoria_questoes_dataset_run
+            ON av3.curadoria_questoes (dataset_code, id_import_run, question_sequence);
+            """
+        )
+        cursor.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_curadoria_import_items_raw_dataset_run
+            ON av3.curadoria_import_items_raw (dataset_code, id_import_run, question_sequence);
+            """
+        )
+
+    def _ensure_rag_vector_schema(self, cursor: Any) -> None:
+        cursor.execute("CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA public;")
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS av3.rag_documents (
+                id_document SERIAL PRIMARY KEY,
+                id_import_run INTEGER NOT NULL
+                    REFERENCES av3.curadoria_import_runs(id_import_run) ON DELETE CASCADE,
+                dataset_code VARCHAR(10) NOT NULL,
+                dataset_name VARCHAR(80) NOT NULL,
+                document_key CHAR(64) NOT NULL,
+                source_name TEXT NOT NULL,
+                source_type VARCHAR(40) NOT NULL,
+                source_url TEXT,
+                title TEXT NOT NULL,
+                lei TEXT,
+                norma TEXT,
+                urn TEXT,
+                temporal_reason TEXT,
+                inclusion_criteria TEXT,
+                metadata_jsonb JSONB NOT NULL DEFAULT '{}'::jsonb,
+                created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+                UNIQUE (id_import_run, document_key)
+            );
+            """
+        )
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS av3.rag_chunks (
+                id_chunk SERIAL PRIMARY KEY,
+                id_document INTEGER NOT NULL
+                    REFERENCES av3.rag_documents(id_document) ON DELETE CASCADE,
+                id_curadoria INTEGER
+                    REFERENCES av3.curadoria_questoes(id_curadoria) ON DELETE SET NULL,
+                id_curadoria_artigo INTEGER
+                    REFERENCES av3.curadoria_artigos(id_curadoria_artigo) ON DELETE SET NULL,
+                id_pergunta INTEGER
+                    REFERENCES perguntas(id_pergunta) ON DELETE SET NULL,
+                chunk_index INTEGER NOT NULL,
+                chunk_text TEXT NOT NULL,
+                token_count INTEGER NOT NULL DEFAULT 0,
+                chunking_strategy VARCHAR(60) NOT NULL,
+                source_kind VARCHAR(40) NOT NULL,
+                artigo TEXT,
+                topico TEXT,
+                relevancia VARCHAR(40),
+                tipo VARCHAR(40),
+                tema TEXT,
+                assunto TEXT,
+                metadata_jsonb JSONB NOT NULL DEFAULT '{}'::jsonb,
+                content_hash CHAR(64) NOT NULL,
+                created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+                UNIQUE (id_document, chunk_index)
+            );
+            """
+        )
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS av3.rag_embeddings (
+                id_embedding SERIAL PRIMARY KEY,
+                id_chunk INTEGER NOT NULL
+                    REFERENCES av3.rag_chunks(id_chunk) ON DELETE CASCADE,
+                embedding_model VARCHAR(120) NOT NULL,
+                embedding_dimensions INTEGER,
+                embedding_vector vector,
+                metadata_jsonb JSONB NOT NULL DEFAULT '{}'::jsonb,
+                created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+                UNIQUE (id_chunk, embedding_model)
+            );
+            """
+        )
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS av3.retrieval_runs (
+                id_retrieval_run SERIAL PRIMARY KEY,
+                id_import_run INTEGER NOT NULL
+                    REFERENCES av3.curadoria_import_runs(id_import_run) ON DELETE CASCADE,
+                dataset_code VARCHAR(10) NOT NULL,
+                name VARCHAR(160) NOT NULL,
+                retrieval_strategy VARCHAR(60) NOT NULL,
+                embedding_model VARCHAR(120),
+                top_k INTEGER NOT NULL CHECK (top_k >= 1),
+                vector_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+                lexical_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+                rerank_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+                ativo BOOLEAN NOT NULL DEFAULT FALSE,
+                metadata_jsonb JSONB NOT NULL DEFAULT '{}'::jsonb,
+                created_at TIMESTAMP NOT NULL DEFAULT NOW()
+            );
+            """
+        )
+        cursor.execute(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_retrieval_runs_active_dataset
+            ON av3.retrieval_runs (dataset_code)
+            WHERE ativo;
+            """
+        )
+        cursor.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_rag_documents_import_dataset
+            ON av3.rag_documents (id_import_run, dataset_code);
+            """
+        )
+        cursor.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_rag_chunks_document
+            ON av3.rag_chunks (id_document, chunk_index);
+            """
+        )
+        cursor.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_rag_chunks_question
+            ON av3.rag_chunks (id_pergunta, source_kind);
+            """
+        )
+        cursor.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_rag_embeddings_chunk_model
+            ON av3.rag_embeddings (id_chunk, embedding_model);
+            """
+        )
+        cursor.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_retrieval_runs_import_dataset
+            ON av3.retrieval_runs (id_import_run, dataset_code, created_at DESC);
+            """
+        )
+
     def rollback_evaluation_details_schema(self) -> None:
         """Drop only the auxiliary judge details table."""
         with self.connection:
@@ -565,6 +807,8 @@ class JudgeRepository:
                 self._ensure_evaluation_prompt_fk(cursor)
                 self._ensure_meta_evaluation_schema(cursor)
                 self._ensure_evaluation_details_schema(cursor)
+                self._ensure_rag_curation_schema(cursor)
+                self._ensure_rag_vector_schema(cursor)
 
     def select_candidate_answers(self, *, dataset: str, limit: int | None) -> list[CandidateAnswerContext]:
         """Select AV1 answers with question/reference context."""
@@ -1548,6 +1792,916 @@ class JudgeRepository:
                 if cursor.rowcount == 0:
                     raise ValueError(f"Meta-avaliacao not found: {meta_evaluation_id}.")
 
+    def get_dataset_name_for_code(self, dataset: str) -> str | None:
+        dataset_name = DATASET_ALIASES.get(dataset.upper(), dataset)
+        with self.connection.cursor() as cursor:
+            cursor.execute("SELECT nome_dataset FROM datasets WHERE nome_dataset = %s LIMIT 1;", (dataset_name,))
+            row = cursor.fetchone()
+        return str(row[0]) if row else None
+
+    def list_question_sequence_map(self, *, dataset: str) -> dict[int, int]:
+        dataset_name = DATASET_ALIASES.get(dataset.upper(), dataset)
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT p.id_pergunta
+                FROM perguntas p
+                JOIN datasets d ON d.id_dataset = p.id_dataset
+                WHERE d.nome_dataset = %s
+                ORDER BY p.id_pergunta;
+                """,
+                (dataset_name,),
+            )
+            rows = cursor.fetchall()
+        return {int(row[0]): int(row[0]) for row in rows}
+
+    def get_rag_curation_run_by_hash(
+        self,
+        *,
+        dataset: str,
+        payload_hash: str,
+    ) -> RagCurationImportRunRecord | None:
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT
+                    id_import_run,
+                    dataset_code,
+                    dataset_name,
+                    filename,
+                    payload_hash,
+                    imported_by,
+                    imported_at,
+                    item_count,
+                    article_count,
+                    ativo
+                FROM av3.curadoria_import_runs
+                WHERE dataset_code = %s
+                  AND payload_hash = %s
+                LIMIT 1;
+                """,
+                (dataset, payload_hash),
+            )
+            row = cursor.fetchone()
+        return _row_to_rag_curation_import_run(row) if row else None
+
+    def create_rag_curation_import_run(
+        self,
+        *,
+        dataset: str,
+        dataset_name: str,
+        filename: str,
+        payload_hash: str,
+        imported_by: str,
+        items: list[Any],
+    ) -> RagCurationImportRunRecord:
+        article_count = sum(len(item.articles) for item in items)
+        with self.connection:
+            with self.connection.cursor() as cursor:
+                cursor.execute(
+                    "UPDATE av3.curadoria_import_runs SET ativo = FALSE WHERE dataset_code = %s AND ativo = TRUE;",
+                    (dataset,),
+                )
+                cursor.execute(
+                    """
+                    INSERT INTO av3.curadoria_import_runs
+                        (
+                            dataset_code,
+                            dataset_name,
+                            filename,
+                            payload_hash,
+                            imported_by,
+                            item_count,
+                            article_count,
+                            ativo
+                        )
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, TRUE)
+                    RETURNING
+                        id_import_run,
+                        dataset_code,
+                        dataset_name,
+                        filename,
+                        payload_hash,
+                        imported_by,
+                        imported_at,
+                        item_count,
+                        article_count,
+                        ativo;
+                    """,
+                    (dataset, dataset_name, filename, payload_hash, imported_by, len(items), article_count),
+                )
+                run_row = cursor.fetchone()
+                run_id = int(run_row[0])
+                for item in items:
+                    cursor.execute(
+                        """
+                        INSERT INTO av3.curadoria_import_items_raw
+                            (
+                                id_import_run,
+                                dataset_code,
+                                question_external_id,
+                                question_sequence,
+                                id_pergunta,
+                                payload_hash,
+                                payload_jsonb
+                            )
+                        VALUES (%s, %s, %s, %s, %s, %s, %s::jsonb);
+                        """,
+                        (
+                            run_id,
+                            item.dataset,
+                            item.question_external_id,
+                            item.question_sequence,
+                            item.question_id,
+                            item.payload_hash,
+                            jsonb_dumps(item.raw_payload),
+                        ),
+                    )
+                    cursor.execute(
+                        """
+                        INSERT INTO av3.curadoria_questoes
+                            (
+                                id_import_run,
+                                dataset_code,
+                                dataset_name,
+                                id_pergunta,
+                                question_external_id,
+                                question_sequence,
+                                tipo_questao,
+                                prompt_system,
+                                questao,
+                                gabarito_jsonb,
+                                perguntas_jsonb,
+                                alternativas_jsonb,
+                                pontuacao_total,
+                                dificuldade_nivel,
+                                dificuldade_escala,
+                                dificuldade_criterios_jsonb,
+                                disciplina,
+                                assunto,
+                                tema,
+                                norma,
+                                lei,
+                                url,
+                                urn,
+                                curador,
+                                dt_classificacao,
+                                metadados_jsonb,
+                                raw_payload_jsonb,
+                                payload_hash
+                            )
+                        VALUES (
+                            %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                            %s::jsonb, %s::jsonb, %s::jsonb, %s, %s, %s, %s::jsonb,
+                            %s, %s, %s, %s, %s, %s, %s, %s,
+                            NULLIF(%s, '')::timestamp, %s::jsonb, %s::jsonb, %s
+                        )
+                        RETURNING id_curadoria;
+                        """,
+                        (
+                            run_id,
+                            item.dataset,
+                            item.dataset_name,
+                            item.question_id,
+                            item.question_external_id,
+                            item.question_sequence,
+                            item.question_type,
+                            item.prompt_system,
+                            item.question_text,
+                            jsonb_dumps(item.answer_key),
+                            jsonb_dumps(item.perguntas),
+                            jsonb_dumps(item.alternativas),
+                            item.total_points,
+                            item.difficulty_level,
+                            item.difficulty_scale,
+                            jsonb_dumps(item.difficulty_criteria),
+                            item.discipline,
+                            item.subject,
+                            item.theme,
+                            item.norma,
+                            item.lei,
+                            item.url,
+                            item.urn,
+                            item.curator,
+                            item.classified_at,
+                            jsonb_dumps(item.metadata),
+                            jsonb_dumps(item.raw_payload),
+                            item.payload_hash,
+                        ),
+                    )
+                    curation_id = int(cursor.fetchone()[0])
+                    for article in item.articles:
+                        cursor.execute(
+                            """
+                            INSERT INTO av3.curadoria_artigos
+                                (id_curadoria, ordem, artigo, topico, relevancia, tipo)
+                            VALUES (%s, %s, %s, %s, %s, %s);
+                            """,
+                            (
+                                curation_id,
+                                article.ordem,
+                                article.artigo,
+                                article.topico,
+                                article.relevancia,
+                                article.tipo,
+                            ),
+                        )
+        return _row_to_rag_curation_import_run(run_row)
+
+    def activate_rag_curation_run(self, *, run_id: int, dataset: str) -> None:
+        with self.connection:
+            with self.connection.cursor() as cursor:
+                cursor.execute(
+                    "UPDATE av3.curadoria_import_runs SET ativo = FALSE WHERE dataset_code = %s AND ativo = TRUE;",
+                    (dataset,),
+                )
+                cursor.execute(
+                    """
+                    UPDATE av3.curadoria_import_runs
+                    SET ativo = TRUE
+                    WHERE id_import_run = %s
+                      AND dataset_code = %s;
+                    """,
+                    (run_id, dataset),
+                )
+                if cursor.rowcount == 0:
+                    raise ValueError(f"Import run not found for dataset {dataset}: {run_id}.")
+
+    def list_rag_curation_datasets(self) -> list[RagCurationDatasetSummary]:
+        rows = []
+        for dataset_code, dataset_name in DATASET_ALIASES.items():
+            summary = self.get_rag_curation_dataset_summary(dataset=dataset_code)
+            if summary is None:
+                vector_summary = self.get_rag_vector_base_summary(dataset=dataset_code)
+                with self.connection.cursor() as cursor:
+                    cursor.execute(
+                        """
+                        SELECT COUNT(*)
+                        FROM perguntas p
+                        JOIN datasets d ON d.id_dataset = p.id_dataset
+                        WHERE d.nome_dataset = %s;
+                        """,
+                        (dataset_name,),
+                    )
+                    total_questions = int(cursor.fetchone()[0])
+                rows.append(
+                    RagCurationDatasetSummary(
+                        dataset=dataset_code,
+                        dataset_name=dataset_name,
+                        total_questions=total_questions,
+                        curated_questions=0,
+                        active_run_id=None,
+                        active_filename=None,
+                        active_imported_by=None,
+                        active_imported_at=None,
+                        active_item_count=0,
+                        active_article_count=0,
+                        vector_status=vector_summary.status if vector_summary is not None else "nao_materializada",
+                        vector_retrieval_run_id=(
+                            vector_summary.retrieval_run_id if vector_summary is not None else None
+                        ),
+                        vector_retrieval_name=vector_summary.retrieval_name if vector_summary is not None else None,
+                        vector_document_count=vector_summary.document_count if vector_summary is not None else 0,
+                        vector_chunk_count=vector_summary.chunk_count if vector_summary is not None else 0,
+                        vector_embedding_count=vector_summary.embedding_count if vector_summary is not None else 0,
+                    )
+                )
+            else:
+                rows.append(summary)
+        return rows
+
+    def get_rag_curation_dataset_summary(self, *, dataset: str) -> RagCurationDatasetSummary | None:
+        dataset_name = DATASET_ALIASES.get(dataset.upper(), dataset)
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT COUNT(*)
+                FROM perguntas p
+                JOIN datasets d ON d.id_dataset = p.id_dataset
+                WHERE d.nome_dataset = %s;
+                """,
+                (dataset_name,),
+            )
+            total_questions = int(cursor.fetchone()[0])
+            cursor.execute(
+                """
+                SELECT
+                    r.id_import_run,
+                    r.dataset_code,
+                    r.dataset_name,
+                    r.filename,
+                    r.imported_by,
+                    r.imported_at,
+                    r.item_count,
+                    r.article_count,
+                    COUNT(DISTINCT q.id_curadoria) AS curated_questions
+                FROM av3.curadoria_import_runs r
+                LEFT JOIN av3.curadoria_questoes q ON q.id_import_run = r.id_import_run
+                WHERE r.dataset_code = %s
+                  AND r.ativo = TRUE
+                GROUP BY
+                    r.id_import_run,
+                    r.dataset_code,
+                    r.dataset_name,
+                    r.filename,
+                    r.imported_by,
+                    r.imported_at,
+                    r.item_count,
+                    r.article_count
+                LIMIT 1;
+                """,
+                (dataset,),
+            )
+            row = cursor.fetchone()
+        if row is None:
+            return None
+        vector_summary = self.get_rag_vector_base_summary(dataset=dataset)
+        return RagCurationDatasetSummary(
+            dataset=row[1],
+            dataset_name=row[2],
+            total_questions=total_questions,
+            curated_questions=int(row[8]),
+            active_run_id=int(row[0]),
+            active_filename=row[3],
+            active_imported_by=row[4],
+            active_imported_at=row[5].isoformat() if row[5] is not None else None,
+            active_item_count=int(row[6]),
+            active_article_count=int(row[7]),
+            vector_status=vector_summary.status if vector_summary is not None else "nao_materializada",
+            vector_retrieval_run_id=vector_summary.retrieval_run_id if vector_summary is not None else None,
+            vector_retrieval_name=vector_summary.retrieval_name if vector_summary is not None else None,
+            vector_document_count=vector_summary.document_count if vector_summary is not None else 0,
+            vector_chunk_count=vector_summary.chunk_count if vector_summary is not None else 0,
+            vector_embedding_count=vector_summary.embedding_count if vector_summary is not None else 0,
+        )
+
+    def get_rag_vector_base_summary(self, *, dataset: str) -> RagVectorBaseSummary | None:
+        dataset_code = dataset.upper()
+        dataset_name = DATASET_ALIASES.get(dataset_code, dataset_code)
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT id_import_run
+                FROM av3.curadoria_import_runs
+                WHERE dataset_code = %s
+                  AND ativo = TRUE
+                LIMIT 1;
+                """,
+                (dataset_code,),
+            )
+            active_curation_row = cursor.fetchone()
+            active_curation_run_id = int(active_curation_row[0]) if active_curation_row is not None else None
+            cursor.execute(
+                """
+                SELECT
+                    r.id_retrieval_run,
+                    r.id_import_run,
+                    r.dataset_code,
+                    r.name,
+                    r.retrieval_strategy,
+                    r.embedding_model,
+                    r.top_k,
+                    r.vector_enabled,
+                    r.lexical_enabled,
+                    r.rerank_enabled,
+                    (
+                        SELECT COUNT(*)
+                        FROM av3.rag_documents d
+                        WHERE d.id_import_run = r.id_import_run
+                          AND d.dataset_code = r.dataset_code
+                    ) AS document_count,
+                    (
+                        SELECT COUNT(*)
+                        FROM av3.rag_chunks c
+                        JOIN av3.rag_documents d ON d.id_document = c.id_document
+                        WHERE d.id_import_run = r.id_import_run
+                          AND d.dataset_code = r.dataset_code
+                    ) AS chunk_count,
+                    (
+                        SELECT COUNT(*)
+                        FROM av3.rag_embeddings e
+                        JOIN av3.rag_chunks c ON c.id_chunk = e.id_chunk
+                        JOIN av3.rag_documents d ON d.id_document = c.id_document
+                        WHERE d.id_import_run = r.id_import_run
+                          AND d.dataset_code = r.dataset_code
+                    ) AS embedding_count,
+                    r.created_at
+                FROM av3.retrieval_runs r
+                WHERE r.dataset_code = %s
+                  AND r.ativo = TRUE
+                LIMIT 1;
+                """,
+                (dataset_code,),
+            )
+            row = cursor.fetchone()
+        if row is None:
+            return None
+        import_run_id = int(row[1])
+        document_count = int(row[10] or 0)
+        chunk_count = int(row[11] or 0)
+        embedding_count = int(row[12] or 0)
+        matches_active_curation = active_curation_run_id is not None and import_run_id == active_curation_run_id
+        if not matches_active_curation:
+            status = "desatualizada"
+        elif embedding_count > 0:
+            status = "pronta_com_embeddings"
+        elif chunk_count > 0:
+            status = "materializada_sem_embeddings"
+        else:
+            status = "nao_materializada"
+        return RagVectorBaseSummary(
+            dataset=row[2],
+            dataset_name=dataset_name,
+            import_run_id=import_run_id,
+            active_curation_run_id=active_curation_run_id,
+            matches_active_curation=matches_active_curation,
+            retrieval_run_id=int(row[0]),
+            retrieval_name=row[3],
+            retrieval_strategy=row[4],
+            embedding_model=row[5],
+            top_k=int(row[6]),
+            vector_enabled=bool(row[7]),
+            lexical_enabled=bool(row[8]),
+            rerank_enabled=bool(row[9]),
+            document_count=document_count,
+            chunk_count=chunk_count,
+            embedding_count=embedding_count,
+            status=status,
+            created_at=row[13].isoformat() if row[13] is not None else None,
+        )
+
+    def list_rag_curation_runs(self, *, dataset: str, limit: int = 20) -> list[RagCurationImportRunRecord]:
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT
+                    id_import_run,
+                    dataset_code,
+                    dataset_name,
+                    filename,
+                    payload_hash,
+                    imported_by,
+                    imported_at,
+                    item_count,
+                    article_count,
+                    ativo
+                FROM av3.curadoria_import_runs
+                WHERE dataset_code = %s
+                ORDER BY imported_at DESC, id_import_run DESC
+                LIMIT %s;
+                """,
+                (dataset, limit),
+            )
+            rows = cursor.fetchall()
+        return [_row_to_rag_curation_import_run(row) for row in rows]
+
+    def list_rag_curation_items(self, *, dataset: str, active_only: bool = True) -> list[RagCurationItemSummary]:
+        active_clause = "AND r.ativo = TRUE" if active_only else ""
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                f"""
+                SELECT
+                    q.id_curadoria,
+                    q.id_import_run,
+                    q.dataset_code,
+                    q.id_pergunta,
+                    q.question_external_id,
+                    q.question_sequence,
+                    q.tipo_questao,
+                    q.disciplina,
+                    q.assunto,
+                    q.tema,
+                    q.curador,
+                    q.dt_classificacao,
+                    q.norma,
+                    COUNT(a.id_curadoria_artigo) AS article_count
+                FROM av3.curadoria_questoes q
+                JOIN av3.curadoria_import_runs r ON r.id_import_run = q.id_import_run
+                LEFT JOIN av3.curadoria_artigos a ON a.id_curadoria = q.id_curadoria
+                WHERE q.dataset_code = %s
+                {active_clause}
+                GROUP BY
+                    q.id_curadoria,
+                    q.id_import_run,
+                    q.dataset_code,
+                    q.id_pergunta,
+                    q.question_external_id,
+                    q.question_sequence,
+                    q.tipo_questao,
+                    q.disciplina,
+                    q.assunto,
+                    q.tema,
+                    q.curador,
+                    q.dt_classificacao,
+                    q.norma
+                ORDER BY q.question_sequence;
+                """,
+                (dataset,),
+            )
+            rows = cursor.fetchall()
+        return [
+            RagCurationItemSummary(
+                curation_id=int(row[0]),
+                run_id=int(row[1]),
+                dataset=row[2],
+                question_id=int(row[3]),
+                question_external_id=row[4],
+                question_sequence=int(row[5]),
+                question_type=row[6],
+                discipline=row[7],
+                subject=row[8],
+                theme=row[9],
+                curator=row[10],
+                classified_at=row[11].isoformat() if row[11] is not None else None,
+                primary_norma=row[12],
+                article_count=int(row[13]),
+            )
+            for row in rows
+        ]
+
+    def get_rag_curation_detail(self, *, curation_id: int, dataset: str) -> RagCurationItemDetail | None:
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT
+                    q.id_curadoria,
+                    q.id_import_run,
+                    q.dataset_code,
+                    q.id_pergunta,
+                    q.question_external_id,
+                    q.question_sequence,
+                    q.tipo_questao,
+                    q.prompt_system,
+                    q.questao,
+                    q.gabarito_jsonb,
+                    q.perguntas_jsonb,
+                    q.alternativas_jsonb,
+                    q.pontuacao_total,
+                    q.dificuldade_nivel,
+                    q.dificuldade_escala,
+                    q.dificuldade_criterios_jsonb,
+                    q.disciplina,
+                    q.assunto,
+                    q.tema,
+                    q.norma,
+                    q.lei,
+                    q.url,
+                    q.urn,
+                    q.curador,
+                    q.dt_classificacao,
+                    q.metadados_jsonb,
+                    q.raw_payload_jsonb
+                FROM av3.curadoria_questoes q
+                JOIN av3.curadoria_import_runs r ON r.id_import_run = q.id_import_run
+                WHERE q.id_curadoria = %s
+                  AND q.dataset_code = %s
+                LIMIT 1;
+                """,
+                (curation_id, dataset),
+            )
+            row = cursor.fetchone()
+            if row is None:
+                return None
+            cursor.execute(
+                """
+                SELECT ordem, artigo, topico, relevancia, tipo
+                FROM av3.curadoria_artigos
+                WHERE id_curadoria = %s
+                ORDER BY ordem;
+                """,
+                (curation_id,),
+            )
+            article_rows = cursor.fetchall()
+        return RagCurationItemDetail(
+            curation_id=int(row[0]),
+            run_id=int(row[1]),
+            dataset=row[2],
+            question_id=int(row[3]),
+            question_external_id=row[4],
+            question_sequence=int(row[5]),
+            question_type=row[6],
+            prompt_system=row[7],
+            question_text=row[8],
+            answer_key=_parse_jsonb(row[9]),
+            perguntas=_parse_jsonb(row[10]),
+            alternativas=_parse_jsonb(row[11]),
+            total_points=float(row[12]) if row[12] is not None else None,
+            difficulty_level=row[13],
+            difficulty_scale=int(row[14]) if row[14] is not None else None,
+            difficulty_criteria=_parse_jsonb(row[15]),
+            discipline=row[16],
+            subject=row[17],
+            theme=row[18],
+            norma=row[19],
+            lei=row[20],
+            url=row[21],
+            urn=row[22],
+            curator=row[23],
+            classified_at=row[24].isoformat() if row[24] is not None else None,
+            metadata=_parse_jsonb(row[25]) or {},
+            raw_payload=_parse_jsonb(row[26]) or {},
+            articles=[
+                {
+                    "ordem": int(article_row[0]),
+                    "artigo": article_row[1],
+                    "topico": article_row[2],
+                    "relevancia": article_row[3],
+                    "tipo": article_row[4],
+                }
+                for article_row in article_rows
+            ],
+        )
+
+    def materialize_rag_base_from_active_curation(
+        self,
+        *,
+        dataset: str,
+        retrieval_name: str | None = None,
+        top_k: int = 5,
+        chunking_strategy: str = "curated_articles_v1",
+    ) -> RagBaseMaterializationSummary:
+        dataset_code = dataset.upper()
+        dataset_name = self.get_dataset_name_for_code(dataset_code)
+        if dataset_name is None:
+            raise ValueError(f"Dataset not found: {dataset}.")
+        active_summary = self.get_rag_curation_dataset_summary(dataset=dataset_code)
+        active_run_id = active_summary.active_run_id if active_summary is not None else None
+        if active_run_id is None:
+            raise ValueError(f"No active RAG curation import found for {dataset_code}.")
+
+        retrieval_name = (retrieval_name or f"{dataset_code.lower()}_curated_v1").strip()
+        if not retrieval_name:
+            raise ValueError("retrieval_name must not be empty.")
+
+        with self.connection:
+            with self.connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    DELETE FROM av3.rag_embeddings
+                    WHERE id_chunk IN (
+                        SELECT c.id_chunk
+                        FROM av3.rag_chunks c
+                        JOIN av3.rag_documents d ON d.id_document = c.id_document
+                        WHERE d.id_import_run = %s
+                    );
+                    """,
+                    (active_run_id,),
+                )
+                cursor.execute(
+                    """
+                    DELETE FROM av3.rag_chunks
+                    WHERE id_document IN (
+                        SELECT id_document
+                        FROM av3.rag_documents
+                        WHERE id_import_run = %s
+                    );
+                    """,
+                    (active_run_id,),
+                )
+                cursor.execute("DELETE FROM av3.rag_documents WHERE id_import_run = %s;", (active_run_id,))
+                cursor.execute(
+                    "UPDATE av3.retrieval_runs SET ativo = FALSE WHERE dataset_code = %s AND ativo = TRUE;",
+                    (dataset_code,),
+                )
+
+                cursor.execute(
+                    """
+                    SELECT
+                        q.id_curadoria,
+                        q.id_pergunta,
+                        q.question_sequence,
+                        q.disciplina,
+                        q.assunto,
+                        q.tema,
+                        q.norma,
+                        q.lei,
+                        q.url,
+                        q.urn,
+                        a.id_curadoria_artigo,
+                        a.ordem,
+                        a.artigo,
+                        a.topico,
+                        a.relevancia,
+                        a.tipo
+                    FROM av3.curadoria_questoes q
+                    LEFT JOIN av3.curadoria_artigos a ON a.id_curadoria = q.id_curadoria
+                    WHERE q.id_import_run = %s
+                    ORDER BY q.question_sequence, a.ordem NULLS LAST, a.id_curadoria_artigo NULLS LAST;
+                    """,
+                    (active_run_id,),
+                )
+                rows = cursor.fetchall()
+                if not rows:
+                    raise ValueError(f"Active curation run {active_run_id} has no normalized questions.")
+
+                documents: dict[str, int] = {}
+                chunk_count = 0
+                for row in rows:
+                    curation_id = int(row[0])
+                    question_id = int(row[1])
+                    question_sequence = int(row[2])
+                    disciplina = row[3]
+                    assunto = row[4]
+                    tema = row[5]
+                    norma = row[6]
+                    lei = row[7]
+                    url = row[8]
+                    urn = row[9]
+                    artigo_id = row[10]
+                    artigo_ordem = row[11]
+                    artigo = row[12]
+                    topico = row[13]
+                    relevancia = row[14]
+                    tipo = row[15]
+
+                    document_key = _rag_document_key(
+                        dataset_code=dataset_code,
+                        norma=norma,
+                        lei=lei,
+                        url=url,
+                        urn=urn,
+                        fallback=f"q{question_sequence}-c{curation_id}",
+                    )
+                    document_id = documents.get(document_key)
+                    if document_id is None:
+                        title = next(
+                            (value for value in [norma, lei, f"{dataset_name} Q{question_sequence}"] if value),
+                            f"{dataset_name} Q{question_sequence}",
+                        )
+                        cursor.execute(
+                            """
+                            INSERT INTO av3.rag_documents
+                                (
+                                    id_import_run,
+                                    dataset_code,
+                                    dataset_name,
+                                    document_key,
+                                    source_name,
+                                    source_type,
+                                    source_url,
+                                    title,
+                                    lei,
+                                    norma,
+                                    urn,
+                                    temporal_reason,
+                                    inclusion_criteria,
+                                    metadata_jsonb
+                                )
+                            VALUES (
+                                %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb
+                            )
+                            RETURNING id_document;
+                            """,
+                            (
+                                active_run_id,
+                                dataset_code,
+                                dataset_name,
+                                document_key,
+                                "curadoria_importada",
+                                "legislacao_curada",
+                                url,
+                                title,
+                                lei,
+                                norma,
+                                urn,
+                                None,
+                                "Curadoria importada da atividade 1",
+                                jsonb_dumps(
+                                    {
+                                        "source": "curadoria_rag",
+                                        "question_sequence": question_sequence,
+                                        "curation_id": curation_id,
+                                    }
+                                ),
+                            ),
+                        )
+                        document_id = int(cursor.fetchone()[0])
+                        documents[document_key] = document_id
+
+                    chunk_text = _build_rag_chunk_text(
+                        dataset_name=dataset_name,
+                        disciplina=disciplina,
+                        assunto=assunto,
+                        tema=tema,
+                        norma=norma,
+                        lei=lei,
+                        artigo=artigo,
+                        topico=topico,
+                        relevancia=relevancia,
+                        tipo=tipo,
+                        has_article=bool(artigo),
+                    )
+                    chunk_source_kind = "curated_article" if artigo else "curation_summary"
+                    chunk_index = int(artigo_ordem) if artigo_ordem is not None else 1
+                    cursor.execute(
+                        """
+                        INSERT INTO av3.rag_chunks
+                            (
+                                id_document,
+                                id_curadoria,
+                                id_curadoria_artigo,
+                                id_pergunta,
+                                chunk_index,
+                                chunk_text,
+                                token_count,
+                                chunking_strategy,
+                                source_kind,
+                                artigo,
+                                topico,
+                                relevancia,
+                                tipo,
+                                tema,
+                                assunto,
+                                metadata_jsonb,
+                                content_hash
+                            )
+                        VALUES (
+                            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s
+                        );
+                        """,
+                        (
+                            document_id,
+                            curation_id,
+                            artigo_id,
+                            question_id,
+                            chunk_index,
+                            chunk_text,
+                            _rough_token_count(chunk_text),
+                            chunking_strategy,
+                            chunk_source_kind,
+                            artigo,
+                            topico,
+                            relevancia,
+                            tipo,
+                            tema,
+                            assunto,
+                            jsonb_dumps(
+                                {
+                                    "dataset": dataset_code,
+                                    "question_id": question_id,
+                                    "question_sequence": question_sequence,
+                                    "curation_id": curation_id,
+                                    "article_id": artigo_id,
+                                }
+                            ),
+                            _sha256_text(chunk_text),
+                        ),
+                    )
+                    chunk_count += 1
+
+                cursor.execute(
+                    """
+                    INSERT INTO av3.retrieval_runs
+                        (
+                            id_import_run,
+                            dataset_code,
+                            name,
+                            retrieval_strategy,
+                            embedding_model,
+                            top_k,
+                            vector_enabled,
+                            lexical_enabled,
+                            rerank_enabled,
+                            ativo,
+                            metadata_jsonb
+                        )
+                    VALUES (%s, %s, %s, %s, %s, %s, TRUE, FALSE, FALSE, TRUE, %s::jsonb)
+                    RETURNING id_retrieval_run, created_at;
+                    """,
+                    (
+                        active_run_id,
+                        dataset_code,
+                        retrieval_name,
+                        chunking_strategy,
+                        None,
+                        top_k,
+                        jsonb_dumps(
+                            {
+                                "document_count": len(documents),
+                                "chunk_count": chunk_count,
+                                "source": "curadoria_importada",
+                                "vector_extension_enabled": True,
+                            }
+                        ),
+                    ),
+                )
+                retrieval_run_id, created_at = cursor.fetchone()
+
+        return RagBaseMaterializationSummary(
+            dataset=dataset_code,
+            dataset_name=dataset_name,
+            import_run_id=active_run_id,
+            retrieval_run_id=int(retrieval_run_id),
+            retrieval_name=retrieval_name,
+            chunking_strategy=chunking_strategy,
+            top_k=top_k,
+            document_count=len(documents),
+            chunk_count=chunk_count,
+            embedding_count=0,
+            vector_extension_enabled=True,
+            created_at=created_at.isoformat() if created_at is not None else None,
+        )
+
 
 def _round_for_role(role: StoredJudgeRole) -> str:
     if role == "arbitro":
@@ -1644,6 +2798,99 @@ def _dataset_label(dataset_name: str) -> str:
 def _resolve_prompt_dataset_name(value: str) -> str:
     normalized = value.strip()
     return DATASET_ALIASES.get(normalized.upper(), normalized)
+
+
+def _parse_jsonb(value: Any) -> Any:
+    if value is None:
+        return None
+    if isinstance(value, (dict, list)):
+        return value
+    if isinstance(value, str):
+        return json.loads(value)
+    return value
+
+
+def _sha256_text(value: str) -> str:
+    import hashlib
+
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
+def _rag_document_key(
+    *,
+    dataset_code: str,
+    norma: str | None,
+    lei: str | None,
+    url: str | None,
+    urn: str | None,
+    fallback: str,
+) -> str:
+    parts = [
+        dataset_code.strip().upper(),
+        (norma or "").strip().lower(),
+        (lei or "").strip().lower(),
+        (url or "").strip().lower(),
+        (urn or "").strip().lower(),
+        fallback.strip().lower(),
+    ]
+    return _sha256_text("|".join(parts))
+
+
+def _rough_token_count(value: str) -> int:
+    return len([part for part in value.split() if part.strip()])
+
+
+def _build_rag_chunk_text(
+    *,
+    dataset_name: str,
+    disciplina: str | None,
+    assunto: str | None,
+    tema: str | None,
+    norma: str | None,
+    lei: str | None,
+    artigo: str | None,
+    topico: str | None,
+    relevancia: str | None,
+    tipo: str | None,
+    has_article: bool,
+) -> str:
+    lines = [f"Dataset: {dataset_name}"]
+    if disciplina:
+        lines.append(f"Disciplina: {disciplina}")
+    if assunto:
+        lines.append(f"Assunto: {assunto}")
+    if tema:
+        lines.append(f"Tema: {tema}")
+    if norma:
+        lines.append(f"Norma: {norma}")
+    if lei:
+        lines.append(f"Lei: {lei}")
+    if has_article:
+        lines.append(f"Artigo: {artigo}")
+        if topico:
+            lines.append(f"Topico: {topico}")
+        if relevancia:
+            lines.append(f"Relevancia: {relevancia}")
+        if tipo:
+            lines.append(f"Tipo: {tipo}")
+    else:
+        lines.append("Resumo curado sem artigos especificos para esta questao.")
+    return "\n".join(lines)
+
+
+def _row_to_rag_curation_import_run(row: Any) -> RagCurationImportRunRecord:
+    return RagCurationImportRunRecord(
+        run_id=int(row[0]),
+        dataset=row[1],
+        dataset_name=row[2],
+        filename=row[3],
+        payload_hash=row[4],
+        imported_by=row[5],
+        imported_at=row[6].isoformat() if row[6] is not None else None,
+        item_count=int(row[7]),
+        article_count=int(row[8]),
+        active=bool(row[9]),
+    )
 
 
 def _build_prompt_change_summary(

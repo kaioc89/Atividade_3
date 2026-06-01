@@ -185,6 +185,140 @@ class MetaEvaluationSubject:
 
 
 @dataclass(frozen=True)
+class RagCurationDatasetSummary:
+    """Coverage summary for imported RAG curation per dataset."""
+
+    dataset: str
+    dataset_name: str
+    total_questions: int
+    curated_questions: int
+    active_run_id: int | None
+    active_filename: str | None
+    active_imported_by: str | None
+    active_imported_at: str | None
+    active_item_count: int
+    active_article_count: int
+    vector_status: str = "nao_materializada"
+    vector_retrieval_run_id: int | None = None
+    vector_retrieval_name: str | None = None
+    vector_document_count: int = 0
+    vector_chunk_count: int = 0
+    vector_embedding_count: int = 0
+
+
+@dataclass(frozen=True)
+class RagCurationImportRunRecord:
+    """Metadata for a versioned RAG curation import run."""
+
+    run_id: int
+    dataset: str
+    dataset_name: str
+    filename: str
+    payload_hash: str
+    imported_by: str
+    imported_at: str | None
+    item_count: int
+    article_count: int
+    active: bool
+
+
+@dataclass(frozen=True)
+class RagCurationItemSummary:
+    """Compact list item for a curated question."""
+
+    curation_id: int
+    run_id: int
+    dataset: str
+    question_id: int
+    question_external_id: str
+    question_sequence: int
+    question_type: str
+    discipline: str | None
+    subject: str | None
+    theme: str | None
+    curator: str | None
+    classified_at: str | None
+    primary_norma: str | None
+    article_count: int
+
+
+@dataclass(frozen=True)
+class RagCurationItemDetail:
+    """Full detail for one curated question."""
+
+    curation_id: int
+    run_id: int
+    dataset: str
+    question_id: int
+    question_external_id: str
+    question_sequence: int
+    question_type: str
+    prompt_system: str | None
+    question_text: str
+    answer_key: Any
+    perguntas: Any
+    alternativas: Any
+    total_points: float | None
+    difficulty_level: str | None
+    difficulty_scale: int | None
+    difficulty_criteria: Any
+    discipline: str | None
+    subject: str | None
+    theme: str | None
+    norma: str | None
+    lei: str | None
+    url: str | None
+    urn: str | None
+    curator: str | None
+    classified_at: str | None
+    metadata: dict[str, Any]
+    raw_payload: dict[str, Any]
+    articles: list[dict[str, Any]]
+
+
+@dataclass(frozen=True)
+class RagBaseMaterializationSummary:
+    """Summary of one materialized AV3 RAG base build."""
+
+    dataset: str
+    dataset_name: str
+    import_run_id: int
+    retrieval_run_id: int
+    retrieval_name: str
+    chunking_strategy: str
+    top_k: int
+    document_count: int
+    chunk_count: int
+    embedding_count: int
+    vector_extension_enabled: bool
+    created_at: str | None
+
+
+@dataclass(frozen=True)
+class RagVectorBaseSummary:
+    """Current AV3 vector-base status for one dataset."""
+
+    dataset: str
+    dataset_name: str
+    import_run_id: int
+    active_curation_run_id: int | None
+    matches_active_curation: bool
+    retrieval_run_id: int
+    retrieval_name: str
+    retrieval_strategy: str
+    embedding_model: str | None
+    top_k: int
+    vector_enabled: bool
+    lexical_enabled: bool
+    rerank_enabled: bool
+    document_count: int
+    chunk_count: int
+    embedding_count: int
+    status: str
+    created_at: str | None
+
+
+@dataclass(frozen=True)
 class JudgeRawResponse:
     """Raw remote judge response plus provider metadata."""
 
