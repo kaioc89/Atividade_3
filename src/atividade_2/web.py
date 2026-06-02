@@ -911,6 +911,7 @@ def _serialize_rag_embedding_result(result: dict[str, Any] | None) -> dict | Non
         "materialized_base": bool(result.get("materialized_base")),
         "question_sequence_range": result.get("question_sequence_range") or {},
         "source_url_summary": result.get("source_url_summary") or {},
+        "chunk_summary": result.get("chunk_summary") or {},
         "summary": asdict(summary)
         if summary is not None and hasattr(summary, "__dataclass_fields__")
         else summary,
@@ -4836,6 +4837,16 @@ _INDEX_HTML = """
       };
     }
 
+    function formatRagChunkOriginSummary(chunkSummary) {
+      if (!chunkSummary) return "";
+      const curation = Number(chunkSummary.curation_chunks || 0);
+      const sourceUrls = Number(chunkSummary.source_url_chunks || 0);
+      const parts = [];
+      if (curation) parts.push(`${display(curation)} chunks da curadoria`);
+      if (sourceUrls) parts.push(`${display(sourceUrls)} chunks de fonte/URL`);
+      return parts.length ? parts.join(" + ") : "";
+    }
+
     function formatRagVectorStatus(status) {
       switch (status) {
         case "pronta_com_embeddings":
@@ -5037,6 +5048,7 @@ _INDEX_HTML = """
         const result = data.result || {};
         const summary = result.summary || null;
         const sourceSummary = result.source_url_summary || {};
+        const chunkOriginSummary = formatRagChunkOriginSummary(result.chunk_summary || {});
         const sourceFailures = sourceSummary.failures || [];
         const sourceFailureText = sourceFailures.length
           ? ` Fontes indisponiveis: ${sourceFailures.slice(0, 3).map((item) => `${display(item.url)} (${display(item.reason)})`).join("; ")}${sourceFailures.length > 3 ? "..." : ""}`
@@ -5062,7 +5074,12 @@ _INDEX_HTML = """
           }
         }
         if (summary) {
-          appendRagVectorProgress(`Embeddings gravados: ${display(summary.generated_embeddings)} chunks com ${display(summary.embedding_model)}.`, "done");
+          appendRagVectorProgress(
+            chunkOriginSummary
+              ? `Embeddings gravados: ${display(summary.generated_embeddings)} chunks no total (${chunkOriginSummary}) com ${display(summary.embedding_model)}.`
+              : `Embeddings gravados: ${display(summary.generated_embeddings)} chunks com ${display(summary.embedding_model)}.`,
+            "done"
+          );
         }
         await loadRagCurationDataset(dataset);
         await loadRagVectorPreview(dataset);
@@ -5070,8 +5087,10 @@ _INDEX_HTML = """
           "rag_vector_status",
           summary ? [
             result.materialized_base ? "Base vetorial criada automaticamente." : "",
-            sourceSummary.attempted ? `Fontes consultadas: ${display(sourceSummary.succeeded)} recuperadas, ${display(sourceSummary.failed)} falhas, ${display(sourceSummary.inserted_chunks)} chunks inseridos.` : "",
-            `Embeddings gerados para ${display(dataset)}: ${display(summary.generated_embeddings)} chunks com ${display(summary.embedding_model)}.`
+            sourceSummary.attempted ? `Fontes consultadas: ${display(sourceSummary.succeeded)} recuperadas, ${display(sourceSummary.failed)} falhas, ${display(sourceSummary.inserted_chunks)} chunks de fonte/URL inseridos.` : "",
+            chunkOriginSummary
+              ? `Embeddings gerados para ${display(dataset)}: ${display(summary.generated_embeddings)} chunks no total (${chunkOriginSummary}) com ${display(summary.embedding_model)}.`
+              : `Embeddings gerados para ${display(dataset)}: ${display(summary.generated_embeddings)} chunks com ${display(summary.embedding_model)}.`
           ].filter(Boolean).join(" ") + sourceFailureText : `Embeddings gerados para ${display(dataset)}.`
         );
       } catch (error) {

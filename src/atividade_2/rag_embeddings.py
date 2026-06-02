@@ -106,6 +106,17 @@ class RagEmbeddingGenerationService:
                 question_sequence_start=question_sequence_start,
                 question_sequence_end=question_sequence_end,
             )
+            emit(f"{len(source_documents)} documento(s) com URL de fonte no escopo selecionado.")
+            for document in source_documents[:20]:
+                emit(
+                    "Documento fonte selecionado: "
+                    f"id_document={document.get('document_id')}, "
+                    f"document_key={_short_value(document.get('document_key'))}, "
+                    f"titulo={_short_value(document.get('title'), 80)}, "
+                    f"tipo={_short_value(document.get('source_type'))}.",
+                )
+            if len(source_documents) > 20:
+                emit(f"{len(source_documents) - 20} documento(s) adicional(is) omitido(s) no log detalhado.")
             source_document_urls = [
                 {**document, "url": url}
                 for document in source_documents
@@ -113,6 +124,15 @@ class RagEmbeddingGenerationService:
             ]
             source_urls = list(dict.fromkeys(str(item["url"]) for item in source_document_urls))
             emit(f"{len(source_urls)} URL(s) de fonte selecionada(s) para consulta.")
+            for item in source_document_urls[:30]:
+                emit(
+                    "URL preparada: "
+                    f"id_document={item.get('document_id')}, "
+                    f"document_key={_short_value(item.get('document_key'))}, "
+                    f"url={_short_value(item.get('url'), 140)}.",
+                )
+            if len(source_document_urls) > 30:
+                emit(f"{len(source_document_urls) - 30} URL(s) adicional(is) omitida(s) no log detalhado.")
             source_report = self._source_fetcher(source_urls) if source_urls else SourceUrlFetchReport([], [])
             if source_urls:
                 emit(
@@ -120,18 +140,42 @@ class RagEmbeddingGenerationService:
                     f"{len(source_report.failures)} falha(s).",
                     state="error" if source_report.failures else "done",
                 )
+                for success in source_report.successes[:20]:
+                    emit(
+                        "Fonte recuperada: "
+                        f"url={_short_value(success.url, 140)}, "
+                        f"content_type={_short_value(success.content_type)}, "
+                        f"chars={len(success.content)}.",
+                        state="done",
+                    )
+                for failure in source_report.failures[:20]:
+                    emit(
+                        "Falha ao recuperar fonte: "
+                        f"url={_short_value(failure.url, 140)}, "
+                        f"motivo={_short_value(failure.reason, 140)}.",
+                        state="error",
+                    )
             source_contents_by_url = {item.url: item for item in source_report.successes}
+            source_contents = [
+                {
+                    **document,
+                    "content": source_contents_by_url[str(document["url"])].content,
+                    "content_type": source_contents_by_url[str(document["url"])].content_type,
+                }
+                for document in source_document_urls
+                if str(document["url"]) in source_contents_by_url
+            ]
+            for item in source_contents[:20]:
+                emit(
+                    "Conteudo de fonte pronto para chunking: "
+                    f"id_document={item.get('document_id')}, "
+                    f"document_key={_short_value(item.get('document_key'))}, "
+                    f"url={_short_value(item.get('url'), 140)}, "
+                    f"chars={len(str(item.get('content') or ''))}.",
+                )
             source_chunk_count = repository.replace_rag_source_content_chunks_for_active_vector_base(
                 dataset=dataset_code,
-                source_contents=[
-                    {
-                        **document,
-                        "content": source_contents_by_url[str(document["url"])].content,
-                        "content_type": source_contents_by_url[str(document["url"])].content_type,
-                    }
-                    for document in source_document_urls
-                    if str(document["url"]) in source_contents_by_url
-                ],
+                source_contents=source_contents,
                 question_sequence_start=question_sequence_start,
                 question_sequence_end=question_sequence_end,
             )
@@ -143,15 +187,35 @@ class RagEmbeddingGenerationService:
             )
             if not chunks:
                 raise RuntimeError(f"Nenhum chunk materializado encontrado para {dataset_code}.")
-            emit(f"{len(chunks)} chunk(s) selecionado(s) para embedding.")
+            chunk_stats = _chunk_stats(chunks)
+            emit(
+                f"{len(chunks)} chunk(s) selecionado(s) para embedding: "
+                f"{_format_chunk_stats(chunk_stats)}"
+            )
+            for chunk in chunks[:20]:
+                emit(
+                    "Chunk selecionado: "
+                    f"id_chunk={chunk.get('chunk_id')}, "
+                    f"id_document={chunk.get('document_id')}, "
+                    f"document_key={_short_value(chunk.get('document_key'))}, "
+                    f"kind={_short_value(chunk.get('source_kind'))}, "
+                    f"index={chunk.get('chunk_index')}, "
+                    f"hash={_short_value(chunk.get('content_hash'), 12)}, "
+                    f"chars={len(str(chunk.get('chunk_text') or ''))}.",
+                )
+            if len(chunks) > 20:
+                emit(f"{len(chunks) - 20} chunk(s) adicional(is) omitido(s) no log detalhado.")
 
             effective_batch_size = max(1, int(batch_size or self._batch_size))
             generated: list[dict[str, Any]] = []
             total_latency_ms = 0
             batches = _chunked(chunks, effective_batch_size)
             for batch_index, chunk_batch in enumerate(batches, start=1):
+                chunk_ids = [int(item["chunk_id"]) for item in chunk_batch]
+                batch_kinds = _format_chunk_stats(_chunk_stats(chunk_batch))
                 emit(
-                    f"Enviando lote {batch_index}/{len(batches)} com {len(chunk_batch)} chunk(s).",
+                    f"Enviando lote {batch_index}/{len(batches)} com {len(chunk_batch)} chunk(s): "
+                    f"id_chunk {min(chunk_ids)}-{max(chunk_ids)}. {batch_kinds}",
                     batch_index=batch_index,
                     batch_count=len(batches),
                     generated_embeddings=len(generated),
@@ -174,8 +238,10 @@ class RagEmbeddingGenerationService:
                             "embedding": vector,
                         }
                     )
+                returned_dimensions = len(batch_result.vectors[0]) if batch_result.vectors else 0
                 emit(
-                    f"Lote {batch_index}/{len(batches)} concluido em {batch_result.latency_ms} ms.",
+                    f"Lote {batch_index}/{len(batches)} concluido em {batch_result.latency_ms} ms; "
+                    f"{len(batch_result.vectors)} embedding(s), {returned_dimensions} dimensao(oes).",
                     state="done",
                     batch_index=batch_index,
                     batch_count=len(batches),
@@ -214,6 +280,12 @@ class RagEmbeddingGenerationService:
                 "inserted_chunks": source_chunk_count,
                 "failures": [{"url": item.url, "reason": item.reason} for item in source_report.failures],
             },
+            "chunk_summary": {
+                "total": len(chunks),
+                "by_source_kind": chunk_stats,
+                "curation_chunks": _curation_chunk_count(chunk_stats),
+                "source_url_chunks": chunk_stats.get("source_url_content", 0),
+            },
         }
 
     def _make_repository(self, connection: Any) -> Any:
@@ -251,3 +323,40 @@ def _format_question_range(question_sequence_start: int | None, question_sequenc
     if question_sequence_start is not None:
         return f" a partir da questao {question_sequence_start}"
     return f" ate a questao {question_sequence_end}"
+
+
+def _chunk_stats(chunks: list[dict[str, Any]]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for chunk in chunks:
+        kind = str(chunk.get("source_kind") or "desconhecido")
+        counts[kind] = counts.get(kind, 0) + 1
+    return counts
+
+
+def _format_chunk_stats(counts: dict[str, int]) -> str:
+    if not counts:
+        return "sem chunks."
+    friendly_parts = []
+    for kind, count in sorted(counts.items()):
+        friendly_parts.append(f"{_source_kind_label(kind)}={count}")
+    return "origem dos chunks: " + ", ".join(friendly_parts) + "."
+
+
+def _curation_chunk_count(counts: dict[str, int]) -> int:
+    return sum(count for kind, count in counts.items() if kind != "source_url_content")
+
+
+def _source_kind_label(kind: str) -> str:
+    labels = {
+        "curated_article": "curadoria/artigos curados",
+        "curation_summary": "curadoria/resumo",
+        "source_url_content": "fonte/URL recuperada",
+    }
+    return labels.get(kind, kind)
+
+
+def _short_value(value: Any, max_length: int = 32) -> str:
+    text = str(value or "-")
+    if len(text) <= max_length:
+        return text
+    return text[: max_length - 3] + "..."

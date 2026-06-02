@@ -2409,7 +2409,15 @@ class JudgeRepository:
                 f"""
                 SELECT
                     c.id_chunk,
-                    c.chunk_text
+                    c.chunk_text,
+                    c.chunk_index,
+                    c.source_kind,
+                    c.id_document,
+                    d.document_key,
+                    c.id_pergunta,
+                    c.artigo,
+                    c.topico,
+                    c.content_hash
                 FROM av3.rag_chunks c
                 JOIN av3.rag_documents d ON d.id_document = c.id_document
                 WHERE d.id_import_run = %s
@@ -2424,6 +2432,14 @@ class JudgeRepository:
             {
                 "chunk_id": int(row[0]),
                 "chunk_text": row[1],
+                "chunk_index": int(row[2]),
+                "source_kind": row[3],
+                "document_id": int(row[4]),
+                "document_key": row[5],
+                "question_id": int(row[6]) if row[6] is not None else None,
+                "artigo": row[7],
+                "topico": row[8],
+                "content_hash": row[9],
             }
             for row in rows
         ]
@@ -2524,8 +2540,13 @@ class JudgeRepository:
                 f"""
                 SELECT DISTINCT
                     d.id_document,
+                    d.document_key,
                     d.source_url,
-                    d.title
+                    d.title,
+                    d.source_type,
+                    d.lei,
+                    d.norma,
+                    d.urn
                 FROM av3.rag_documents d
                 WHERE d.id_import_run = %s
                   AND d.dataset_code = %s
@@ -2539,8 +2560,13 @@ class JudgeRepository:
         return [
             {
                 "document_id": int(row[0]),
-                "url": row[1],
-                "title": row[2],
+                "document_key": row[1],
+                "url": row[2],
+                "title": row[3],
+                "source_type": row[4],
+                "lei": row[5],
+                "norma": row[6],
+                "urn": row[7],
             }
             for row in rows
         ]

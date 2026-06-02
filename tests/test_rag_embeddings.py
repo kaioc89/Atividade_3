@@ -119,11 +119,15 @@ class FakeRepository:
         self.resolved_ranges.append((question_sequence_start, question_sequence_end))
         self.calls.append(f"list_chunks:{dataset}")
         chunks = [
-            {"chunk_id": 101, "chunk_text": "texto juridico um"},
-            {"chunk_id": 102, "chunk_text": "texto juridico dois"},
+            {"chunk_id": 101, "chunk_text": "texto juridico um", "source_kind": "curated_article"},
+            {"chunk_id": 102, "chunk_text": "texto juridico dois", "source_kind": "curated_article"},
         ]
         chunks.extend(
-            {"chunk_id": 200 + index, "chunk_text": f"conteudo fonte {index}"}
+            {
+                "chunk_id": 200 + index,
+                "chunk_text": f"conteudo fonte {index}",
+                "source_kind": "source_url_content",
+            }
             for index in range(1, self.source_chunk_count + 1)
         )
         return chunks
@@ -181,7 +185,14 @@ def test_generate_embeddings_materializes_vector_base_when_missing(monkeypatch) 
     assert result["materialized_base"] is True
     assert result["summary"].generated_embeddings == 4
     assert any("Enviando lote" in event["message"] for event in events)
+    assert any("curadoria/artigos curados=2" in event["message"] for event in events)
     assert events[-1]["state"] == "done"
+    assert result["chunk_summary"] == {
+        "total": 4,
+        "by_source_kind": {"curated_article": 2, "source_url_content": 2},
+        "curation_chunks": 2,
+        "source_url_chunks": 2,
+    }
     assert result["source_url_summary"] == {
         "attempted": 3,
         "succeeded": 2,
