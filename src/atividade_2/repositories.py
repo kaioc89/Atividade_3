@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import unicodedata
 from collections.abc import Iterable
 from typing import Any, Protocol
 
@@ -2628,6 +2629,11 @@ class JudgeRepository:
                 )
 
                 chunk_count = 0
+                seen_source_text_hashes = _existing_source_chunk_text_hashes(
+                    cursor,
+                    import_run_id=vector_summary.import_run_id,
+                    dataset=vector_summary.dataset,
+                )
                 next_chunk_index_by_document: dict[int, int] = {}
                 for item in source_contents:
                     document_id = int(item["document_id"])
@@ -2639,6 +2645,10 @@ class JudgeRepository:
                         overlap_chars=overlap_chars,
                     )
                     for index, chunk_text in enumerate(chunks, start=1):
+                        source_text_hash = _normalized_chunk_text_hash(chunk_text)
+                        if source_text_hash in seen_source_text_hashes:
+                            continue
+                        seen_source_text_hashes.add(source_text_hash)
                         chunk_index = next_chunk_index_by_document.get(document_id, 1000001)
                         next_chunk_index_by_document[document_id] = chunk_index + 1
                         cursor.execute(
@@ -3558,6 +3568,32 @@ def _rag_document_key(
         fallback.strip().lower(),
     ]
     return _sha256_text("|".join(parts))
+
+
+def _existing_source_chunk_text_hashes(
+    cursor: Any,
+    *,
+    import_run_id: int,
+    dataset: str,
+) -> set[str]:
+    cursor.execute(
+        """
+        SELECT c.chunk_text
+        FROM av3.rag_chunks c
+        JOIN av3.rag_documents d ON d.id_document = c.id_document
+        WHERE d.id_import_run = %s
+          AND d.dataset_code = %s
+          AND c.source_kind = 'source_url_content';
+        """,
+        (import_run_id, dataset),
+    )
+    return {_normalized_chunk_text_hash(str(row[0])) for row in cursor.fetchall()}
+
+
+def _normalized_chunk_text_hash(value: str) -> str:
+    normalized = unicodedata.normalize("NFKC", value)
+    normalized = " ".join(normalized.split())
+    return _sha256_text(normalized)
 
 
 def _rag_question_sequence_filters(
