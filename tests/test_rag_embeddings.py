@@ -90,7 +90,11 @@ class FakeRepository:
         return [
             {
                 "document_id": 11,
-                "url": "https://fonte.example/lei-14133, https://fonte.example/codigo-penal",
+                "url": (
+                    "https://fonte.example/lei-14133, "
+                    "http://fonte.example/lei-14133, "
+                    "https://fonte.example/codigo-penal"
+                ),
                 "title": "Lei 14133",
             },
             {"document_id": 12, "url": "https://fonte.example/fora", "title": "Fonte fora"},
@@ -106,7 +110,7 @@ class FakeRepository:
     ) -> int:
         self.resolved_ranges.append((question_sequence_start, question_sequence_end))
         self.calls.append(f"replace_source_chunks:{dataset}:{len(source_contents)}")
-        self.source_chunk_count = len(source_contents)
+        self.source_chunk_count = len({str(item["content"]) for item in source_contents})
         return self.source_chunk_count
 
     def list_rag_chunks_for_active_vector_base(
@@ -194,12 +198,15 @@ def test_generate_embeddings_materializes_vector_base_when_missing(monkeypatch) 
         "source_url_chunks": 2,
     }
     assert result["source_url_summary"] == {
+        "references": 4,
         "attempted": 3,
+        "deduplicated": 1,
         "succeeded": 2,
         "failed": 1,
         "inserted_chunks": 2,
         "failures": [{"url": "https://fonte.example/fora", "reason": "HTTP 404."}],
     }
+    assert any("1 duplicada(s) por normalizacao de URL" in event["message"] for event in events)
     assert repository.calls == [
         "ensure_schema",
         "get_config:J1",

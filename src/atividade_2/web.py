@@ -5050,6 +5050,9 @@ _INDEX_HTML = """
         const sourceSummary = result.source_url_summary || {};
         const chunkOriginSummary = formatRagChunkOriginSummary(result.chunk_summary || {});
         const sourceFailures = sourceSummary.failures || [];
+        const sourceDedupText = sourceSummary.deduplicated
+          ? `, ${display(sourceSummary.deduplicated)} URL(s) duplicada(s) por normalizacao`
+          : "";
         const sourceFailureText = sourceFailures.length
           ? ` Fontes indisponiveis: ${sourceFailures.slice(0, 3).map((item) => `${display(item.url)} (${display(item.reason)})`).join("; ")}${sourceFailures.length > 3 ? "..." : ""}`
           : "";
@@ -5061,7 +5064,7 @@ _INDEX_HTML = """
         );
         appendRagVectorProgress(
           sourceSummary.attempted
-            ? `Resultado das fontes: ${display(sourceSummary.attempted)} URLs consultadas, ${display(sourceSummary.succeeded)} recuperadas, ${display(sourceSummary.failed)} falhas, ${display(sourceSummary.inserted_chunks)} chunks de fonte inseridos.`
+            ? `Resultado das fontes: ${display(sourceSummary.references || sourceSummary.attempted)} referencias de URL, ${display(sourceSummary.attempted)} URLs consultadas${sourceDedupText}, ${display(sourceSummary.succeeded)} recuperadas, ${display(sourceSummary.failed)} falhas, ${display(sourceSummary.inserted_chunks)} chunks de fonte inseridos.`
             : "Nenhuma URL de fonte encontrada para consulta.",
           sourceSummary.failed ? "error" : "done"
         );
@@ -5087,7 +5090,7 @@ _INDEX_HTML = """
           "rag_vector_status",
           summary ? [
             result.materialized_base ? "Base vetorial criada automaticamente." : "",
-            sourceSummary.attempted ? `Fontes consultadas: ${display(sourceSummary.succeeded)} recuperadas, ${display(sourceSummary.failed)} falhas, ${display(sourceSummary.inserted_chunks)} chunks de fonte/URL inseridos.` : "",
+            sourceSummary.attempted ? `Fontes consultadas: ${display(sourceSummary.attempted)} URLs unicas${sourceDedupText}, ${display(sourceSummary.succeeded)} recuperadas, ${display(sourceSummary.failed)} falhas, ${display(sourceSummary.inserted_chunks)} chunks de fonte/URL inseridos.` : "",
             chunkOriginSummary
               ? `Embeddings gerados para ${display(dataset)}: ${display(summary.generated_embeddings)} chunks no total (${chunkOriginSummary}) com ${display(summary.embedding_model)}.`
               : `Embeddings gerados para ${display(dataset)}: ${display(summary.generated_embeddings)} chunks com ${display(summary.embedding_model)}.`

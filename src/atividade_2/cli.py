@@ -335,7 +335,9 @@ def generate_rag_embeddings_command(args: argparse.Namespace) -> int:
     print(f"- latency_ms: {summary.latency_ms}")
     source_summary = result.get("source_url_summary") or {}
     if source_summary:
+        print(f"- source_url_references: {source_summary.get('references', 0)}")
         print(f"- source_urls_attempted: {source_summary.get('attempted', 0)}")
+        print(f"- source_urls_deduplicated: {source_summary.get('deduplicated', 0)}")
         print(f"- source_urls_succeeded: {source_summary.get('succeeded', 0)}")
         print(f"- source_urls_failed: {source_summary.get('failed', 0)}")
         print(f"- source_url_chunks: {source_summary.get('inserted_chunks', 0)}")

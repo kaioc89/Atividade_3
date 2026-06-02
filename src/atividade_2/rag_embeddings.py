@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from typing import Any
+from urllib.parse import urlsplit, urlunsplit
 
 from .config import load_settings
 from .db import connect
@@ -118,18 +119,34 @@ class RagEmbeddingGenerationService:
             if len(source_documents) > 20:
                 emit(f"{len(source_documents) - 20} documento(s) adicional(is) omitido(s) no log detalhado.")
             source_document_urls = [
-                {**document, "url": url}
+                {**document, "url": url, "canonical_url_key": _canonical_source_url_key(url)}
                 for document in source_documents
                 for url in split_source_urls([str(document["url"])])
             ]
-            source_urls = list(dict.fromkeys(str(item["url"]) for item in source_document_urls))
-            emit(f"{len(source_urls)} URL(s) de fonte selecionada(s) para consulta.")
+            source_url_by_key: dict[str, str] = {}
+            for item in source_document_urls:
+                key = str(item["canonical_url_key"])
+                url = str(item["url"])
+                current_url = source_url_by_key.get(key)
+                source_url_by_key[key] = _preferred_fetch_url(current=current_url, candidate=url)
+            source_urls = list(source_url_by_key.values())
+            duplicate_url_count = max(0, len(source_document_urls) - len(source_urls))
+            emit(
+                f"{len(source_document_urls)} referencia(s) de URL extraida(s); "
+                f"{len(source_urls)} URL(s) unica(s) selecionada(s) para consulta; "
+                f"{duplicate_url_count} duplicada(s) por normalizacao de URL.",
+                state="done" if duplicate_url_count else "running",
+            )
             for item in source_document_urls[:30]:
+                fetch_url = source_url_by_key[str(item["canonical_url_key"])]
+                fetch_suffix = f", consulta={_short_value(fetch_url, 140)}" if fetch_url != str(item["url"]) else ""
                 emit(
                     "URL preparada: "
                     f"id_document={item.get('document_id')}, "
                     f"document_key={_short_value(item.get('document_key'))}, "
-                    f"url={_short_value(item.get('url'), 140)}.",
+                    f"url={_short_value(item.get('url'), 140)}, "
+                    f"normalizada={_short_value(item.get('canonical_url_key'), 140)}"
+                    f"{fetch_suffix}.",
                 )
             if len(source_document_urls) > 30:
                 emit(f"{len(source_document_urls) - 30} URL(s) adicional(is) omitida(s) no log detalhado.")
@@ -155,22 +172,31 @@ class RagEmbeddingGenerationService:
                         f"motivo={_short_value(failure.reason, 140)}.",
                         state="error",
                     )
-            source_contents_by_url = {item.url: item for item in source_report.successes}
-            source_contents = [
-                {
-                    **document,
-                    "content": source_contents_by_url[str(document["url"])].content,
-                    "content_type": source_contents_by_url[str(document["url"])].content_type,
-                }
-                for document in source_document_urls
-                if str(document["url"]) in source_contents_by_url
-            ]
+            source_contents_by_url = {_canonical_source_url_key(item.url): item for item in source_report.successes}
+            source_contents = []
+            source_content_keys_seen: set[str] = set()
+            for document in source_document_urls:
+                canonical_url_key = str(document["canonical_url_key"])
+                fetched_content = source_contents_by_url.get(canonical_url_key)
+                if fetched_content is None or canonical_url_key in source_content_keys_seen:
+                    continue
+                source_content_keys_seen.add(canonical_url_key)
+                source_contents.append(
+                    {
+                        **document,
+                        "url": fetched_content.url,
+                        "original_url": document["url"],
+                        "content": fetched_content.content,
+                        "content_type": fetched_content.content_type,
+                    }
+                )
             for item in source_contents[:20]:
                 emit(
                     "Conteudo de fonte pronto para chunking: "
                     f"id_document={item.get('document_id')}, "
                     f"document_key={_short_value(item.get('document_key'))}, "
                     f"url={_short_value(item.get('url'), 140)}, "
+                    f"normalizada={_short_value(item.get('canonical_url_key'), 140)}, "
                     f"chars={len(str(item.get('content') or ''))}.",
                 )
             source_chunk_count = repository.replace_rag_source_content_chunks_for_active_vector_base(
@@ -274,7 +300,9 @@ class RagEmbeddingGenerationService:
                 "effective_end": question_sequence_end,
             },
             "source_url_summary": {
+                "references": len(source_document_urls),
                 "attempted": len(source_urls),
+                "deduplicated": duplicate_url_count,
                 "succeeded": len(source_report.successes),
                 "failed": len(source_report.failures),
                 "inserted_chunks": source_chunk_count,
@@ -353,6 +381,38 @@ def _source_kind_label(kind: str) -> str:
         "source_url_content": "fonte/URL recuperada",
     }
     return labels.get(kind, kind)
+
+
+def _canonical_source_url_key(url: str) -> str:
+    parsed = urlsplit(url.strip())
+    host = parsed.hostname.lower() if parsed.hostname else parsed.netloc.lower()
+    port = ""
+    if parsed.port is not None and parsed.port not in {80, 443}:
+        port = f":{parsed.port}"
+    path = parsed.path or "/"
+    if path != "/":
+        path = path.rstrip("/")
+    query = f"?{parsed.query}" if parsed.query else ""
+    return f"{host}{port}{path}{query}"
+
+
+def _preferred_fetch_url(*, current: str | None, candidate: str) -> str:
+    if current is None:
+        return _normalized_fetch_url(candidate)
+    current_scheme = urlsplit(current).scheme.lower()
+    candidate_scheme = urlsplit(candidate).scheme.lower()
+    if current_scheme == "http" and candidate_scheme == "https":
+        return _normalized_fetch_url(candidate)
+    return current
+
+
+def _normalized_fetch_url(url: str) -> str:
+    parsed = urlsplit(url.strip())
+    netloc = parsed.netloc.lower()
+    path = parsed.path or "/"
+    if path != "/":
+        path = path.rstrip("/")
+    return urlunsplit((parsed.scheme.lower(), netloc, path, parsed.query, ""))
 
 
 def _short_value(value: Any, max_length: int = 32) -> str:
