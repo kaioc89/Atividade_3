@@ -11,7 +11,7 @@ from atividade_2.database_dump import DatabaseDumpResult
 from atividade_2.contracts import BatchProgress, EligibilitySummary, EvaluationProgress, PipelineSummary
 from atividade_2.dashboard import DashboardFilters
 from atividade_2.run_judge_service import RunJudgeResult
-from atividade_2.web import create_app
+from atividade_2.web import RagEmbeddingGenerationPayload, RagEmbeddingJobRegistry, create_app
 
 
 class FakeRunJudgeService:
@@ -1147,8 +1147,18 @@ class FakeRagEmbeddingGenerationService:
     def __init__(self) -> None:
         self.calls = []
 
-    def run(self, *, dataset: str, batch_size: int | None = None) -> dict:
-        self.calls.append((dataset, batch_size))
+    def run(
+        self,
+        *,
+        dataset: str,
+        batch_size: int | None = None,
+        question_sequence_start: int | None = None,
+        question_sequence_end: int | None = None,
+        progress_callback=None,
+    ) -> dict:
+        self.calls.append((dataset, batch_size, question_sequence_start, question_sequence_end))
+        if progress_callback is not None:
+            progress_callback({"message": "fake progress", "state": "running"})
         return {
             "summary": {
                 "dataset": dataset,
@@ -1668,7 +1678,7 @@ def test_rag_curation_endpoints_return_options_import_and_activate() -> None:
     )
     assert generated.status_code == 200
     assert generated.json()["summary"]["generated_embeddings"] == 234
-    assert generation_service.calls[-1] == ("J1", 16)
+    assert generation_service.calls[-1] == ("J1", 16, None, None)
 
     preview = client.get("/api/rag-vector/preview", params={"dataset": "J1", "limit": 4})
     assert preview.status_code == 200
@@ -1683,6 +1693,35 @@ def test_rag_curation_endpoints_return_options_import_and_activate() -> None:
     assert search.status_code == 200
     assert search.json()["results"][0]["similarity"] == 0.89
     assert query_service.search_calls[-1] == ("J1", "improbidade administrativa", 5)
+
+
+def test_rag_embedding_generation_job_reports_progress_and_range() -> None:
+    generation_service = FakeRagEmbeddingGenerationService()
+    registry = RagEmbeddingJobRegistry(generation_service)
+
+    job = registry.create(
+        RagEmbeddingGenerationPayload(
+            dataset="J1",
+            batch_size=8,
+            question_sequence_start=10,
+            question_sequence_end=20,
+        )
+    )
+
+    data = registry.get(job.job_id)
+    for _attempt in range(20):
+        assert data is not None
+        if data.status == "completed":
+            break
+        time.sleep(0.01)
+        data = registry.get(job.job_id)
+
+    assert data is not None
+    assert data.status == "completed"
+    assert data.result is not None
+    assert data.result["summary"]["generated_embeddings"] == 234
+    assert any(event["message"] == "fake progress" for event in data.events)
+    assert generation_service.calls[-1] == ("J1", 8, 10, 20)
 
 
 def test_web_index_contains_controlled_operational_log_enrichment() -> None:

@@ -2390,13 +2390,23 @@ class JudgeRepository:
             updated_at=row[9].isoformat() if row[9] is not None else None,
         )
 
-    def list_rag_chunks_for_active_vector_base(self, *, dataset: str) -> list[dict[str, Any]]:
+    def list_rag_chunks_for_active_vector_base(
+        self,
+        *,
+        dataset: str,
+        question_sequence_start: int | None = None,
+        question_sequence_end: int | None = None,
+    ) -> list[dict[str, Any]]:
         vector_summary = self.get_rag_vector_base_summary(dataset=dataset)
         if vector_summary is None:
             raise ValueError(f"No active vector base found for {dataset.upper()}.")
+        scope_clause, scope_params = _rag_chunk_question_scope_sql(
+            question_sequence_start=question_sequence_start,
+            question_sequence_end=question_sequence_end,
+        )
         with self.connection.cursor() as cursor:
             cursor.execute(
-                """
+                f"""
                 SELECT
                     c.id_chunk,
                     c.chunk_text
@@ -2404,9 +2414,10 @@ class JudgeRepository:
                 JOIN av3.rag_documents d ON d.id_document = c.id_document
                 WHERE d.id_import_run = %s
                   AND d.dataset_code = %s
+                  {scope_clause}
                 ORDER BY c.id_chunk;
                 """,
-                (vector_summary.import_run_id, vector_summary.dataset),
+                (vector_summary.import_run_id, vector_summary.dataset, *scope_params),
             )
             rows = cursor.fetchall()
         return [
@@ -2416,6 +2427,246 @@ class JudgeRepository:
             }
             for row in rows
         ]
+
+    def resolve_rag_question_sequence_range_for_active_vector_base(
+        self,
+        *,
+        dataset: str,
+        question_sequence_start: int | None = None,
+        question_sequence_end: int | None = None,
+    ) -> dict[str, Any]:
+        vector_summary = self.get_rag_vector_base_summary(dataset=dataset)
+        if vector_summary is None:
+            raise ValueError(f"No active vector base found for {dataset.upper()}.")
+        if question_sequence_start is None and question_sequence_end is None:
+            return {
+                "start": None,
+                "end": None,
+                "mapped_from_dataset_position": False,
+            }
+
+        direct_clause, direct_params = _rag_question_sequence_filters(
+            "q",
+            start=question_sequence_start,
+            end=question_sequence_end,
+        )
+        position_clause, position_params = _rag_question_sequence_filters(
+            "ordered_questions",
+            start=question_sequence_start,
+            end=question_sequence_end,
+            column="question_position",
+        )
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                f"""
+                SELECT COUNT(*)
+                FROM av3.curadoria_questoes q
+                WHERE q.id_import_run = %s
+                  AND {direct_clause};
+                """,
+                (vector_summary.import_run_id, *direct_params),
+            )
+            direct_count = int(cursor.fetchone()[0] or 0)
+            if direct_count > 0:
+                return {
+                    "start": question_sequence_start,
+                    "end": question_sequence_end,
+                    "mapped_from_dataset_position": False,
+                }
+
+            cursor.execute(
+                f"""
+                WITH ordered_questions AS (
+                    SELECT
+                        q.question_sequence,
+                        ROW_NUMBER() OVER (ORDER BY q.question_sequence) AS question_position
+                    FROM av3.curadoria_questoes q
+                    WHERE q.id_import_run = %s
+                )
+                SELECT
+                    MIN(question_sequence),
+                    MAX(question_sequence),
+                    COUNT(*)
+                FROM ordered_questions
+                WHERE {position_clause};
+                """,
+                (vector_summary.import_run_id, *position_params),
+            )
+            row = cursor.fetchone()
+
+        count = int(row[2] or 0)
+        if count <= 0:
+            raise ValueError(
+                "Nenhuma questao encontrada no intervalo informado para a curadoria ativa."
+            )
+        return {
+            "start": int(row[0]) if row[0] is not None else None,
+            "end": int(row[1]) if row[1] is not None else None,
+            "mapped_from_dataset_position": True,
+        }
+
+    def list_rag_source_documents_for_active_vector_base(
+        self,
+        *,
+        dataset: str,
+        question_sequence_start: int | None = None,
+        question_sequence_end: int | None = None,
+    ) -> list[dict[str, Any]]:
+        vector_summary = self.get_rag_vector_base_summary(dataset=dataset)
+        if vector_summary is None:
+            raise ValueError(f"No active vector base found for {dataset.upper()}.")
+        scope_clause, scope_params = _rag_document_question_scope_sql(
+            question_sequence_start=question_sequence_start,
+            question_sequence_end=question_sequence_end,
+        )
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                f"""
+                SELECT DISTINCT
+                    d.id_document,
+                    d.source_url,
+                    d.title
+                FROM av3.rag_documents d
+                WHERE d.id_import_run = %s
+                  AND d.dataset_code = %s
+                  AND NULLIF(TRIM(d.source_url), '') IS NOT NULL
+                  {scope_clause}
+                ORDER BY d.id_document;
+                """,
+                (vector_summary.import_run_id, vector_summary.dataset, *scope_params),
+            )
+            rows = cursor.fetchall()
+        return [
+            {
+                "document_id": int(row[0]),
+                "url": row[1],
+                "title": row[2],
+            }
+            for row in rows
+        ]
+
+    def replace_rag_source_content_chunks_for_active_vector_base(
+        self,
+        *,
+        dataset: str,
+        source_contents: list[dict[str, Any]],
+        chunking_strategy: str = "source_url_content_v1",
+        max_chunk_chars: int = 3000,
+        overlap_chars: int = 300,
+        question_sequence_start: int | None = None,
+        question_sequence_end: int | None = None,
+    ) -> int:
+        vector_summary = self.get_rag_vector_base_summary(dataset=dataset)
+        if vector_summary is None:
+            raise ValueError(f"No active vector base found for {dataset.upper()}.")
+        scoped_document_ids = sorted({int(item["document_id"]) for item in source_contents})
+        is_partial = question_sequence_start is not None or question_sequence_end is not None
+        document_scope_clause = ""
+        document_scope_params: list[Any] = []
+        if is_partial:
+            if not scoped_document_ids:
+                return 0
+            document_scope_clause = "AND d.id_document = ANY(%s)"
+            document_scope_params.append(scoped_document_ids)
+        with self.connection:
+            with self.connection.cursor() as cursor:
+                cursor.execute(
+                    f"""
+                    DELETE FROM av3.rag_embeddings
+                    WHERE id_chunk IN (
+                        SELECT c.id_chunk
+                        FROM av3.rag_chunks c
+                        JOIN av3.rag_documents d ON d.id_document = c.id_document
+                        WHERE d.id_import_run = %s
+                          AND d.dataset_code = %s
+                          AND c.source_kind = 'source_url_content'
+                          {document_scope_clause}
+                    );
+                    """,
+                    (vector_summary.import_run_id, vector_summary.dataset, *document_scope_params),
+                )
+                cursor.execute(
+                    f"""
+                    DELETE FROM av3.rag_chunks
+                    WHERE id_document IN (
+                        SELECT d.id_document
+                        FROM av3.rag_documents
+                        d
+                        WHERE id_import_run = %s
+                          AND dataset_code = %s
+                          {document_scope_clause}
+                    )
+                      AND source_kind = 'source_url_content';
+                    """,
+                    (vector_summary.import_run_id, vector_summary.dataset, *document_scope_params),
+                )
+
+                chunk_count = 0
+                next_chunk_index_by_document: dict[int, int] = {}
+                for item in source_contents:
+                    document_id = int(item["document_id"])
+                    url = str(item["url"])
+                    content_type = item.get("content_type")
+                    chunks = _split_source_content(
+                        content=str(item["content"]),
+                        max_chunk_chars=max_chunk_chars,
+                        overlap_chars=overlap_chars,
+                    )
+                    for index, chunk_text in enumerate(chunks, start=1):
+                        chunk_index = next_chunk_index_by_document.get(document_id, 1000001)
+                        next_chunk_index_by_document[document_id] = chunk_index + 1
+                        cursor.execute(
+                            """
+                            INSERT INTO av3.rag_chunks
+                                (
+                                    id_document,
+                                    chunk_index,
+                                    chunk_text,
+                                    token_count,
+                                    chunking_strategy,
+                                    source_kind,
+                                    metadata_jsonb,
+                                    content_hash
+                                )
+                            VALUES (%s, %s, %s, %s, %s, 'source_url_content', %s::jsonb, %s);
+                            """,
+                            (
+                                document_id,
+                                chunk_index,
+                                chunk_text,
+                                _rough_token_count(chunk_text),
+                                chunking_strategy,
+                                jsonb_dumps(
+                                    {
+                                        "source": "source_url_fetch",
+                                        "url": url,
+                                        "content_type": content_type,
+                                        "part": index,
+                                        "total_parts": len(chunks),
+                                    }
+                                ),
+                                _sha256_text(f"{url}|{index}|{chunk_text}"),
+                            ),
+                        )
+                        chunk_count += 1
+
+                cursor.execute(
+                    """
+                    UPDATE av3.retrieval_runs
+                    SET metadata_jsonb = metadata_jsonb || %s::jsonb
+                    WHERE id_retrieval_run = %s;
+                    """,
+                    (
+                        jsonb_dumps(
+                            {
+                                "source_url_content_chunk_count": chunk_count,
+                                "source_url_content_updated": True,
+                            }
+                        ),
+                        vector_summary.retrieval_run_id,
+                    ),
+                )
+        return chunk_count
 
     def list_rag_vector_documents_preview(self, *, dataset: str, limit: int = 8) -> list[dict[str, Any]]:
         vector_summary = self.get_rag_vector_base_summary(dataset=dataset)
@@ -2506,6 +2757,8 @@ class JudgeRepository:
         api_base_url: str | None,
         embeddings: list[dict[str, Any]],
         latency_ms: int,
+        question_sequence_start: int | None = None,
+        question_sequence_end: int | None = None,
     ) -> RagEmbeddingGenerationSummary:
         vector_summary = self.get_rag_vector_base_summary(dataset=dataset)
         if vector_summary is None:
@@ -2520,10 +2773,14 @@ class JudgeRepository:
         if not provider_name:
             raise ValueError("provider must not be empty.")
 
+        scope_clause, scope_params = _rag_chunk_question_scope_sql(
+            question_sequence_start=question_sequence_start,
+            question_sequence_end=question_sequence_end,
+        )
         with self.connection:
             with self.connection.cursor() as cursor:
                 cursor.execute(
-                    """
+                    f"""
                     DELETE FROM av3.rag_embeddings
                     WHERE id_chunk IN (
                         SELECT c.id_chunk
@@ -2531,10 +2788,11 @@ class JudgeRepository:
                         JOIN av3.rag_documents d ON d.id_document = c.id_document
                         WHERE d.id_import_run = %s
                           AND d.dataset_code = %s
+                          {scope_clause}
                     )
                       AND embedding_model = %s;
                     """,
-                    (vector_summary.import_run_id, dataset_code, model_name),
+                    (vector_summary.import_run_id, dataset_code, *scope_params, model_name),
                 )
                 for item in embeddings:
                     chunk_id = int(item["chunk_id"])
@@ -3276,8 +3534,118 @@ def _rag_document_key(
     return _sha256_text("|".join(parts))
 
 
+def _rag_question_sequence_filters(
+    alias: str,
+    *,
+    start: int | None,
+    end: int | None,
+    column: str = "question_sequence",
+) -> tuple[str, list[Any]]:
+    filters: list[str] = []
+    params: list[Any] = []
+    if start is not None:
+        filters.append(f"{alias}.{column} >= %s")
+        params.append(start)
+    if end is not None:
+        filters.append(f"{alias}.{column} <= %s")
+        params.append(end)
+    return (" AND ".join(filters), params)
+
+
+def _rag_document_question_scope_sql(
+    *,
+    question_sequence_start: int | None,
+    question_sequence_end: int | None,
+) -> tuple[str, list[Any]]:
+    filters, params = _rag_question_sequence_filters(
+        "q",
+        start=question_sequence_start,
+        end=question_sequence_end,
+    )
+    if not filters:
+        return "", []
+    return (
+        f"""
+                  AND EXISTS (
+                      SELECT 1
+                      FROM av3.rag_chunks scoped
+                      JOIN av3.curadoria_questoes q ON q.id_curadoria = scoped.id_curadoria
+                      WHERE scoped.id_document = d.id_document
+                        AND {filters}
+                  )
+        """,
+        params,
+    )
+
+
+def _rag_chunk_question_scope_sql(
+    *,
+    question_sequence_start: int | None,
+    question_sequence_end: int | None,
+) -> tuple[str, list[Any]]:
+    direct_filters, direct_params = _rag_question_sequence_filters(
+        "q",
+        start=question_sequence_start,
+        end=question_sequence_end,
+    )
+    document_filters, document_params = _rag_question_sequence_filters(
+        "scoped_q",
+        start=question_sequence_start,
+        end=question_sequence_end,
+    )
+    if not direct_filters:
+        return "", []
+    return (
+        f"""
+                  AND (
+                      EXISTS (
+                          SELECT 1
+                          FROM av3.curadoria_questoes q
+                          WHERE q.id_curadoria = c.id_curadoria
+                            AND {direct_filters}
+                      )
+                      OR (
+                          c.source_kind = 'source_url_content'
+                          AND EXISTS (
+                              SELECT 1
+                              FROM av3.rag_chunks scoped
+                              JOIN av3.curadoria_questoes scoped_q
+                                ON scoped_q.id_curadoria = scoped.id_curadoria
+                              WHERE scoped.id_document = d.id_document
+                                AND {document_filters}
+                          )
+                      )
+                  )
+        """,
+        [*direct_params, *document_params],
+    )
+
+
 def _rough_token_count(value: str) -> int:
     return len([part for part in value.split() if part.strip()])
+
+
+def _split_source_content(*, content: str, max_chunk_chars: int, overlap_chars: int) -> list[str]:
+    normalized = " ".join(content.split())
+    if not normalized:
+        return []
+    max_size = max(500, int(max_chunk_chars))
+    overlap = min(max(0, int(overlap_chars)), max_size // 3)
+    chunks: list[str] = []
+    start = 0
+    while start < len(normalized):
+        end = min(len(normalized), start + max_size)
+        if end < len(normalized):
+            boundary = normalized.rfind(" ", start, end)
+            if boundary > start + max_size // 2:
+                end = boundary
+        chunk = normalized[start:end].strip()
+        if chunk:
+            chunks.append(chunk)
+        if end >= len(normalized):
+            break
+        start = max(end - overlap, start + 1)
+    return chunks
 
 
 def _build_rag_chunk_text(

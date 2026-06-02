@@ -45,7 +45,7 @@ Os comandos Python usam explicitamente `.venv/bin/python`.
 
 ## Banco Local
 
-O banco local usa PostgreSQL 18.3 via Docker Compose, para compatibilidade com o backup existente.
+O banco local usa PostgreSQL 18 com pgvector via Docker Compose, para compatibilidade com o backup existente e com a base RAG vetorial.
 
 Crie o arquivo `.env` automaticamente e suba o PostgreSQL:
 
@@ -56,7 +56,7 @@ make db-up
 O comando:
 
 - copia `.env.example` para `.env` se necessário;
-- baixa `postgres:18.3` se a imagem não existir localmente;
+- baixa `pgvector/pgvector:pg18` se a imagem não existir localmente;
 - sobe o container `topicos-av2-postgres`;
 - valida conexão com `app_dev`;
 - cria `app_test` se ainda não existir.
@@ -66,6 +66,12 @@ Conexão local padrão:
 ```text
 postgresql://postgres:postgres@localhost:5432/app_dev
 ```
+
+## RAG Vetorial
+
+Na Web UI, o botão `Gerar embeddings` materializa automaticamente a base vetorial a partir da curadoria ativa quando ainda não existe uma `retrieval_run` ativa para o dataset.
+
+Durante a geração, a aplicação consulta as URLs de fonte cadastradas na curadoria e adiciona o texto recuperado como chunks extras da base vetorial. URLs inacessíveis, vazias, com conteúdo não textual ou acima de 5 MB são reportadas no status da tela e no comando CLI.
 
 ## Restore Inicial
 
@@ -537,4 +543,3 @@ make db-down
 - automação via notebook.
 
 `atividade2.ipynb` permanece como artefato separado e não é necessário para subir ou validar o ambiente local.
-

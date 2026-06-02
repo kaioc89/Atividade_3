@@ -13,7 +13,7 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from io import StringIO
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse, Response
@@ -148,6 +148,8 @@ class RagEmbeddingSmokeTestPayload(BaseModel):
 class RagEmbeddingGenerationPayload(BaseModel):
     dataset: str
     batch_size: int | None = Field(default=None, ge=1)
+    question_sequence_start: int | None = Field(default=None, ge=1)
+    question_sequence_end: int | None = Field(default=None, ge=1)
 
 
 class RagVectorSearchPayload(BaseModel):
@@ -299,6 +301,108 @@ class JobRegistry:
                     self._active_run_id = None
 
 
+@dataclass
+class RagEmbeddingJobState:
+    job_id: str
+    status: RunStatus
+    payload: RagEmbeddingGenerationPayload
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
+    events: list[dict[str, Any]] = field(default_factory=list)
+    result: dict[str, Any] | None = None
+    error: str | None = None
+
+
+class RagEmbeddingJobRegistry:
+    """In-memory progress registry for long-running RAG embedding jobs."""
+
+    def __init__(self, service: RagEmbeddingGenerationService) -> None:
+        self.service = service
+        self._jobs: dict[str, RagEmbeddingJobState] = {}
+        self._active_job_id: str | None = None
+        self._lock = threading.Lock()
+
+    def create(self, payload: RagEmbeddingGenerationPayload) -> RagEmbeddingJobState:
+        with self._lock:
+            if self._active_job_id is not None:
+                active = self._jobs.get(self._active_job_id)
+                if active is not None and active.status in {"queued", "running"}:
+                    raise HTTPException(status_code=409, detail="Another RAG embedding generation is already active.")
+            job_id = uuid.uuid4().hex
+            job = RagEmbeddingJobState(job_id=job_id, status="queued", payload=payload)
+            self._append_event_locked(job, "Geracao enfileirada.", state="running")
+            self._jobs[job_id] = job
+            self._active_job_id = job_id
+        threading.Thread(target=self._run, args=(job_id,), daemon=True).start()
+        return job
+
+    def get(self, job_id: str) -> RagEmbeddingJobState | None:
+        with self._lock:
+            return self._jobs.get(job_id)
+
+    def _run(self, job_id: str) -> None:
+        with self._lock:
+            job = self._jobs[job_id]
+            job.status = "running"
+            job.started_at = datetime.now()
+            self._append_event_locked(job, "Execucao iniciada.", state="running")
+
+        def update_progress(event: dict[str, Any]) -> None:
+            with self._lock:
+                job = self._jobs[job_id]
+                self._append_event_locked(
+                    job,
+                    str(event.get("message") or "Progresso atualizado."),
+                    state=str(event.get("state") or "running"),
+                    metadata={key: value for key, value in event.items() if key not in {"message", "state"}},
+                )
+
+        try:
+            result = self.service.run(
+                dataset=job.payload.dataset,
+                batch_size=job.payload.batch_size,
+                question_sequence_start=job.payload.question_sequence_start,
+                question_sequence_end=job.payload.question_sequence_end,
+                progress_callback=update_progress,
+            )
+        except (RuntimeError, ValueError) as error:
+            with self._lock:
+                job = self._jobs[job_id]
+                job.status = "failed"
+                job.finished_at = datetime.now()
+                job.error = str(error)
+                self._append_event_locked(job, str(error), state="error")
+        else:
+            with self._lock:
+                job = self._jobs[job_id]
+                job.status = "completed"
+                job.finished_at = datetime.now()
+                job.result = result
+                self._append_event_locked(job, "Execucao concluida.", state="done")
+        finally:
+            with self._lock:
+                if self._active_job_id == job_id:
+                    self._active_job_id = None
+
+    def _append_event_locked(
+        self,
+        job: RagEmbeddingJobState,
+        message: str,
+        *,
+        state: str,
+        metadata: dict[str, Any] | None = None,
+    ) -> None:
+        job.events.append(
+            {
+                "index": len(job.events),
+                "timestamp": datetime.now().isoformat(),
+                "state": state,
+                "message": message,
+                "metadata": metadata or {},
+            }
+        )
+
+
 def create_app(
     service: RunJudgeService | None = None,
     *,
@@ -338,6 +442,7 @@ def create_app(
     app.state.rag_embedding_generation_service = (
         rag_embedding_generation_service or RagEmbeddingGenerationService()
     )
+    app.state.rag_embedding_jobs = RagEmbeddingJobRegistry(app.state.rag_embedding_generation_service)
     app.state.rag_vector_query_service = rag_vector_query_service or RagVectorQueryService()
     app.state.audit_log_summary_service = audit_log_summary_service or AuditLogSummaryService()
     app.state.assistant_enabled = assistant_enabled
@@ -536,15 +641,31 @@ def create_app(
             result = request.app.state.rag_embedding_generation_service.run(
                 dataset=payload.dataset,
                 batch_size=payload.batch_size,
+                question_sequence_start=payload.question_sequence_start,
+                question_sequence_end=payload.question_sequence_end,
             )
         except (RuntimeError, ValueError) as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
-        summary = result.get("summary")
-        return {
-            "summary": asdict(summary)
-            if summary is not None and hasattr(summary, "__dataclass_fields__")
-            else summary
-        }
+        return _serialize_rag_embedding_result(result)
+
+    @app.post("/api/rag-vector/generate-embeddings/jobs", dependencies=[Depends(_require_csrf)])
+    def start_rag_vector_embedding_job(payload: RagEmbeddingGenerationPayload, request: Request) -> dict:
+        try:
+            job = request.app.state.rag_embedding_jobs.create(payload)
+        except HTTPException:
+            raise
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+        return _serialize_rag_embedding_job(job)
+
+    @app.get("/api/rag-vector/generate-embeddings/jobs/{job_id}")
+    def get_rag_vector_embedding_job(job_id: str, request: Request) -> dict:
+        if not RUN_ID_PATTERN.match(job_id):
+            raise HTTPException(status_code=400, detail="Invalid job id.")
+        job = request.app.state.rag_embedding_jobs.get(job_id)
+        if job is None:
+            raise HTTPException(status_code=404, detail="RAG embedding job not found.")
+        return _serialize_rag_embedding_job(job)
 
     @app.get("/api/rag-vector/preview")
     def get_rag_vector_preview(request: Request, dataset: str, limit: int = 8) -> dict:
@@ -764,6 +885,35 @@ def _serialize_job(job: JobState) -> dict:
         "evaluation_events": [asdict(event) for event in _sorted_evaluation_events(job.evaluation_events)],
         "error": job.error,
         "result": _serialize_result(job.result) if job.result is not None else None,
+    }
+
+
+def _serialize_rag_embedding_job(job: RagEmbeddingJobState) -> dict:
+    return {
+        "job_id": job.job_id,
+        "status": job.status,
+        "started_at": job.started_at.isoformat() if job.started_at is not None else None,
+        "finished_at": job.finished_at.isoformat() if job.finished_at is not None else None,
+        "duration_seconds": _duration_seconds(job.started_at, job.finished_at, 0),
+        "duration": _format_duration(_duration_seconds(job.started_at, job.finished_at, 0)),
+        "payload": job.payload.dict(),
+        "events": job.events,
+        "error": job.error,
+        "result": _serialize_rag_embedding_result(job.result) if job.result is not None else None,
+    }
+
+
+def _serialize_rag_embedding_result(result: dict[str, Any] | None) -> dict | None:
+    if result is None:
+        return None
+    summary = result.get("summary")
+    return {
+        "materialized_base": bool(result.get("materialized_base")),
+        "question_sequence_range": result.get("question_sequence_range") or {},
+        "source_url_summary": result.get("source_url_summary") or {},
+        "summary": asdict(summary)
+        if summary is not None and hasattr(summary, "__dataclass_fields__")
+        else summary,
     }
 
 
@@ -1137,6 +1287,17 @@ _INDEX_HTML = """
     .prompt-layout { width:min(100%, 1440px); margin:0 auto; padding:20px; display:grid; grid-template-columns:minmax(320px,420px) minmax(0,1fr); gap:18px; }
     .prompt-layout > section, .prompt-layout > aside { min-width:0; }
     .prompt-status { margin-top:10px; }
+    .rag-operation-panel { margin-top:18px; border:1px solid var(--line); border-radius:8px; background:#fff; padding:12px; }
+    .rag-operation-panel h3 { margin:0 0 8px; font-size:13px; }
+    .rag-progress-log { display:grid; gap:6px; min-height:120px; max-height:360px; overflow:auto; padding:10px; border:1px solid var(--line); border-radius:8px; background:#f8fbfe; font-size:12px; color:var(--muted); }
+    .rag-progress-log[hidden] { display:none; }
+    .rag-progress-placeholder { color:var(--muted); font-size:12px; }
+    .rag-progress-item { display:grid; grid-template-columns:64px 24px minmax(0,1fr); gap:7px; align-items:start; }
+    .rag-progress-time { color:#64748b; font-variant-numeric:tabular-nums; }
+    .rag-progress-marker { display:grid; place-items:center; width:24px; min-height:18px; border-radius:999px; background:#dbeafe; color:var(--accent); font-size:10px; font-weight:800; line-height:1; }
+    .rag-progress-item.done .rag-progress-marker { background:#dcfce7; color:#166534; }
+    .rag-progress-item.error .rag-progress-marker { background:#fee2e2; color:#991b1b; }
+    .rag-progress-text { min-width:0; overflow-wrap:anywhere; line-height:1.35; }
     .prompt-log-table table { min-width:1480px; }
     .prompt-preview { margin-top:18px; display:grid; grid-template-columns:repeat(auto-fit, minmax(280px,1fr)); gap:10px; align-items:start; }
     .prompt-preview-card { border:1px solid var(--line); border-radius:8px; background:#fff; padding:12px; min-width:0; overflow:hidden; }
@@ -2223,6 +2384,12 @@ _INDEX_HTML = """
                 <label>Dataset
                   <select id="rag_vector_dataset"></select>
                 </label>
+                <label>Questao inicial
+                  <input id="rag_vector_question_start" type="number" min="1" step="1" placeholder="Todas">
+                </label>
+                <label>Questao final
+                  <input id="rag_vector_question_end" type="number" min="1" step="1" placeholder="Todas">
+                </label>
                 <div class="actions">
                   <button class="secondary" id="rag_vector_reload" type="button">Recarregar</button>
                   <button id="rag_vector_generate" type="button">Gerar embeddings</button>
@@ -2275,6 +2442,12 @@ _INDEX_HTML = """
                   </div>
                 </div>
               </section>
+            </div>
+            <div class="rag-operation-panel">
+              <h3>Logs da operacao</h3>
+              <div id="rag_vector_progress" class="rag-progress-log" aria-live="polite">
+                <div class="rag-progress-placeholder">Nenhuma geracao de embeddings iniciada nesta sessao.</div>
+              </div>
             </div>
           </div>
 
@@ -2585,6 +2758,7 @@ _INDEX_HTML = """
       return `${normalized.slice(0, maxLength - 3)}...`;
     }
     function display(value) { return value === null || value === undefined || value === "" ? "-" : value; }
+    function sleep(ms) { return new Promise((resolve) => setTimeout(resolve, ms)); }
     function friendlyErrorMessage(message) {
       const raw = String(message || "");
       const normalized = raw.toLowerCase();
@@ -3880,7 +4054,13 @@ _INDEX_HTML = """
         headers: {"content-type": "application/json", "x-csrf-token": csrfToken},
         body: JSON.stringify(body)
       });
-      const data = await response.json();
+      const responseText = await response.text();
+      let data = {};
+      try {
+        data = responseText ? JSON.parse(responseText) : {};
+      } catch (error) {
+        data = {detail: responseText || "Request failed"};
+      }
       if (response.status === 403 && data.detail === "Invalid CSRF token." && retryOnCsrf) {
         await loadConfig();
         return postJson(url, body, false);
@@ -4607,6 +4787,55 @@ _INDEX_HTML = """
       renderRagCurationDetail(null);
     }
 
+    function clearRagVectorProgress() {
+      const progress = document.getElementById("rag_vector_progress");
+      progress.textContent = "";
+    }
+
+    function appendRagVectorProgress(text, state = "running") {
+      const progress = document.getElementById("rag_vector_progress");
+      const item = document.createElement("div");
+      item.className = `rag-progress-item ${state}`;
+      const time = document.createElement("span");
+      time.className = "rag-progress-time";
+      time.textContent = new Date().toLocaleTimeString("pt-BR", {
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit"
+      });
+      const marker = document.createElement("span");
+      marker.className = "rag-progress-marker";
+      marker.textContent = state === "error" ? "erro" : state === "done" ? "ok" : "...";
+      const label = document.createElement("span");
+      label.className = "rag-progress-text";
+      label.textContent = text;
+      item.appendChild(time);
+      item.appendChild(marker);
+      item.appendChild(label);
+      progress.appendChild(item);
+      progress.scrollTop = progress.scrollHeight;
+    }
+
+    function ragVectorQuestionRangePayload() {
+      const startRaw = value("rag_vector_question_start").trim();
+      const endRaw = value("rag_vector_question_end").trim();
+      const start = startRaw ? Number(startRaw) : null;
+      const end = endRaw ? Number(endRaw) : null;
+      if (start !== null && (!Number.isInteger(start) || start < 1)) {
+        throw new Error("Questao inicial deve ser um numero inteiro maior ou igual a 1.");
+      }
+      if (end !== null && (!Number.isInteger(end) || end < 1)) {
+        throw new Error("Questao final deve ser um numero inteiro maior ou igual a 1.");
+      }
+      if (start !== null && end !== null && start > end) {
+        throw new Error("Questao inicial nao pode ser maior que a questao final.");
+      }
+      return {
+        question_sequence_start: start,
+        question_sequence_end: end,
+      };
+    }
+
     function formatRagVectorStatus(status) {
       switch (status) {
         case "pronta_com_embeddings":
@@ -4769,23 +4998,87 @@ _INDEX_HTML = """
         setText("rag_vector_status", "Selecione um dataset para gerar embeddings.");
         return;
       }
+      const generateButton = document.getElementById("rag_vector_generate");
       try {
+        clearRagVectorProgress();
+        generateButton.disabled = true;
         setText("rag_vector_status", `Gerando embeddings para ${display(dataset)}...`);
-        const data = await postJson("/api/rag-vector/generate-embeddings", {
+        const range = ragVectorQuestionRangePayload();
+        const rangeText = range.question_sequence_start || range.question_sequence_end
+          ? ` Intervalo: ${display(range.question_sequence_start || 1)}-${display(range.question_sequence_end || "fim")}.`
+          : "";
+        appendRagVectorProgress(`Iniciando job para ${display(dataset)}.${rangeText}`);
+        const started = await postJson("/api/rag-vector/generate-embeddings/jobs", {
           dataset,
           batch_size: 16,
+          ...range,
         });
-        const summary = data.summary || null;
+        let lastEventIndex = -1;
+        let data = started;
+        while (true) {
+          const events = Array.isArray(data.events) ? data.events : [];
+          for (const event of events) {
+            const index = Number(event.index ?? -1);
+            if (index <= lastEventIndex) continue;
+            lastEventIndex = index;
+            appendRagVectorProgress(display(event.message), event.state || "running");
+          }
+          if (!["queued", "running"].includes(data.status)) break;
+          const eventCount = events.length;
+          setText("rag_vector_status", `Gerando embeddings para ${display(dataset)}... ${display(eventCount)} evento(s) registrados.`);
+          await sleep(1000);
+          const response = await fetch(`/api/rag-vector/generate-embeddings/jobs/${encodeURIComponent(data.job_id)}`);
+          data = await response.json();
+          if (!response.ok) throw new Error(data.detail || "Falha ao consultar progresso da geracao.");
+        }
+        if (data.status === "failed") {
+          throw new Error(data.error || "Falha ao gerar embeddings.");
+        }
+        const result = data.result || {};
+        const summary = result.summary || null;
+        const sourceSummary = result.source_url_summary || {};
+        const sourceFailures = sourceSummary.failures || [];
+        const sourceFailureText = sourceFailures.length
+          ? ` Fontes indisponiveis: ${sourceFailures.slice(0, 3).map((item) => `${display(item.url)} (${display(item.reason)})`).join("; ")}${sourceFailures.length > 3 ? "..." : ""}`
+          : "";
+        appendRagVectorProgress(
+          result.materialized_base
+            ? "Base vetorial materializada automaticamente."
+            : "Base vetorial ativa encontrada e reutilizada.",
+          "done"
+        );
+        appendRagVectorProgress(
+          sourceSummary.attempted
+            ? `Resultado das fontes: ${display(sourceSummary.attempted)} URLs consultadas, ${display(sourceSummary.succeeded)} recuperadas, ${display(sourceSummary.failed)} falhas, ${display(sourceSummary.inserted_chunks)} chunks de fonte inseridos.`
+            : "Nenhuma URL de fonte encontrada para consulta.",
+          sourceSummary.failed ? "error" : "done"
+        );
+        if (sourceFailures.length) {
+          for (const failure of sourceFailures.slice(0, 5)) {
+            appendRagVectorProgress(`Fonte indisponivel: ${display(failure.url)} (${display(failure.reason)}).`, "error");
+          }
+          if (sourceFailures.length > 5) {
+            appendRagVectorProgress(`${display(sourceFailures.length - 5)} falhas de fonte adicionais omitidas na tela.`, "error");
+          }
+        }
+        if (summary) {
+          appendRagVectorProgress(`Embeddings gravados: ${display(summary.generated_embeddings)} chunks com ${display(summary.embedding_model)}.`, "done");
+        }
         await loadRagCurationDataset(dataset);
         await loadRagVectorPreview(dataset);
         setText(
           "rag_vector_status",
-          summary
-            ? `Embeddings gerados para ${display(dataset)}: ${display(summary.generated_embeddings)} chunks com ${display(summary.embedding_model)}.`
-            : `Embeddings gerados para ${display(dataset)}.`
+          summary ? [
+            result.materialized_base ? "Base vetorial criada automaticamente." : "",
+            sourceSummary.attempted ? `Fontes consultadas: ${display(sourceSummary.succeeded)} recuperadas, ${display(sourceSummary.failed)} falhas, ${display(sourceSummary.inserted_chunks)} chunks inseridos.` : "",
+            `Embeddings gerados para ${display(dataset)}: ${display(summary.generated_embeddings)} chunks com ${display(summary.embedding_model)}.`
+          ].filter(Boolean).join(" ") + sourceFailureText : `Embeddings gerados para ${display(dataset)}.`
         );
       } catch (error) {
+        appendRagVectorProgress(friendlyErrorMessage(error.message), "error");
         setText("rag_vector_status", friendlyErrorMessage(error.message));
+      } finally {
+        generateButton.disabled = false;
       }
     }
 

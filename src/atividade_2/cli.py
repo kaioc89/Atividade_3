@@ -333,6 +333,14 @@ def generate_rag_embeddings_command(args: argparse.Namespace) -> int:
     print(f"- generated_embeddings: {summary.generated_embeddings}")
     print(f"- total_chunks: {summary.total_chunks}")
     print(f"- latency_ms: {summary.latency_ms}")
+    source_summary = result.get("source_url_summary") or {}
+    if source_summary:
+        print(f"- source_urls_attempted: {source_summary.get('attempted', 0)}")
+        print(f"- source_urls_succeeded: {source_summary.get('succeeded', 0)}")
+        print(f"- source_urls_failed: {source_summary.get('failed', 0)}")
+        print(f"- source_url_chunks: {source_summary.get('inserted_chunks', 0)}")
+        for failure in source_summary.get("failures", []):
+            print(f"- source_url_failure: {failure.get('url')} | {failure.get('reason')}")
     return 0
 
 
