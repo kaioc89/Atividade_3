@@ -135,7 +135,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     materialize_rag.add_argument(
         "--retrieval-name",
-        help="Optional retrieval run name. Defaults to <dataset>_curated_v1.",
+        help="Optional retrieval run name. Defaults to <dataset>_source_urls_v1.",
     )
     materialize_rag.add_argument(
         "--top-k",
@@ -145,7 +145,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     materialize_rag.add_argument(
         "--chunking-strategy",
-        default="curated_articles_v1",
+        default="source_url_only_v1",
         help="Chunking strategy label recorded in rag_chunks and retrieval_runs.",
     )
     materialize_rag.set_defaults(handler=materialize_rag_base_command)

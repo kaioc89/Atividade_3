@@ -233,8 +233,16 @@ class RagEmbeddingGenerationService:
                 emit(f"{len(chunks) - 20} chunk(s) adicional(is) omitido(s) no log detalhado.")
 
             effective_batch_size = max(1, int(batch_size or self._batch_size))
-            generated: list[dict[str, Any]] = []
+            generated_count = 0
             total_latency_ms = 0
+            emit("Limpando embeddings antigos do escopo selecionado antes da geracao incremental.")
+            repository.clear_rag_embeddings_for_active_vector_base(
+                dataset=dataset_code,
+                embedding_model=config.model_name,
+                question_sequence_start=question_sequence_start,
+                question_sequence_end=question_sequence_end,
+            )
+            emit("Escopo limpo; embeddings serao gravados incrementalmente por lote.", state="done")
             batches = _chunked(chunks, effective_batch_size)
             for batch_index, chunk_batch in enumerate(batches, start=1):
                 chunk_ids = [int(item["chunk_id"]) for item in chunk_batch]
@@ -245,7 +253,7 @@ class RagEmbeddingGenerationService:
                     f"id_chunk {min(chunk_ids)}-{max(chunk_ids)}. {batch_kinds}",
                     batch_index=batch_index,
                     batch_count=len(batches),
-                    generated_embeddings=len(generated),
+                    generated_embeddings=generated_count,
                     total_chunks=len(chunks),
                 )
                 texts = [str(item["chunk_text"]) for item in chunk_batch]
@@ -267,7 +275,7 @@ class RagEmbeddingGenerationService:
                         state="error",
                         batch_index=batch_index,
                         batch_count=len(batches),
-                        generated_embeddings=len(generated),
+                        generated_embeddings=generated_count,
                         total_chunks=len(chunks),
                         chunk_id_start=min(chunk_ids),
                         chunk_id_end=max(chunk_ids),
@@ -283,35 +291,43 @@ class RagEmbeddingGenerationService:
                         f"(id_chunk {min(chunk_ids)}-{max(chunk_ids)}): {error}"
                     ) from error
                 total_latency_ms += batch_result.latency_ms
-                for item, vector in zip(chunk_batch, batch_result.vectors, strict=True):
-                    generated.append(
-                        {
-                            "chunk_id": int(item["chunk_id"]),
-                            "embedding": vector,
-                        }
-                    )
+                generated_batch = [
+                    {
+                        "chunk_id": int(item["chunk_id"]),
+                        "embedding": vector,
+                    }
+                    for item, vector in zip(chunk_batch, batch_result.vectors, strict=True)
+                ]
+                repository.upsert_rag_embedding_batch_for_active_vector_base(
+                    dataset=dataset_code,
+                    embedding_model=config.model_name,
+                    embedding_dimensions=config.dimensions,
+                    provider=config.provider,
+                    api_base_url=config.api_base_url,
+                    embeddings=generated_batch,
+                )
+                generated_count += len(generated_batch)
                 returned_dimensions = len(batch_result.vectors[0]) if batch_result.vectors else 0
                 emit(
                     f"Lote {batch_index}/{len(batches)} concluido em {batch_result.latency_ms} ms; "
-                    f"{len(batch_result.vectors)} embedding(s), {returned_dimensions} dimensao(oes).",
+                    f"{len(batch_result.vectors)} embedding(s), {returned_dimensions} dimensao(oes), "
+                    f"total gravado ate agora={generated_count}.",
                     state="done",
                     batch_index=batch_index,
                     batch_count=len(batches),
-                    generated_embeddings=len(generated),
+                    generated_embeddings=generated_count,
                     total_chunks=len(chunks),
                 )
 
-            emit("Gravando embeddings no banco.")
-            summary = repository.replace_rag_embeddings_for_active_vector_base(
+            emit("Consolidando resumo final da geracao incremental.")
+            summary = repository.build_rag_embedding_generation_summary(
                 dataset=dataset_code,
                 embedding_model=config.model_name,
                 embedding_dimensions=config.dimensions,
                 provider=config.provider,
                 api_base_url=config.api_base_url,
-                embeddings=generated,
+                generated_embeddings=generated_count,
                 latency_ms=total_latency_ms,
-                question_sequence_start=question_sequence_start,
-                question_sequence_end=question_sequence_end,
             )
             emit(f"{summary.generated_embeddings} embedding(s) gravado(s).", state="done")
         finally:

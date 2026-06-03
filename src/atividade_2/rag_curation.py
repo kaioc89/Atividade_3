@@ -89,6 +89,7 @@ class RagCurationService:
             repository.ensure_schema()
             active = repository.get_rag_curation_dataset_summary(dataset=dataset_code)
             vector_base = repository.get_rag_vector_base_summary(dataset=dataset_code)
+            vector_runs = repository.list_rag_vector_runs(dataset=dataset_code, limit=20)
             items = repository.list_rag_curation_items(dataset=dataset_code, active_only=True)
             runs = repository.list_rag_curation_runs(dataset=dataset_code, limit=20)
         finally:
@@ -97,6 +98,7 @@ class RagCurationService:
             "dataset": dataset_code,
             "active": asdict(active) if active is not None else None,
             "vector_base": asdict(vector_base) if vector_base is not None else None,
+            "vector_runs": [asdict(run) for run in vector_runs],
             "items": [asdict(item) for item in items],
             "runs": [asdict(run) for run in runs],
         }
@@ -121,6 +123,7 @@ class RagCurationService:
             repository.activate_rag_curation_run(run_id=run_id, dataset=dataset_code)
             active = repository.get_rag_curation_dataset_summary(dataset=dataset_code)
             vector_base = repository.get_rag_vector_base_summary(dataset=dataset_code)
+            vector_runs = repository.list_rag_vector_runs(dataset=dataset_code, limit=20)
             items = repository.list_rag_curation_items(dataset=dataset_code, active_only=True)
             runs = repository.list_rag_curation_runs(dataset=dataset_code, limit=20)
         finally:
@@ -129,6 +132,7 @@ class RagCurationService:
             "dataset": dataset_code,
             "active": asdict(active) if active is not None else None,
             "vector_base": asdict(vector_base) if vector_base is not None else None,
+            "vector_runs": [asdict(run) for run in vector_runs],
             "items": [asdict(item) for item in items],
             "runs": [asdict(run) for run in runs],
         }
@@ -160,6 +164,7 @@ class RagCurationService:
                 repository.activate_rag_curation_run(run_id=existing.run_id, dataset=dataset_code)
                 active = repository.get_rag_curation_dataset_summary(dataset=dataset_code)
                 vector_base = repository.get_rag_vector_base_summary(dataset=dataset_code)
+                vector_runs = repository.list_rag_vector_runs(dataset=dataset_code, limit=20)
                 items = repository.list_rag_curation_items(dataset=dataset_code, active_only=True)
                 runs = repository.list_rag_curation_runs(dataset=dataset_code, limit=20)
                 return {
@@ -167,6 +172,7 @@ class RagCurationService:
                     "dataset": dataset_code,
                     "active": asdict(active) if active is not None else None,
                     "vector_base": asdict(vector_base) if vector_base is not None else None,
+                    "vector_runs": [asdict(run) for run in vector_runs],
                     "items": [asdict(item) for item in items],
                     "runs": [asdict(run) for run in runs],
                 }
@@ -190,6 +196,7 @@ class RagCurationService:
             )
             active = repository.get_rag_curation_dataset_summary(dataset=dataset_code)
             vector_base = repository.get_rag_vector_base_summary(dataset=dataset_code)
+            vector_runs = repository.list_rag_vector_runs(dataset=dataset_code, limit=20)
             items = repository.list_rag_curation_items(dataset=dataset_code, active_only=True)
             runs = repository.list_rag_curation_runs(dataset=dataset_code, limit=20)
         finally:
@@ -200,6 +207,7 @@ class RagCurationService:
             "run": asdict(run),
             "active": asdict(active) if active is not None else None,
             "vector_base": asdict(vector_base) if vector_base is not None else None,
+            "vector_runs": [asdict(run) for run in vector_runs],
             "items": [asdict(item) for item in items],
             "runs": [asdict(run) for run in runs],
         }
