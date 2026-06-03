@@ -7,6 +7,7 @@ import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
+from socket import timeout as SocketTimeoutError
 from urllib.parse import urlparse
 
 
@@ -30,6 +31,8 @@ def request_openai_compatible_embeddings(
     texts: list[str],
     dimensions: int | None,
     timeout_seconds: int = 60,
+    retry_attempts: int = 3,
+    retry_backoff_seconds: float = 0.75,
 ) -> EmbeddingBatchResult:
     if not api_key:
         raise EmbeddingProviderError("Embedding API key is required.")
@@ -55,16 +58,30 @@ def request_openai_compatible_embeddings(
         method="POST",
     )
     started_at = time.perf_counter()
-    try:
-        with urllib.request.urlopen(request, timeout=timeout_seconds) as response:
-            raw_body = response.read(8_000_001)
-    except urllib.error.HTTPError as error:
-        detail = _read_http_error_body(error)
-        raise EmbeddingProviderError(
-            f"Embedding provider returned HTTP {error.code}{': ' + detail if detail else ''}."
-        ) from error
-    except (urllib.error.URLError, TimeoutError, OSError) as error:
-        raise EmbeddingProviderError(f"Embedding request failed: {error}") from error
+    retry_attempts = max(1, int(retry_attempts))
+    last_error: Exception | None = None
+    raw_body = b""
+    for attempt in range(1, retry_attempts + 1):
+        try:
+            with urllib.request.urlopen(request, timeout=timeout_seconds) as response:
+                raw_body = response.read(8_000_001)
+            break
+        except urllib.error.HTTPError as error:
+            detail = _read_http_error_body(error)
+            raise EmbeddingProviderError(
+                f"Embedding provider returned HTTP {error.code}{': ' + detail if detail else ''}."
+            ) from error
+        except (urllib.error.URLError, TimeoutError, OSError, SocketTimeoutError) as error:
+            last_error = error
+            if attempt < retry_attempts and _is_retryable_transport_error(error):
+                time.sleep(retry_backoff_seconds * (2 ** (attempt - 1)))
+                continue
+            attempt_label = f" after {attempt} attempt(s)" if attempt > 1 else ""
+            raise EmbeddingProviderError(f"Embedding request failed{attempt_label}: {error}") from error
+    else:
+        attempt_label = f" after {retry_attempts} attempt(s)"
+        raise EmbeddingProviderError(f"Embedding request failed{attempt_label}: {last_error}")
+
     latency_ms = int((time.perf_counter() - started_at) * 1000)
 
     if len(raw_body) > 8_000_000:
@@ -123,3 +140,17 @@ def _read_http_error_body(error: urllib.error.HTTPError) -> str | None:
     except Exception:
         return None
     return text[:400]
+
+
+def _is_retryable_transport_error(error: Exception) -> bool:
+    if isinstance(error, (TimeoutError, SocketTimeoutError)):
+        return True
+    if isinstance(error, urllib.error.URLError):
+        return _is_retryable_transport_error(error.reason if isinstance(error.reason, Exception) else OSError(str(error.reason)))
+    if isinstance(error, OSError):
+        if getattr(error, "errno", None) == 32:
+            return True
+        message = str(error).lower()
+        return "broken pipe" in message or "timed out" in message or "timeout" in message
+    message = str(error).lower()
+    return "broken pipe" in message or "timed out" in message or "timeout" in message

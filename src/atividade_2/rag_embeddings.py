@@ -239,6 +239,7 @@ class RagEmbeddingGenerationService:
             for batch_index, chunk_batch in enumerate(batches, start=1):
                 chunk_ids = [int(item["chunk_id"]) for item in chunk_batch]
                 batch_kinds = _format_chunk_stats(_chunk_stats(chunk_batch))
+                batch_characters = sum(len(str(item["chunk_text"] or "")) for item in chunk_batch)
                 emit(
                     f"Enviando lote {batch_index}/{len(batches)} com {len(chunk_batch)} chunk(s): "
                     f"id_chunk {min(chunk_ids)}-{max(chunk_ids)}. {batch_kinds}",
@@ -248,14 +249,39 @@ class RagEmbeddingGenerationService:
                     total_chunks=len(chunks),
                 )
                 texts = [str(item["chunk_text"]) for item in chunk_batch]
-                batch_result = request_openai_compatible_embeddings(
-                    api_base_url=(config.api_base_url or "").strip() or "https://api.openai.com/v1",
-                    api_key=api_key,
-                    model_name=config.model_name,
-                    texts=texts,
-                    dimensions=config.dimensions,
-                    timeout_seconds=self._request_timeout_seconds,
-                )
+                try:
+                    batch_result = request_openai_compatible_embeddings(
+                        api_base_url=(config.api_base_url or "").strip() or "https://api.openai.com/v1",
+                        api_key=api_key,
+                        model_name=config.model_name,
+                        texts=texts,
+                        dimensions=config.dimensions,
+                        timeout_seconds=self._request_timeout_seconds,
+                    )
+                except Exception as error:
+                    emit(
+                        f"Falha no lote {batch_index}/{len(batches)}: id_chunk {min(chunk_ids)}-{max(chunk_ids)}, "
+                        f"{len(chunk_batch)} chunk(s), {batch_characters} caractere(s), "
+                        f"{batch_kinds} provider={config.provider}, modelo={config.model_name}, "
+                        f"api_base={_short_value(config.api_base_url, 120)}. Erro: {error}",
+                        state="error",
+                        batch_index=batch_index,
+                        batch_count=len(batches),
+                        generated_embeddings=len(generated),
+                        total_chunks=len(chunks),
+                        chunk_id_start=min(chunk_ids),
+                        chunk_id_end=max(chunk_ids),
+                        chunk_characters=batch_characters,
+                        chunk_kind_summary=batch_kinds,
+                        provider=config.provider,
+                        model_name=config.model_name,
+                        api_base_url=config.api_base_url,
+                        error=str(error),
+                    )
+                    raise RuntimeError(
+                        f"Falha ao gerar embeddings no lote {batch_index}/{len(batches)} "
+                        f"(id_chunk {min(chunk_ids)}-{max(chunk_ids)}): {error}"
+                    ) from error
                 total_latency_ms += batch_result.latency_ms
                 for item, vector in zip(chunk_batch, batch_result.vectors, strict=True):
                     generated.append(
