@@ -2772,7 +2772,10 @@ _INDEX_HTML = """
         ["model does not exist", "Modelo inválido ou sem acesso nesse provedor"],
         ["HTTP 401", "key inválida ou sem permissão"],
         ["HTTP 403", "acesso negado pelo provedor"],
-        ["HTTP 404", "base URL/modelo incorreto"]
+        ["HTTP 404", "base URL/modelo incorreto"],
+        ["unexpected end of json input", "resposta interrompida pelo servidor; confira o log da operacao e tente novamente"],
+        ["broken pipe", "conexao interrompida com o provedor de embeddings; tente novamente"],
+        ["embedding request failed after", "conexao interrompida com o provedor de embeddings; confira o log do lote e tente novamente"]
       ];
       for (const [needle, friendly] of mappings) {
         if (normalized.includes(needle.toLowerCase())) return friendly;
@@ -4055,19 +4058,32 @@ _INDEX_HTML = """
         headers: {"content-type": "application/json", "x-csrf-token": csrfToken},
         body: JSON.stringify(body)
       });
-      const responseText = await response.text();
-      let data = {};
-      try {
-        data = responseText ? JSON.parse(responseText) : {};
-      } catch (error) {
-        data = {detail: responseText || "Request failed"};
-      }
-      if (response.status === 403 && data.detail === "Invalid CSRF token." && retryOnCsrf) {
+      const {data, responseText} = await readJsonResponse(response, "Request failed");
+      const parsedData = data || {};
+      if (response.status === 403 && parsedData.detail === "Invalid CSRF token." && retryOnCsrf) {
         await loadConfig();
         return postJson(url, body, false);
       }
-      if (!response.ok) throw new Error(data.detail || "Request failed");
-      return data;
+      if (!response.ok) throw new Error(parsedData.detail || responseText || "Request failed");
+      return parsedData;
+    }
+
+    async function readJsonResponse(response, fallbackMessage = "Request failed") {
+      const responseText = await response.text();
+      if (!responseText) {
+        if (response.ok) {
+          throw new Error("Resposta vazia do servidor ao consultar o progresso da operacao.");
+        }
+        return {data: {detail: fallbackMessage}, responseText};
+      }
+      try {
+        return {data: JSON.parse(responseText), responseText};
+      } catch (error) {
+        if (response.ok) {
+          throw new Error("Resposta JSON incompleta do servidor ao consultar o progresso da operacao.");
+        }
+        return {data: {detail: responseText || fallbackMessage}, responseText};
+      }
     }
 
     function toggleAssistantChat(forceOpen = null) {
@@ -5039,8 +5055,9 @@ _INDEX_HTML = """
           setText("rag_vector_status", `Gerando embeddings para ${display(dataset)}... ${display(eventCount)} evento(s) registrados.`);
           await sleep(1000);
           const response = await fetch(`/api/rag-vector/generate-embeddings/jobs/${encodeURIComponent(data.job_id)}`);
-          data = await response.json();
-          if (!response.ok) throw new Error(data.detail || "Falha ao consultar progresso da geracao.");
+          const parsed = await readJsonResponse(response, "Falha ao consultar progresso da geracao.");
+          data = parsed.data || {};
+          if (!response.ok) throw new Error(data.detail || parsed.responseText || "Falha ao consultar progresso da geracao.");
         }
         if (data.status === "failed") {
           throw new Error(data.error || "Falha ao gerar embeddings.");

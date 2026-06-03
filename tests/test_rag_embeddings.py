@@ -4,13 +4,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any
+from urllib.error import URLError
 
 from atividade_2.contracts import (
     RagEmbeddingGenerationSummary,
     RagEmbeddingModelConfigRecord,
     RagVectorBaseSummary,
 )
-from atividade_2.rag_embedding_client import EmbeddingBatchResult
+from atividade_2.rag_embedding_client import EmbeddingBatchResult, EmbeddingProviderError, request_openai_compatible_embeddings
 from atividade_2.rag_embeddings import RagEmbeddingGenerationService
 from atividade_2.rag_source_fetch import SourceUrlContent, SourceUrlFailure, SourceUrlFetchReport
 
@@ -273,6 +274,74 @@ def test_generate_embeddings_maps_dataset_local_question_range(monkeypatch) -> N
     }
     assert repository.resolved_ranges == [(71, 72), (71, 72), (71, 72), (71, 72)]
     assert any("posicao local do dataset" in event["message"] for event in events)
+
+
+def test_generate_embeddings_logs_batch_failure_context(monkeypatch) -> None:
+    connection = FakeConnection()
+    repository = FakeRepository(has_vector_base=True)
+
+    def _broken_embedding_request(**kwargs: Any) -> EmbeddingBatchResult:
+        raise EmbeddingProviderError("Embedding request failed after 3 attempt(s): <urlopen error [Errno 32] Broken pipe>")
+
+    monkeypatch.setattr(
+        "atividade_2.rag_embeddings.request_openai_compatible_embeddings",
+        _broken_embedding_request,
+    )
+    service = RagEmbeddingGenerationService(
+        settings_loader=FakeSettings,
+        connect_func=lambda _database_url: connection,
+        repository_factory=lambda _connection: repository,
+        source_fetcher=_fake_source_fetcher,
+    )
+    events: list[dict[str, Any]] = []
+
+    try:
+        service.run(dataset="J1", progress_callback=events.append)
+    except RuntimeError as error:
+        assert "Falha ao gerar embeddings no lote 1/1" in str(error)
+    else:
+        raise AssertionError("Expected embedding generation to fail.")
+
+    assert any("Falha no lote 1/1" in event["message"] for event in events)
+    assert any("provider=Qwen" in event["message"] for event in events)
+    assert any(event["state"] == "error" for event in events)
+
+
+def test_embedding_client_retries_broken_pipe(monkeypatch) -> None:
+    attempts = {"count": 0}
+    sleep_calls: list[float] = []
+
+    class _FakeResponse:
+        def __enter__(self) -> "_FakeResponse":
+            return self
+
+        def __exit__(self, exc_type, exc, tb) -> None:
+            return None
+
+        def read(self, _limit: int) -> bytes:
+            return b'{"data":[{"embedding":[0.1,0.2]}]}'
+
+    def _fake_urlopen(request, timeout=0):  # type: ignore[no-untyped-def]
+        attempts["count"] += 1
+        if attempts["count"] < 3:
+            raise URLError(OSError(32, "Broken pipe"))
+        return _FakeResponse()
+
+    monkeypatch.setattr("urllib.request.urlopen", _fake_urlopen)
+    monkeypatch.setattr("atividade_2.rag_embedding_client.time.sleep", sleep_calls.append)
+
+    result = request_openai_compatible_embeddings(
+        api_base_url="https://api.example/v1",
+        api_key="secret",
+        model_name="demo-embedding",
+        texts=["texto"],
+        dimensions=None,
+    )
+
+    assert result.endpoint_url == "https://api.example/v1/embeddings"
+    assert result.vectors == [[0.1, 0.2]]
+    assert attempts["count"] == 3
+    assert sleep_calls == [0.75, 1.5]
 
 
 def _fake_embedding_request(**kwargs: Any) -> EmbeddingBatchResult:

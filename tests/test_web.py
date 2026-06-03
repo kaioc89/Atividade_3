@@ -1695,6 +1695,18 @@ def test_rag_curation_endpoints_return_options_import_and_activate() -> None:
     assert query_service.search_calls[-1] == ("J1", "improbidade administrativa", 5)
 
 
+def test_web_index_contains_resilient_rag_embedding_polling_messages() -> None:
+    client = TestClient(create_app(FakeRunJudgeService()))
+
+    response = client.get("/")
+
+    assert response.status_code == 200
+    assert 'async function readJsonResponse(response, fallbackMessage = "Request failed")' in response.text
+    assert "Resposta vazia do servidor ao consultar o progresso da operacao." in response.text
+    assert "Resposta JSON incompleta do servidor ao consultar o progresso da operacao." in response.text
+    assert "conexao interrompida com o provedor de embeddings; tente novamente" in response.text
+
+
 def test_rag_embedding_generation_job_reports_progress_and_range() -> None:
     generation_service = FakeRagEmbeddingGenerationService()
     registry = RagEmbeddingJobRegistry(generation_service)
