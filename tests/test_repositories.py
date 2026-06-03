@@ -115,8 +115,8 @@ def test_rag_vector_search_does_not_hide_duplicate_chunk_text() -> None:
         active_curation_run_id=7,
         matches_active_curation=True,
         retrieval_run_id=21,
-        retrieval_name="j1_curated_v1",
-        retrieval_strategy="curated_articles_v1",
+        retrieval_name="j1_source_urls_v1",
+        retrieval_strategy="source_url_only_v1",
         embedding_model="Qwen/Qwen3-Embedding-8B",
         top_k=5,
         vector_enabled=True,
@@ -152,8 +152,8 @@ def test_rag_source_chunk_replacement_skips_duplicate_text_chunks() -> None:
         active_curation_run_id=7,
         matches_active_curation=True,
         retrieval_run_id=21,
-        retrieval_name="j1_curated_v1",
-        retrieval_strategy="curated_articles_v1",
+        retrieval_name="j1_source_urls_v1",
+        retrieval_strategy="source_url_only_v1",
         embedding_model="Qwen/Qwen3-Embedding-8B",
         top_k=5,
         vector_enabled=True,
@@ -189,8 +189,8 @@ def test_rag_source_chunk_replacement_skips_duplicate_text_chunks() -> None:
         for query in cursor.queries
         if "INSERT INTO av3.rag_chunks" in query
     ]
-    assert inserted == 1
-    assert len(insert_queries) == 1
+    assert inserted == 2
+    assert len(insert_queries) == 2
 
 
 def test_evaluation_details_schema_is_auxiliary_and_unique_by_evaluation() -> None:

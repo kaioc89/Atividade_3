@@ -904,9 +904,9 @@ class FakeRagCurationService:
                     "active_article_count": 48,
                     "vector_status": "materializada_sem_embeddings",
                     "vector_retrieval_run_id": 21,
-                    "vector_retrieval_name": "j1_curated_v1",
+                    "vector_retrieval_name": "j1_source_urls_v1",
                     "vector_document_count": 70,
-                    "vector_chunk_count": 234,
+                    "vector_chunk_count": 192,
                     "vector_embedding_count": 0,
                 },
                 {
@@ -922,9 +922,9 @@ class FakeRagCurationService:
                     "active_article_count": 61,
                     "vector_status": "desatualizada",
                     "vector_retrieval_run_id": 22,
-                    "vector_retrieval_name": "j2_curated_v1",
+                    "vector_retrieval_name": "j2_source_urls_v1",
                     "vector_document_count": 449,
-                    "vector_chunk_count": 851,
+                    "vector_chunk_count": 640,
                     "vector_embedding_count": 0,
                 },
             ]
@@ -946,9 +946,9 @@ class FakeRagCurationService:
                 "active_article_count": 48 if dataset == "J1" else 61,
                 "vector_status": "materializada_sem_embeddings" if dataset == "J1" else "desatualizada",
                 "vector_retrieval_run_id": 21 if dataset == "J1" else 22,
-                "vector_retrieval_name": f"{dataset.lower()}_curated_v1",
+                "vector_retrieval_name": f"{dataset.lower()}_source_urls_v1",
                 "vector_document_count": 70 if dataset == "J1" else 449,
-                "vector_chunk_count": 234 if dataset == "J1" else 851,
+                "vector_chunk_count": 192 if dataset == "J1" else 640,
                 "vector_embedding_count": 0,
             },
             "vector_base": {
@@ -958,19 +958,49 @@ class FakeRagCurationService:
                 "active_curation_run_id": 7 if dataset == "J1" else 8,
                 "matches_active_curation": dataset == "J1",
                 "retrieval_run_id": 21 if dataset == "J1" else 22,
-                "retrieval_name": f"{dataset.lower()}_curated_v1",
-                "retrieval_strategy": "curated_articles_v1",
+                "retrieval_name": f"{dataset.lower()}_source_urls_v1",
+                "retrieval_strategy": "source_url_only_v1",
                 "embedding_model": None,
                 "top_k": 5,
                 "vector_enabled": True,
                 "lexical_enabled": False,
                 "rerank_enabled": False,
                 "document_count": 70 if dataset == "J1" else 449,
-                "chunk_count": 234 if dataset == "J1" else 851,
+                "chunk_count": 192 if dataset == "J1" else 640,
                 "embedding_count": 0,
                 "status": "materializada_sem_embeddings" if dataset == "J1" else "desatualizada",
                 "created_at": "2026-06-01T10:15:00",
             },
+            "vector_runs": [
+                {
+                    "run_id": 21 if dataset == "J1" else 22,
+                    "dataset": dataset,
+                    "import_run_id": 7 if dataset == "J1" else 8,
+                    "retrieval_name": f"{dataset.lower()}_source_urls_v1",
+                    "retrieval_strategy": "source_url_only_v1",
+                    "embedding_model": "text-embedding-3-small" if dataset == "J1" else None,
+                    "top_k": 5,
+                    "active": True,
+                    "document_count": 70 if dataset == "J1" else 449,
+                    "chunk_count": 192 if dataset == "J1" else 640,
+                    "embedding_count": 192 if dataset == "J1" else 0,
+                    "created_at": "2026-06-01T10:15:00",
+                },
+                {
+                    "run_id": 1 if dataset == "J1" else 2,
+                    "dataset": dataset,
+                    "import_run_id": 7 if dataset == "J1" else 8,
+                    "retrieval_name": f"{dataset.lower()}_curated_v1",
+                    "retrieval_strategy": "curated_articles_v1",
+                    "embedding_model": None,
+                    "top_k": 5,
+                    "active": False,
+                    "document_count": 70 if dataset == "J1" else 449,
+                    "chunk_count": 234 if dataset == "J1" else 851,
+                    "embedding_count": 0,
+                    "created_at": "2026-06-01T09:15:00",
+                },
+            ],
             "runs": [
                 {
                     "run_id": 7 if dataset == "J1" else 8,
@@ -1164,14 +1194,14 @@ class FakeRagEmbeddingGenerationService:
                 "dataset": dataset,
                 "dataset_name": "OAB_Bench" if dataset == "J1" else "OAB_Exames",
                 "retrieval_run_id": 21,
-                "retrieval_name": "j1_curated_v1" if dataset == "J1" else "j2_curated_v1",
+                "retrieval_name": "j1_source_urls_v1" if dataset == "J1" else "j2_source_urls_v1",
                 "import_run_id": 7,
                 "embedding_model": "text-embedding-3-small",
                 "provider": "openai",
                 "api_base_url": "https://api.openai.com/v1",
                 "requested_dimensions": 1536,
-                "generated_embeddings": 234,
-                "total_chunks": 234,
+                "generated_embeddings": 192,
+                "total_chunks": 192,
                 "latency_ms": 987,
                 "created_at": "2026-06-01T23:30:00",
             }
@@ -1194,16 +1224,16 @@ class FakeRagVectorQueryService:
                 "active_curation_run_id": 7,
                 "matches_active_curation": True,
                 "retrieval_run_id": 21,
-                "retrieval_name": "j1_curated_v1",
-                "retrieval_strategy": "curated_articles_v1",
+                "retrieval_name": "j1_source_urls_v1",
+                "retrieval_strategy": "source_url_only_v1",
                 "embedding_model": "text-embedding-3-small",
                 "top_k": 5,
                 "vector_enabled": True,
                 "lexical_enabled": False,
                 "rerank_enabled": False,
                 "document_count": 70,
-                "chunk_count": 234,
-                "embedding_count": 234,
+                "chunk_count": 192,
+                "embedding_count": 192,
                 "status": "pronta_com_embeddings",
                 "created_at": "2026-06-01T23:30:00",
             },
@@ -1220,15 +1250,107 @@ class FakeRagVectorQueryService:
             "chunks": [
                 {
                     "chunk_id": 11,
-                    "chunk_kind": "curated_article",
-                    "artigo": "art. 11, VII",
-                    "topico": "Atos de improbidade",
-                    "relevancia": "alta",
-                    "tipo": "principal",
-                    "chunk_text": "Norma: Lei de Improbidade Administrativa...",
+                    "chunk_kind": "source_url_content",
+                    "artigo": None,
+                    "topico": None,
+                    "relevancia": None,
+                    "tipo": None,
+                    "chunk_text": "Texto recuperado da fonte oficial da Lei de Improbidade Administrativa...",
                     "document_id": 1,
                     "lei": "Lei 8.429/1992",
                     "norma": "Lei de Improbidade Administrativa",
+                }
+            ],
+        }
+
+
+class FakeRagVectorRunService:
+    def __init__(self) -> None:
+        self.activated = []
+        self.deleted = []
+
+    def activate(self, *, run_id: int, dataset: str) -> dict:
+        self.activated.append((run_id, dataset))
+        return {
+            "action": "activated",
+            "dataset": dataset,
+            "vector_base": {
+                "dataset": dataset,
+                "dataset_name": "OAB_Bench" if dataset == "J1" else "OAB_Exames",
+                "import_run_id": 7 if dataset == "J1" else 8,
+                "active_curation_run_id": 7 if dataset == "J1" else 8,
+                "matches_active_curation": True,
+                "retrieval_run_id": run_id,
+                "retrieval_name": f"{dataset.lower()}_source_urls_v1",
+                "retrieval_strategy": "source_url_only_v1",
+                "embedding_model": "text-embedding-3-small",
+                "top_k": 5,
+                "vector_enabled": True,
+                "lexical_enabled": False,
+                "rerank_enabled": False,
+                "document_count": 70 if dataset == "J1" else 449,
+                "chunk_count": 192 if dataset == "J1" else 640,
+                "embedding_count": 192 if dataset == "J1" else 0,
+                "status": "pronta_com_embeddings",
+                "created_at": "2026-06-01T10:15:00",
+            },
+            "runs": [
+                {
+                    "run_id": run_id,
+                    "dataset": dataset,
+                    "import_run_id": 7 if dataset == "J1" else 8,
+                    "retrieval_name": f"{dataset.lower()}_source_urls_v1",
+                    "retrieval_strategy": "source_url_only_v1",
+                    "embedding_model": "text-embedding-3-small",
+                    "top_k": 5,
+                    "active": True,
+                    "document_count": 70 if dataset == "J1" else 449,
+                    "chunk_count": 192 if dataset == "J1" else 640,
+                    "embedding_count": 192 if dataset == "J1" else 0,
+                    "created_at": "2026-06-01T10:15:00",
+                }
+            ],
+        }
+
+    def delete(self, *, run_id: int, dataset: str) -> dict:
+        self.deleted.append((run_id, dataset))
+        return {
+            "action": "deleted",
+            "dataset": dataset,
+            "vector_base": {
+                "dataset": dataset,
+                "dataset_name": "OAB_Bench" if dataset == "J1" else "OAB_Exames",
+                "import_run_id": 7 if dataset == "J1" else 8,
+                "active_curation_run_id": 7 if dataset == "J1" else 8,
+                "matches_active_curation": True,
+                "retrieval_run_id": 21 if dataset == "J1" else 22,
+                "retrieval_name": f"{dataset.lower()}_source_urls_v1",
+                "retrieval_strategy": "source_url_only_v1",
+                "embedding_model": "text-embedding-3-small",
+                "top_k": 5,
+                "vector_enabled": True,
+                "lexical_enabled": False,
+                "rerank_enabled": False,
+                "document_count": 70 if dataset == "J1" else 449,
+                "chunk_count": 192 if dataset == "J1" else 640,
+                "embedding_count": 192 if dataset == "J1" else 0,
+                "status": "pronta_com_embeddings",
+                "created_at": "2026-06-01T10:15:00",
+            },
+            "runs": [
+                {
+                    "run_id": 21 if dataset == "J1" else 22,
+                    "dataset": dataset,
+                    "import_run_id": 7 if dataset == "J1" else 8,
+                    "retrieval_name": f"{dataset.lower()}_source_urls_v1",
+                    "retrieval_strategy": "source_url_only_v1",
+                    "embedding_model": "text-embedding-3-small",
+                    "top_k": 5,
+                    "active": True,
+                    "document_count": 70 if dataset == "J1" else 449,
+                    "chunk_count": 192 if dataset == "J1" else 640,
+                    "embedding_count": 192 if dataset == "J1" else 0,
+                    "created_at": "2026-06-01T10:15:00",
                 }
             ],
         }
@@ -1245,12 +1367,12 @@ class FakeRagVectorQueryService:
                 {
                     "rank": 1,
                     "chunk_id": 11,
-                    "chunk_kind": "curated_article",
-                    "artigo": "art. 11, VII",
-                    "topico": "Atos de improbidade",
-                    "relevancia": "alta",
-                    "tipo": "principal",
-                    "chunk_text": "Norma: Lei de Improbidade Administrativa...",
+                    "chunk_kind": "source_url_content",
+                    "artigo": None,
+                    "topico": None,
+                    "relevancia": None,
+                    "tipo": None,
+                    "chunk_text": "Texto recuperado da fonte oficial da Lei de Improbidade Administrativa...",
                     "document_id": 1,
                     "document_key": "J1:lei:8429-1992",
                     "lei": "Lei 8.429/1992",
@@ -1544,6 +1666,7 @@ def test_web_index_contains_rag_curation_tab() -> None:
             rag_embedding_smoke_test_service=FakeRagEmbeddingSmokeTestService(),
             rag_embedding_generation_service=FakeRagEmbeddingGenerationService(),
             rag_vector_query_service=FakeRagVectorQueryService(),
+            rag_vector_run_service=FakeRagVectorRunService(),
         )
     )
 
@@ -1566,6 +1689,7 @@ def test_web_index_contains_rag_curation_tab() -> None:
     assert 'id="rag_curation_articles_body"' in response.text
     assert 'id="rag_vector_active_run"' in response.text
     assert 'id="rag_vector_generate"' in response.text
+    assert 'id="rag_vector_runs_body"' in response.text
     assert "Base vetorial ativa" in response.text
     assert 'id="rag_query_documents_body"' in response.text
     assert 'id="rag_query_chunks_body"' in response.text
@@ -1580,6 +1704,9 @@ def test_web_index_contains_rag_curation_tab() -> None:
     assert "function activateRagCurationRun" in response.text
     assert "function renderRagCurationDetail" in response.text
     assert "function renderRagVectorBase" in response.text
+    assert "function renderRagVectorRuns" in response.text
+    assert "function activateRagVectorRun" in response.text
+    assert "function deleteRagVectorRun" in response.text
     assert "function loadRagVectorPreview" in response.text
     assert "function generateRagEmbeddings" in response.text
     assert "function searchRagVector" in response.text
@@ -1594,6 +1721,7 @@ def test_rag_curation_endpoints_return_options_import_and_activate() -> None:
     smoke_service = FakeRagEmbeddingSmokeTestService()
     generation_service = FakeRagEmbeddingGenerationService()
     query_service = FakeRagVectorQueryService()
+    vector_run_service = FakeRagVectorRunService()
     client = TestClient(
         create_app(
             FakeRunJudgeService(),
@@ -1602,6 +1730,7 @@ def test_rag_curation_endpoints_return_options_import_and_activate() -> None:
             rag_embedding_smoke_test_service=smoke_service,
             rag_embedding_generation_service=generation_service,
             rag_vector_query_service=query_service,
+            rag_vector_run_service=vector_run_service,
         )
     )
     token = client.get("/api/config").json()["csrf_token"]
@@ -1615,6 +1744,7 @@ def test_rag_curation_endpoints_return_options_import_and_activate() -> None:
     assert current.json()["active"]["active_run_id"] == 7
     assert current.json()["vector_base"]["retrieval_run_id"] == 21
     assert current.json()["vector_base"]["status"] == "materializada_sem_embeddings"
+    assert len(current.json()["vector_runs"]) == 2
 
     embedding = client.get("/api/rag-embedding-config", params={"dataset": "J1"})
     assert embedding.status_code == 200
@@ -1694,6 +1824,23 @@ def test_rag_curation_endpoints_return_options_import_and_activate() -> None:
     assert search.json()["results"][0]["similarity"] == 0.89
     assert query_service.search_calls[-1] == ("J1", "improbidade administrativa", 5)
 
+    activated_vector = client.post(
+        "/api/rag-vector/runs/1/activate",
+        params={"dataset": "J1"},
+        headers={"x-csrf-token": token},
+    )
+    assert activated_vector.status_code == 200
+    assert vector_run_service.activated[-1] == (1, "J1")
+
+    deleted_vector = client.request(
+        "DELETE",
+        "/api/rag-vector/runs/1",
+        params={"dataset": "J1"},
+        headers={"x-csrf-token": token},
+    )
+    assert deleted_vector.status_code == 200
+    assert vector_run_service.deleted[-1] == (1, "J1")
+
 
 def test_web_index_contains_resilient_rag_embedding_polling_messages() -> None:
     client = TestClient(create_app(FakeRunJudgeService()))
@@ -1705,6 +1852,9 @@ def test_web_index_contains_resilient_rag_embedding_polling_messages() -> None:
     assert "Resposta vazia do servidor ao consultar o progresso da operacao." in response.text
     assert "Resposta JSON incompleta do servidor ao consultar o progresso da operacao." in response.text
     assert "conexao interrompida com o provedor de embeddings; tente novamente" in response.text
+    assert "<h3>Resultado selecionado</h3>" in response.text
+    assert 'id="rag_query_selected_chunk_text"' in response.text
+    assert 'detailButton.textContent = "Detalhe";' in response.text
 
 
 def test_rag_embedding_generation_job_reports_progress_and_range() -> None:

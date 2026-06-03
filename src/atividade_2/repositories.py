@@ -25,6 +25,7 @@ from .contracts import (
     RagEmbeddingModelConfigRecord,
     RagBaseMaterializationSummary,
     RagVectorBaseSummary,
+    RagVectorRunRecord,
     StoredJudgeRole,
 )
 from .evaluation_details import EvaluationDetails, jsonb_dumps
@@ -2255,6 +2256,174 @@ class JudgeRepository:
             created_at=row[13].isoformat() if row[13] is not None else None,
         )
 
+    def list_rag_vector_runs(self, *, dataset: str, limit: int = 20) -> list[RagVectorRunRecord]:
+        dataset_code = dataset.upper()
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT
+                    r.id_retrieval_run,
+                    r.dataset_code,
+                    r.id_import_run,
+                    r.name,
+                    r.retrieval_strategy,
+                    r.embedding_model,
+                    r.top_k,
+                    r.ativo,
+                    (
+                        SELECT COUNT(*)
+                        FROM av3.rag_documents d
+                        WHERE d.id_import_run = r.id_import_run
+                          AND d.dataset_code = r.dataset_code
+                    ) AS document_count,
+                    (
+                        SELECT COUNT(*)
+                        FROM av3.rag_chunks c
+                        JOIN av3.rag_documents d ON d.id_document = c.id_document
+                        WHERE d.id_import_run = r.id_import_run
+                          AND d.dataset_code = r.dataset_code
+                    ) AS chunk_count,
+                    (
+                        SELECT COUNT(*)
+                        FROM av3.rag_embeddings e
+                        JOIN av3.rag_chunks c ON c.id_chunk = e.id_chunk
+                        JOIN av3.rag_documents d ON d.id_document = c.id_document
+                        WHERE d.id_import_run = r.id_import_run
+                          AND d.dataset_code = r.dataset_code
+                    ) AS embedding_count,
+                    r.created_at
+                FROM av3.retrieval_runs r
+                WHERE r.dataset_code = %s
+                ORDER BY r.created_at DESC, r.id_retrieval_run DESC
+                LIMIT %s;
+                """,
+                (dataset_code, max(1, int(limit))),
+            )
+            rows = cursor.fetchall()
+        return [
+            RagVectorRunRecord(
+                run_id=int(row[0]),
+                dataset=row[1],
+                import_run_id=int(row[2]),
+                retrieval_name=row[3],
+                retrieval_strategy=row[4],
+                embedding_model=row[5],
+                top_k=int(row[6]),
+                active=bool(row[7]),
+                document_count=int(row[8] or 0),
+                chunk_count=int(row[9] or 0),
+                embedding_count=int(row[10] or 0),
+                created_at=row[11].isoformat() if row[11] is not None else None,
+            )
+            for row in rows
+        ]
+
+    def activate_rag_vector_run(self, *, run_id: int, dataset: str) -> None:
+        dataset_code = dataset.upper()
+        with self.connection:
+            with self.connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT 1
+                    FROM av3.retrieval_runs
+                    WHERE id_retrieval_run = %s
+                      AND dataset_code = %s
+                    LIMIT 1;
+                    """,
+                    (run_id, dataset_code),
+                )
+                if cursor.fetchone() is None:
+                    raise ValueError(f"RAG vector run {run_id} not found for {dataset_code}.")
+                cursor.execute(
+                    "UPDATE av3.retrieval_runs SET ativo = FALSE WHERE dataset_code = %s AND ativo = TRUE;",
+                    (dataset_code,),
+                )
+                cursor.execute(
+                    """
+                    UPDATE av3.retrieval_runs
+                    SET ativo = TRUE
+                    WHERE id_retrieval_run = %s
+                      AND dataset_code = %s;
+                    """,
+                    (run_id, dataset_code),
+                )
+
+    def delete_rag_vector_run(self, *, run_id: int, dataset: str) -> None:
+        dataset_code = dataset.upper()
+        with self.connection:
+            with self.connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT id_import_run, ativo
+                    FROM av3.retrieval_runs
+                    WHERE id_retrieval_run = %s
+                      AND dataset_code = %s
+                    LIMIT 1;
+                    """,
+                    (run_id, dataset_code),
+                )
+                row = cursor.fetchone()
+                if row is None:
+                    raise ValueError(f"RAG vector run {run_id} not found for {dataset_code}.")
+                import_run_id = int(row[0])
+                active = bool(row[1])
+                if active:
+                    raise ValueError("Nao e permitido excluir a run vetorial ativa.")
+
+                cursor.execute(
+                    """
+                    DELETE FROM av3.retrieval_runs
+                    WHERE id_retrieval_run = %s
+                      AND dataset_code = %s;
+                    """,
+                    (run_id, dataset_code),
+                )
+                cursor.execute(
+                    """
+                    SELECT 1
+                    FROM av3.retrieval_runs
+                    WHERE id_import_run = %s
+                      AND dataset_code = %s
+                    LIMIT 1;
+                    """,
+                    (import_run_id, dataset_code),
+                )
+                if cursor.fetchone() is not None:
+                    return
+                cursor.execute(
+                    """
+                    DELETE FROM av3.rag_embeddings
+                    WHERE id_chunk IN (
+                        SELECT c.id_chunk
+                        FROM av3.rag_chunks c
+                        JOIN av3.rag_documents d ON d.id_document = c.id_document
+                        WHERE d.id_import_run = %s
+                          AND d.dataset_code = %s
+                    );
+                    """,
+                    (import_run_id, dataset_code),
+                )
+                cursor.execute(
+                    """
+                    DELETE FROM av3.rag_chunks
+                    WHERE id_document IN (
+                        SELECT id_document
+                        FROM av3.rag_documents
+                        WHERE id_import_run = %s
+                          AND dataset_code = %s
+                    );
+                    """,
+                    (import_run_id, dataset_code),
+                )
+                cursor.execute(
+                    """
+                    DELETE FROM av3.rag_documents
+                    WHERE id_import_run = %s
+                      AND dataset_code = %s;
+                    """,
+                    (import_run_id, dataset_code),
+                )
+
     def get_rag_embedding_model_config(self, *, dataset: str) -> RagEmbeddingModelConfigRecord | None:
         dataset_code = dataset.upper()
         dataset_name = DATASET_ALIASES.get(dataset_code, dataset_code)
@@ -2423,6 +2592,7 @@ class JudgeRepository:
                 JOIN av3.rag_documents d ON d.id_document = c.id_document
                 WHERE d.id_import_run = %s
                   AND d.dataset_code = %s
+                  AND c.source_kind = 'source_url_content'
                   {scope_clause}
                 ORDER BY c.id_chunk;
                 """,
@@ -2547,7 +2717,8 @@ class JudgeRepository:
                     d.source_type,
                     d.lei,
                     d.norma,
-                    d.urn
+                    d.urn,
+                    d.metadata_jsonb
                 FROM av3.rag_documents d
                 WHERE d.id_import_run = %s
                   AND d.dataset_code = %s
@@ -2568,6 +2739,9 @@ class JudgeRepository:
                 "lei": row[5],
                 "norma": row[6],
                 "urn": row[7],
+                "curation_id": int(row[8].get("curation_id")) if isinstance(row[8], dict) and row[8].get("curation_id") is not None else None,
+                "question_id": int(row[8].get("question_id")) if isinstance(row[8], dict) and row[8].get("question_id") is not None else None,
+                "question_sequence": int(row[8].get("question_sequence")) if isinstance(row[8], dict) and row[8].get("question_sequence") is not None else None,
             }
             for row in rows
         ]
@@ -2629,26 +2803,24 @@ class JudgeRepository:
                 )
 
                 chunk_count = 0
-                seen_source_text_hashes = _existing_source_chunk_text_hashes(
-                    cursor,
-                    import_run_id=vector_summary.import_run_id,
-                    dataset=vector_summary.dataset,
-                )
                 next_chunk_index_by_document: dict[int, int] = {}
                 for item in source_contents:
                     document_id = int(item["document_id"])
                     url = str(item["url"])
                     content_type = item.get("content_type")
+                    curation_id = int(item["curation_id"]) if item.get("curation_id") is not None else None
+                    question_id = int(item["question_id"]) if item.get("question_id") is not None else None
                     chunks = _split_source_content(
                         content=str(item["content"]),
                         max_chunk_chars=max_chunk_chars,
                         overlap_chars=overlap_chars,
                     )
+                    seen_document_chunk_hashes: set[str] = set()
                     for index, chunk_text in enumerate(chunks, start=1):
                         source_text_hash = _normalized_chunk_text_hash(chunk_text)
-                        if source_text_hash in seen_source_text_hashes:
+                        if source_text_hash in seen_document_chunk_hashes:
                             continue
-                        seen_source_text_hashes.add(source_text_hash)
+                        seen_document_chunk_hashes.add(source_text_hash)
                         chunk_index = next_chunk_index_by_document.get(document_id, 1000001)
                         next_chunk_index_by_document[document_id] = chunk_index + 1
                         cursor.execute(
@@ -2656,6 +2828,8 @@ class JudgeRepository:
                             INSERT INTO av3.rag_chunks
                                 (
                                     id_document,
+                                    id_curadoria,
+                                    id_pergunta,
                                     chunk_index,
                                     chunk_text,
                                     token_count,
@@ -2664,10 +2838,12 @@ class JudgeRepository:
                                     metadata_jsonb,
                                     content_hash
                                 )
-                            VALUES (%s, %s, %s, %s, %s, 'source_url_content', %s::jsonb, %s);
+                            VALUES (%s, %s, %s, %s, %s, %s, %s, 'source_url_content', %s::jsonb, %s);
                             """,
                             (
                                 document_id,
+                                curation_id,
+                                question_id,
                                 chunk_index,
                                 chunk_text,
                                 _rough_token_count(chunk_text),
@@ -2761,6 +2937,7 @@ class JudgeRepository:
                 JOIN av3.rag_documents d ON d.id_document = c.id_document
                 WHERE d.id_import_run = %s
                   AND d.dataset_code = %s
+                  AND c.source_kind = 'source_url_content'
                 ORDER BY c.id_chunk
                 LIMIT %s;
                 """,
@@ -2796,18 +2973,47 @@ class JudgeRepository:
         question_sequence_start: int | None = None,
         question_sequence_end: int | None = None,
     ) -> RagEmbeddingGenerationSummary:
+        if not embeddings:
+            raise ValueError("No embeddings were generated.")
+        self.clear_rag_embeddings_for_active_vector_base(
+            dataset=dataset,
+            embedding_model=embedding_model,
+            question_sequence_start=question_sequence_start,
+            question_sequence_end=question_sequence_end,
+        )
+        self.upsert_rag_embedding_batch_for_active_vector_base(
+            dataset=dataset,
+            embedding_model=embedding_model,
+            embedding_dimensions=embedding_dimensions,
+            provider=provider,
+            api_base_url=api_base_url,
+            embeddings=embeddings,
+        )
+        return self.build_rag_embedding_generation_summary(
+            dataset=dataset,
+            embedding_model=embedding_model,
+            embedding_dimensions=embedding_dimensions,
+            provider=provider,
+            api_base_url=api_base_url,
+            generated_embeddings=len(embeddings),
+            latency_ms=latency_ms,
+        )
+
+    def clear_rag_embeddings_for_active_vector_base(
+        self,
+        *,
+        dataset: str,
+        embedding_model: str,
+        question_sequence_start: int | None = None,
+        question_sequence_end: int | None = None,
+    ) -> None:
         vector_summary = self.get_rag_vector_base_summary(dataset=dataset)
         if vector_summary is None:
             raise ValueError(f"No active vector base found for {dataset.upper()}.")
-        if not embeddings:
-            raise ValueError("No embeddings were generated.")
         dataset_code = vector_summary.dataset
         model_name = embedding_model.strip()
-        provider_name = provider.strip()
         if not model_name:
             raise ValueError("embedding_model must not be empty.")
-        if not provider_name:
-            raise ValueError("provider must not be empty.")
 
         scope_clause, scope_params = _rag_chunk_question_scope_sql(
             question_sequence_start=question_sequence_start,
@@ -2830,6 +3036,30 @@ class JudgeRepository:
                     """,
                     (vector_summary.import_run_id, dataset_code, *scope_params, model_name),
                 )
+
+    def upsert_rag_embedding_batch_for_active_vector_base(
+        self,
+        *,
+        dataset: str,
+        embedding_model: str,
+        embedding_dimensions: int | None,
+        provider: str,
+        api_base_url: str | None,
+        embeddings: list[dict[str, Any]],
+    ) -> None:
+        vector_summary = self.get_rag_vector_base_summary(dataset=dataset)
+        if vector_summary is None:
+            raise ValueError(f"No active vector base found for {dataset.upper()}.")
+        if not embeddings:
+            return
+        model_name = embedding_model.strip()
+        provider_name = provider.strip()
+        if not model_name:
+            raise ValueError("embedding_model must not be empty.")
+        if not provider_name:
+            raise ValueError("provider must not be empty.")
+        with self.connection:
+            with self.connection.cursor() as cursor:
                 for item in embeddings:
                     chunk_id = int(item["chunk_id"])
                     vector = item["embedding"]
@@ -2844,7 +3074,12 @@ class JudgeRepository:
                                 embedding_vector,
                                 metadata_jsonb
                             )
-                        VALUES (%s, %s, %s, %s::vector, %s::jsonb);
+                        VALUES (%s, %s, %s, %s::vector, %s::jsonb)
+                        ON CONFLICT (id_chunk, embedding_model) DO UPDATE
+                        SET
+                            embedding_dimensions = EXCLUDED.embedding_dimensions,
+                            embedding_vector = EXCLUDED.embedding_vector,
+                            metadata_jsonb = EXCLUDED.metadata_jsonb;
                         """,
                         (
                             chunk_id,
@@ -2868,9 +3103,38 @@ class JudgeRepository:
                     (model_name, vector_summary.retrieval_run_id),
                 )
 
-        refreshed_summary = self.get_rag_vector_base_summary(dataset=dataset_code)
+    def build_rag_embedding_generation_summary(
+        self,
+        *,
+        dataset: str,
+        embedding_model: str,
+        embedding_dimensions: int | None,
+        provider: str,
+        api_base_url: str | None,
+        generated_embeddings: int,
+        latency_ms: int,
+    ) -> RagEmbeddingGenerationSummary:
+        vector_summary = self.get_rag_vector_base_summary(dataset=dataset)
+        if vector_summary is None:
+            raise ValueError(f"No active vector base found for {dataset.upper()}.")
+        model_name = embedding_model.strip()
+        provider_name = provider.strip()
+        with self.connection:
+            with self.connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    UPDATE av3.retrieval_runs
+                    SET metadata_jsonb = metadata_jsonb || %s::jsonb
+                    WHERE id_retrieval_run = %s;
+                    """,
+                    (
+                        jsonb_dumps({"embedding_count": generated_embeddings}),
+                        vector_summary.retrieval_run_id,
+                    ),
+                )
+        refreshed_summary = self.get_rag_vector_base_summary(dataset=vector_summary.dataset)
         return RagEmbeddingGenerationSummary(
-            dataset=dataset_code,
+            dataset=vector_summary.dataset,
             dataset_name=vector_summary.dataset_name,
             retrieval_run_id=vector_summary.retrieval_run_id,
             retrieval_name=vector_summary.retrieval_name,
@@ -2879,8 +3143,8 @@ class JudgeRepository:
             provider=provider_name,
             api_base_url=api_base_url,
             requested_dimensions=embedding_dimensions,
-            generated_embeddings=len(embeddings),
-            total_chunks=refreshed_summary.chunk_count if refreshed_summary is not None else len(embeddings),
+            generated_embeddings=generated_embeddings,
+            total_chunks=refreshed_summary.chunk_count if refreshed_summary is not None else generated_embeddings,
             latency_ms=latency_ms,
             created_at=refreshed_summary.created_at if refreshed_summary is not None else vector_summary.created_at,
         )
@@ -2921,6 +3185,7 @@ class JudgeRepository:
                 WHERE d.id_import_run = %s
                   AND d.dataset_code = %s
                   AND e.embedding_model = %s
+                  AND c.source_kind = 'source_url_content'
                 ORDER BY e.embedding_vector <=> %s::vector ASC, c.id_chunk ASC
                 LIMIT %s;
                 """,
@@ -3148,7 +3413,7 @@ class JudgeRepository:
         dataset: str,
         retrieval_name: str | None = None,
         top_k: int = 5,
-        chunking_strategy: str = "curated_articles_v1",
+        chunking_strategy: str = "source_url_only_v1",
     ) -> RagBaseMaterializationSummary:
         dataset_code = dataset.upper()
         dataset_name = self.get_dataset_name_for_code(dataset_code)
@@ -3159,7 +3424,7 @@ class JudgeRepository:
         if active_run_id is None:
             raise ValueError(f"No active RAG curation import found for {dataset_code}.")
 
-        retrieval_name = (retrieval_name or f"{dataset_code.lower()}_curated_v1").strip()
+        retrieval_name = (retrieval_name or f"{dataset_code.lower()}_source_urls_v1").strip()
         if not retrieval_name:
             raise ValueError("retrieval_name must not be empty.")
 
@@ -3206,23 +3471,19 @@ class JudgeRepository:
                         q.norma,
                         q.lei,
                         q.url,
-                        q.urn,
-                        a.id_curadoria_artigo,
-                        a.ordem,
-                        a.artigo,
-                        a.topico,
-                        a.relevancia,
-                        a.tipo
+                        q.urn
                     FROM av3.curadoria_questoes q
-                    LEFT JOIN av3.curadoria_artigos a ON a.id_curadoria = q.id_curadoria
                     WHERE q.id_import_run = %s
-                    ORDER BY q.question_sequence, a.ordem NULLS LAST, a.id_curadoria_artigo NULLS LAST;
+                      AND NULLIF(TRIM(q.url), '') IS NOT NULL
+                    ORDER BY q.question_sequence, q.id_curadoria;
                     """,
                     (active_run_id,),
                 )
                 rows = cursor.fetchall()
                 if not rows:
-                    raise ValueError(f"Active curation run {active_run_id} has no normalized questions.")
+                    raise ValueError(
+                        f"Active curation run {active_run_id} has no source URLs available for URL-only RAG."
+                    )
 
                 documents: dict[str, int] = {}
                 chunk_count = 0
@@ -3237,12 +3498,6 @@ class JudgeRepository:
                     lei = row[7]
                     url = row[8]
                     urn = row[9]
-                    artigo_id = row[10]
-                    artigo_ordem = row[11]
-                    artigo = row[12]
-                    topico = row[13]
-                    relevancia = row[14]
-                    tipo = row[15]
 
                     document_key = _rag_document_key(
                         dataset_code=dataset_code,
@@ -3288,96 +3543,29 @@ class JudgeRepository:
                                 dataset_name,
                                 document_key,
                                 "curadoria_importada",
-                                "legislacao_curada",
+                                "fonte_url_curada",
                                 url,
                                 title,
                                 lei,
                                 norma,
                                 urn,
                                 None,
-                                "Curadoria importada da atividade 1",
+                                "Curadoria importada da atividade 1 (URL-only)",
                                 jsonb_dumps(
                                     {
-                                        "source": "curadoria_rag",
+                                        "source": "curadoria_rag_url_only",
+                                        "question_id": question_id,
                                         "question_sequence": question_sequence,
                                         "curation_id": curation_id,
+                                        "disciplina": disciplina,
+                                        "assunto": assunto,
+                                        "tema": tema,
                                     }
                                 ),
                             ),
                         )
                         document_id = int(cursor.fetchone()[0])
                         documents[document_key] = document_id
-
-                    chunk_text = _build_rag_chunk_text(
-                        dataset_name=dataset_name,
-                        disciplina=disciplina,
-                        assunto=assunto,
-                        tema=tema,
-                        norma=norma,
-                        lei=lei,
-                        artigo=artigo,
-                        topico=topico,
-                        relevancia=relevancia,
-                        tipo=tipo,
-                        has_article=bool(artigo),
-                    )
-                    chunk_source_kind = "curated_article" if artigo else "curation_summary"
-                    chunk_index = int(artigo_ordem) if artigo_ordem is not None else 1
-                    cursor.execute(
-                        """
-                        INSERT INTO av3.rag_chunks
-                            (
-                                id_document,
-                                id_curadoria,
-                                id_curadoria_artigo,
-                                id_pergunta,
-                                chunk_index,
-                                chunk_text,
-                                token_count,
-                                chunking_strategy,
-                                source_kind,
-                                artigo,
-                                topico,
-                                relevancia,
-                                tipo,
-                                tema,
-                                assunto,
-                                metadata_jsonb,
-                                content_hash
-                            )
-                        VALUES (
-                            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s
-                        );
-                        """,
-                        (
-                            document_id,
-                            curation_id,
-                            artigo_id,
-                            question_id,
-                            chunk_index,
-                            chunk_text,
-                            _rough_token_count(chunk_text),
-                            chunking_strategy,
-                            chunk_source_kind,
-                            artigo,
-                            topico,
-                            relevancia,
-                            tipo,
-                            tema,
-                            assunto,
-                            jsonb_dumps(
-                                {
-                                    "dataset": dataset_code,
-                                    "question_id": question_id,
-                                    "question_sequence": question_sequence,
-                                    "curation_id": curation_id,
-                                    "article_id": artigo_id,
-                                }
-                            ),
-                            _sha256_text(chunk_text),
-                        ),
-                    )
-                    chunk_count += 1
 
                 cursor.execute(
                     """
@@ -3409,8 +3597,9 @@ class JudgeRepository:
                             {
                                 "document_count": len(documents),
                                 "chunk_count": chunk_count,
-                                "source": "curadoria_importada",
+                                "source": "curadoria_importada_url_only",
                                 "vector_extension_enabled": True,
+                                "source_url_content_updated": False,
                             }
                         ),
                     ),

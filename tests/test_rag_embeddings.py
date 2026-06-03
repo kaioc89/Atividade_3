@@ -36,6 +36,7 @@ class FakeRepository:
         self.calls: list[str] = []
         self.source_chunk_count = 0
         self.resolved_ranges: list[tuple[int | None, int | None]] = []
+        self.saved_embedding_batches: list[list[dict[str, Any]]] = []
 
     def ensure_schema(self) -> None:
         self.calls.append("ensure_schema")
@@ -123,21 +124,27 @@ class FakeRepository:
     ) -> list[dict[str, Any]]:
         self.resolved_ranges.append((question_sequence_start, question_sequence_end))
         self.calls.append(f"list_chunks:{dataset}")
-        chunks = [
-            {"chunk_id": 101, "chunk_text": "texto juridico um", "source_kind": "curated_article"},
-            {"chunk_id": 102, "chunk_text": "texto juridico dois", "source_kind": "curated_article"},
-        ]
-        chunks.extend(
+        return [
             {
                 "chunk_id": 200 + index,
                 "chunk_text": f"conteudo fonte {index}",
                 "source_kind": "source_url_content",
             }
             for index in range(1, self.source_chunk_count + 1)
-        )
-        return chunks
+        ]
 
-    def replace_rag_embeddings_for_active_vector_base(
+    def clear_rag_embeddings_for_active_vector_base(
+        self,
+        *,
+        dataset: str,
+        embedding_model: str,
+        question_sequence_start: int | None = None,
+        question_sequence_end: int | None = None,
+    ) -> None:
+        self.resolved_ranges.append((question_sequence_start, question_sequence_end))
+        self.calls.append(f"clear_embeddings:{dataset}:{embedding_model}")
+
+    def upsert_rag_embedding_batch_for_active_vector_base(
         self,
         *,
         dataset: str,
@@ -146,24 +153,34 @@ class FakeRepository:
         provider: str,
         api_base_url: str | None,
         embeddings: list[dict[str, Any]],
+    ) -> None:
+        self.calls.append(f"upsert_batch:{dataset}:{len(embeddings)}")
+        self.saved_embedding_batches.append(embeddings)
+
+    def build_rag_embedding_generation_summary(
+        self,
+        *,
+        dataset: str,
+        embedding_model: str,
+        embedding_dimensions: int | None,
+        provider: str,
+        api_base_url: str | None,
+        generated_embeddings: int,
         latency_ms: int,
-        question_sequence_start: int | None = None,
-        question_sequence_end: int | None = None,
     ) -> RagEmbeddingGenerationSummary:
-        self.resolved_ranges.append((question_sequence_start, question_sequence_end))
-        self.calls.append(f"replace_embeddings:{dataset}:{len(embeddings)}")
+        self.calls.append(f"build_summary:{dataset}:{generated_embeddings}")
         return RagEmbeddingGenerationSummary(
             dataset=dataset,
             dataset_name="OAB_Bench",
             retrieval_run_id=21,
-            retrieval_name="j1_curated_v1",
+            retrieval_name="j1_source_urls_v1",
             import_run_id=7,
             embedding_model=embedding_model,
             provider=provider,
             api_base_url=api_base_url,
             requested_dimensions=embedding_dimensions,
-            generated_embeddings=len(embeddings),
-            total_chunks=2,
+            generated_embeddings=generated_embeddings,
+            total_chunks=generated_embeddings,
             latency_ms=latency_ms,
             created_at="2026-06-02T01:30:00",
         )
@@ -188,14 +205,14 @@ def test_generate_embeddings_materializes_vector_base_when_missing(monkeypatch) 
     result = service.run(dataset="J1", progress_callback=events.append)
 
     assert result["materialized_base"] is True
-    assert result["summary"].generated_embeddings == 4
+    assert result["summary"].generated_embeddings == 2
     assert any("Enviando lote" in event["message"] for event in events)
-    assert any("curadoria/artigos curados=2" in event["message"] for event in events)
+    assert any("fonte/URL recuperada=2" in event["message"] for event in events)
     assert events[-1]["state"] == "done"
     assert result["chunk_summary"] == {
-        "total": 4,
-        "by_source_kind": {"curated_article": 2, "source_url_content": 2},
-        "curation_chunks": 2,
+        "total": 2,
+        "by_source_kind": {"source_url_content": 2},
+        "curation_chunks": 0,
         "source_url_chunks": 2,
     }
     assert result["source_url_summary"] == {
@@ -216,8 +233,12 @@ def test_generate_embeddings_materializes_vector_base_when_missing(monkeypatch) 
         "list_source_documents:J1",
         "replace_source_chunks:J1:2",
         "list_chunks:J1",
-        "replace_embeddings:J1:4",
+        "clear_embeddings:J1:Qwen/Qwen3-Embedding-8B",
+        "upsert_batch:J1:2",
+        "build_summary:J1:2",
     ]
+    assert len(repository.saved_embedding_batches) == 1
+    assert len(repository.saved_embedding_batches[0]) == 2
     assert connection.closed is True
 
 
@@ -240,7 +261,7 @@ def test_generate_embeddings_reuses_existing_vector_base(monkeypatch) -> None:
 
     assert result["materialized_base"] is False
     assert "materialize:J1" not in repository.calls
-    assert result["summary"].generated_embeddings == 4
+    assert result["summary"].generated_embeddings == 2
 
 
 def test_generate_embeddings_maps_dataset_local_question_range(monkeypatch) -> None:
@@ -305,6 +326,39 @@ def test_generate_embeddings_logs_batch_failure_context(monkeypatch) -> None:
     assert any("Falha no lote 1/1" in event["message"] for event in events)
     assert any("provider=Qwen" in event["message"] for event in events)
     assert any(event["state"] == "error" for event in events)
+
+
+def test_generate_embeddings_persists_incrementally_by_batch(monkeypatch) -> None:
+    connection = FakeConnection()
+    repository = FakeRepository(has_vector_base=True)
+
+    def _batch_embedding_request(**kwargs: Any) -> EmbeddingBatchResult:
+        texts = kwargs["texts"]
+        return EmbeddingBatchResult(
+            vectors=[[0.1, 0.2, 0.3] for _ in texts],
+            latency_ms=50,
+            endpoint_url="https://api.featherless.ai/v1/embeddings",
+            endpoint_host="api.featherless.ai",
+        )
+
+    monkeypatch.setattr(
+        "atividade_2.rag_embeddings.request_openai_compatible_embeddings",
+        _batch_embedding_request,
+    )
+    service = RagEmbeddingGenerationService(
+        settings_loader=FakeSettings,
+        connect_func=lambda _database_url: connection,
+        repository_factory=lambda _connection: repository,
+        source_fetcher=_fake_source_fetcher,
+        batch_size=2,
+    )
+
+    result = service.run(dataset="J1")
+
+    assert result["summary"].generated_embeddings == 2
+    assert repository.calls.count("upsert_batch:J1:2") == 1
+    assert len(repository.saved_embedding_batches) == 1
+    assert [len(batch) for batch in repository.saved_embedding_batches] == [2]
 
 
 def test_embedding_client_retries_broken_pipe(monkeypatch) -> None:
@@ -387,15 +441,15 @@ def _vector_base_summary(*, dataset: str) -> RagVectorBaseSummary:
         active_curation_run_id=7,
         matches_active_curation=True,
         retrieval_run_id=21,
-        retrieval_name="j1_curated_v1",
-        retrieval_strategy="curated_articles_v1",
+        retrieval_name="j1_source_urls_v1",
+        retrieval_strategy="source_url_only_v1",
         embedding_model=None,
         top_k=5,
         vector_enabled=True,
         lexical_enabled=False,
         rerank_enabled=False,
         document_count=70,
-        chunk_count=2,
+        chunk_count=0,
         embedding_count=0,
         status="materializada_sem_embeddings",
         created_at="2026-06-02T01:20:00",

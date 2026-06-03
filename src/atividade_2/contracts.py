@@ -320,6 +320,24 @@ class RagVectorBaseSummary:
 
 
 @dataclass(frozen=True)
+class RagVectorRunRecord:
+    """One persisted retrieval/vector run available for a dataset."""
+
+    run_id: int
+    dataset: str
+    import_run_id: int
+    retrieval_name: str
+    retrieval_strategy: str
+    embedding_model: str | None
+    top_k: int
+    active: bool
+    document_count: int
+    chunk_count: int
+    embedding_count: int
+    created_at: str | None
+
+
+@dataclass(frozen=True)
 class RagEmbeddingModelConfigRecord:
     """Persisted embedding-model configuration for one dataset."""
 

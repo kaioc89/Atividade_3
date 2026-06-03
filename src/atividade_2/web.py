@@ -35,6 +35,7 @@ from .rag_embedding_configs import RagEmbeddingConfigService
 from .rag_embeddings import RagEmbeddingGenerationService
 from .rag_embedding_smoke import RagEmbeddingSmokeTestService
 from .rag_vector_queries import RagVectorQueryService
+from .rag_vector_runs import RagVectorRunService
 from .repositories import JudgeRepository
 from .run_judge_service import RunJudgeRequest, RunJudgeResult, RunJudgeService
 from .config import load_settings
@@ -418,6 +419,7 @@ def create_app(
     rag_embedding_smoke_test_service: RagEmbeddingSmokeTestService | None = None,
     rag_embedding_generation_service: RagEmbeddingGenerationService | None = None,
     rag_vector_query_service: RagVectorQueryService | None = None,
+    rag_vector_run_service: RagVectorRunService | None = None,
     audit_log_summary_service: AuditLogSummaryService | None = None,
     assistant_service: AssistantService | None = None,
 ) -> FastAPI:
@@ -444,6 +446,7 @@ def create_app(
     )
     app.state.rag_embedding_jobs = RagEmbeddingJobRegistry(app.state.rag_embedding_generation_service)
     app.state.rag_vector_query_service = rag_vector_query_service or RagVectorQueryService()
+    app.state.rag_vector_run_service = rag_vector_run_service or RagVectorRunService()
     app.state.audit_log_summary_service = audit_log_summary_service or AuditLogSummaryService()
     app.state.assistant_enabled = assistant_enabled
     app.state.assistant_service = assistant_service or AssistantService(
@@ -666,6 +669,40 @@ def create_app(
         if job is None:
             raise HTTPException(status_code=404, detail="RAG embedding job not found.")
         return _serialize_rag_embedding_job(job)
+
+    @app.post("/api/rag-vector/runs/{run_id}/activate", dependencies=[Depends(_require_csrf)])
+    def activate_rag_vector_run(run_id: int, dataset: str, request: Request) -> dict:
+        try:
+            result = request.app.state.rag_vector_run_service.activate(run_id=run_id, dataset=dataset)
+        except (RuntimeError, ValueError) as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+        return {
+            **result,
+            "vector_base": asdict(result["vector_base"])
+            if result.get("vector_base") is not None and hasattr(result["vector_base"], "__dataclass_fields__")
+            else result.get("vector_base"),
+            "runs": [
+                asdict(item) if hasattr(item, "__dataclass_fields__") else item
+                for item in (result.get("runs") or [])
+            ],
+        }
+
+    @app.delete("/api/rag-vector/runs/{run_id}", dependencies=[Depends(_require_csrf)])
+    def delete_rag_vector_run(run_id: int, dataset: str, request: Request) -> dict:
+        try:
+            result = request.app.state.rag_vector_run_service.delete(run_id=run_id, dataset=dataset)
+        except (RuntimeError, ValueError) as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+        return {
+            **result,
+            "vector_base": asdict(result["vector_base"])
+            if result.get("vector_base") is not None and hasattr(result["vector_base"], "__dataclass_fields__")
+            else result.get("vector_base"),
+            "runs": [
+                asdict(item) if hasattr(item, "__dataclass_fields__") else item
+                for item in (result.get("runs") or [])
+            ],
+        }
 
     @app.get("/api/rag-vector/preview")
     def get_rag_vector_preview(request: Request, dataset: str, limit: int = 8) -> dict:
@@ -2442,6 +2479,30 @@ _INDEX_HTML = """
                     </table>
                   </div>
                 </div>
+                <div style="height:16px"></div>
+                <div class="prompt-preview">
+                  <div class="prompt-preview-card">
+                    <h3>Runs disponiveis</h3>
+                    <div class="table-wrap prompt-log-table">
+                      <table aria-label="Runs da base vetorial">
+                        <thead>
+                          <tr>
+                            <th>run</th>
+                            <th>estrategia</th>
+                            <th>docs</th>
+                            <th>chunks</th>
+                            <th>embeddings</th>
+                            <th>criada em</th>
+                            <th>acoes</th>
+                          </tr>
+                        </thead>
+                        <tbody id="rag_vector_runs_body">
+                          <tr><td colspan="7" class="muted">Nenhuma run vetorial carregada.</td></tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
               </section>
             </div>
             <div class="rag-operation-panel">
@@ -2494,18 +2555,42 @@ _INDEX_HTML = """
                       <table aria-label="Resultados da busca vetorial">
                         <thead>
                           <tr>
+                            <th>detalhe</th>
                             <th>rank</th>
                             <th>score</th>
-                            <th>artigo</th>
-                            <th>topico</th>
+                            <th>lei</th>
+                            <th>norma</th>
                             <th>texto</th>
                           </tr>
                         </thead>
                         <tbody id="rag_query_results_body">
-                          <tr><td colspan="5" class="muted">Nenhuma busca executada.</td></tr>
+                          <tr><td colspan="6" class="muted">Nenhuma busca executada.</td></tr>
                         </tbody>
                       </table>
                     </div>
+                  </div>
+                </div>
+                <div style="height:16px"></div>
+                <div class="prompt-preview">
+                  <div class="prompt-preview-card">
+                    <h3>Resultado selecionado</h3>
+                    <div class="muted" id="rag_query_selected_meta">Nenhum resultado selecionado.</div>
+                    <table aria-label="Resumo do resultado selecionado">
+                      <tbody>
+                        <tr><th>Rank</th><td id="rag_query_selected_rank" class="muted">-</td></tr>
+                        <tr><th>Score</th><td id="rag_query_selected_score" class="muted">-</td></tr>
+                        <tr><th>Chunk</th><td id="rag_query_selected_chunk_id" class="muted">-</td></tr>
+                        <tr><th>Documento</th><td id="rag_query_selected_document_key" class="muted">-</td></tr>
+                        <tr><th>Lei</th><td id="rag_query_selected_lei" class="muted">-</td></tr>
+                        <tr><th>Norma</th><td id="rag_query_selected_norma" class="muted">-</td></tr>
+                        <tr><th>Origem</th><td id="rag_query_selected_source_kind" class="muted">-</td></tr>
+                        <tr><th>URL</th><td id="rag_query_selected_url" class="muted">-</td></tr>
+                        <tr><th>URN</th><td id="rag_query_selected_urn" class="muted">-</td></tr>
+                      </tbody>
+                    </table>
+                    <div style="height:12px"></div>
+                    <h4 style="margin:0 0 8px;">Chunk recuperado</h4>
+                    <pre id="rag_query_selected_chunk_text">Selecione um resultado para ver o texto completo.</pre>
                   </div>
                 </div>
                 <div style="height:16px"></div>
@@ -2537,8 +2622,8 @@ _INDEX_HTML = """
                         <thead>
                           <tr>
                             <th>chunk</th>
-                            <th>artigo</th>
-                            <th>topico</th>
+                            <th>lei</th>
+                            <th>norma</th>
                             <th>texto</th>
                           </tr>
                         </thead>
@@ -4722,7 +4807,7 @@ _INDEX_HTML = """
           setText("rag_vector_status", "Nenhum dataset disponivel para base vetorial.");
           setText("rag_query_status", "Nenhum dataset disponivel para consulta vetorial.");
           setText("rag_embedding_status", "Nenhum dataset disponivel para configuracao de embedding.");
-          renderRagCurationDatasetState(null, [], [], null);
+          renderRagCurationDatasetState(null, [], [], null, []);
           renderRagVectorPreview(null);
           renderRagEmbeddingConfig(null);
         }
@@ -4748,7 +4833,13 @@ _INDEX_HTML = """
         const response = await fetch(`/api/rag-curation?dataset=${encodeURIComponent(dataset)}`);
         const data = await response.json();
         if (!response.ok) throw new Error(data.detail || "Falha ao carregar curadoria.");
-        renderRagCurationDatasetState(data.active, data.runs || [], data.items || [], data.vector_base || null);
+        renderRagCurationDatasetState(
+          data.active,
+          data.runs || [],
+          data.items || [],
+          data.vector_base || null,
+          data.vector_runs || []
+        );
         if (data.active) {
           setText(
             "rag_curation_status",
@@ -4763,7 +4854,7 @@ _INDEX_HTML = """
           setText("rag_vector_status", `Nenhuma base vetorial ativa encontrada para ${display(dataset)}.`);
         }
       } catch (error) {
-        renderRagCurationDatasetState(null, [], [], null);
+        renderRagCurationDatasetState(null, [], [], null, []);
         setText("rag_curation_status", friendlyErrorMessage(error.message));
         setText("rag_vector_status", friendlyErrorMessage(error.message));
       }
@@ -4796,9 +4887,10 @@ _INDEX_HTML = """
       });
     }
 
-    function renderRagCurationDatasetState(active, runs, items, vectorBase) {
+    function renderRagCurationDatasetState(active, runs, items, vectorBase, vectorRuns = []) {
       renderRagCurationActiveSummary(active);
       renderRagVectorBase(vectorBase);
+      renderRagVectorRuns(vectorRuns || []);
       renderRagCurationRuns(runs || []);
       renderRagCurationItems(items || []);
       renderRagCurationDetail(null);
@@ -4933,6 +5025,45 @@ _INDEX_HTML = """
       setText("rag_vector_active_created_at", formatDateTime(vectorBase.created_at));
     }
 
+    function renderRagVectorRuns(rows) {
+      const body = document.getElementById("rag_vector_runs_body");
+      body.textContent = "";
+      if (!rows.length) {
+        appendTableMessage(body, 7, "Nenhuma run vetorial carregada.");
+        return;
+      }
+      rows.forEach((entry) => {
+        const row = document.createElement("tr");
+        appendCell(row, `${display(entry.retrieval_name)} (#${display(entry.run_id)})`);
+        appendCell(row, display(entry.retrieval_strategy));
+        appendCell(row, display(entry.document_count));
+        appendCell(row, display(entry.chunk_count));
+        appendCell(row, display(entry.embedding_count));
+        appendCell(row, formatDateTime(entry.created_at));
+        const actionsCell = document.createElement("td");
+        if (entry.active) {
+          actionsCell.textContent = "Ativa";
+        } else {
+          const activateButton = document.createElement("button");
+          activateButton.type = "button";
+          activateButton.className = "secondary";
+          activateButton.textContent = "Ativar";
+          activateButton.onclick = () => activateRagVectorRun(entry.run_id);
+          actionsCell.appendChild(activateButton);
+
+          const deleteButton = document.createElement("button");
+          deleteButton.type = "button";
+          deleteButton.className = "danger-button";
+          deleteButton.style.marginLeft = "8px";
+          deleteButton.textContent = "Excluir";
+          deleteButton.onclick = () => deleteRagVectorRun(entry.run_id, entry.retrieval_name);
+          actionsCell.appendChild(deleteButton);
+        }
+        row.appendChild(actionsCell);
+        body.appendChild(row);
+      });
+    }
+
     function renderRagVectorPreview(data) {
       const documentsBody = document.getElementById("rag_query_documents_body");
       const chunksBody = document.getElementById("rag_query_chunks_body");
@@ -4955,8 +5086,8 @@ _INDEX_HTML = """
         for (const entry of data.chunks) {
           const row = document.createElement("tr");
           appendCell(row, display(entry.chunk_id));
-          appendCell(row, display(entry.artigo));
-          appendCell(row, display(entry.topico));
+          appendCell(row, display(entry.lei));
+          appendCell(row, display(entry.norma));
           appendCell(row, truncateText(entry.chunk_text, 180));
           chunksBody.appendChild(row);
         }
@@ -4967,17 +5098,27 @@ _INDEX_HTML = """
       const body = document.getElementById("rag_query_results_body");
       body.textContent = "";
       if (!data || !Array.isArray(data.results) || !data.results.length) {
-        appendTableMessage(body, 5, "Nenhuma busca executada.");
+        appendTableMessage(body, 6, "Nenhuma busca executada.");
+        renderRagQuerySelectedResult(null, data);
       } else {
         for (const entry of data.results) {
           const row = document.createElement("tr");
+          const detailCell = document.createElement("td");
+          const detailButton = document.createElement("button");
+          detailButton.type = "button";
+          detailButton.className = "detail-button";
+          detailButton.textContent = "Detalhe";
+          detailButton.onclick = () => renderRagQuerySelectedResult(entry, data);
+          detailCell.appendChild(detailButton);
+          row.appendChild(detailCell);
           appendCell(row, display(entry.rank));
           appendCell(row, entry.similarity !== null && entry.similarity !== undefined ? entry.similarity.toFixed(4) : "-");
-          appendCell(row, display(entry.artigo));
-          appendCell(row, display(entry.topico));
+          appendCell(row, display(entry.lei));
+          appendCell(row, display(entry.norma));
           appendCell(row, truncateText(entry.chunk_text, 220));
           body.appendChild(row);
         }
+        renderRagQuerySelectedResult(data.results[0], data);
       }
       if (!data) {
         setText("rag_query_meta", "Nenhuma consulta executada.");
@@ -4992,6 +5133,56 @@ _INDEX_HTML = """
       setText("rag_query_summary_top_k", display(data.top_k));
       setText("rag_query_summary_latency", data.latency_ms !== null && data.latency_ms !== undefined ? `${data.latency_ms} ms` : "-");
       setText("rag_query_summary_dimensions", display(data.returned_dimensions));
+    }
+
+    function renderRagQuerySelectedResult(entry, data = null) {
+      const urlCell = document.getElementById("rag_query_selected_url");
+      urlCell.textContent = "";
+      if (!entry) {
+        setText("rag_query_selected_meta", data ? "Nenhum resultado selecionado." : "Nenhum resultado selecionado.");
+        setText("rag_query_selected_rank", "-");
+        setText("rag_query_selected_score", "-");
+        setText("rag_query_selected_chunk_id", "-");
+        setText("rag_query_selected_document_key", "-");
+        setText("rag_query_selected_lei", "-");
+        setText("rag_query_selected_norma", "-");
+        setText("rag_query_selected_source_kind", "-");
+        setText("rag_query_selected_urn", "-");
+        setText("rag_query_selected_chunk_text", "Selecione um resultado para ver o texto completo.");
+        urlCell.textContent = "-";
+        return;
+      }
+      const sourceKindLabels = {
+        curated_article: "curadoria/artigo curado",
+        curation_summary: "curadoria/resumo",
+        source_url_content: "fonte/URL recuperada",
+      };
+      const score = entry.similarity !== null && entry.similarity !== undefined ? entry.similarity.toFixed(4) : "-";
+      const metaParts = [
+        display(data?.dataset),
+        `rank ${display(entry.rank)}`,
+        display(entry.document_key),
+      ].filter(Boolean);
+      setText("rag_query_selected_meta", metaParts.join(" | "));
+      setText("rag_query_selected_rank", display(entry.rank));
+      setText("rag_query_selected_score", score);
+      setText("rag_query_selected_chunk_id", display(entry.chunk_id));
+      setText("rag_query_selected_document_key", display(entry.document_key));
+      setText("rag_query_selected_lei", display(entry.lei));
+      setText("rag_query_selected_norma", display(entry.norma));
+      setText("rag_query_selected_source_kind", display(sourceKindLabels[entry.chunk_kind] || entry.chunk_kind));
+      setText("rag_query_selected_urn", display(entry.urn));
+      setText("rag_query_selected_chunk_text", entry.chunk_text || "-");
+      if (entry.url) {
+        const link = document.createElement("a");
+        link.href = entry.url;
+        link.target = "_blank";
+        link.rel = "noopener noreferrer";
+        link.textContent = entry.url;
+        urlCell.appendChild(link);
+      } else {
+        urlCell.textContent = "-";
+      }
     }
 
     async function loadRagVectorPreview(dataset = value("rag_query_dataset")) {
@@ -5118,6 +5309,46 @@ _INDEX_HTML = """
         setText("rag_vector_status", friendlyErrorMessage(error.message));
       } finally {
         generateButton.disabled = false;
+      }
+    }
+
+    async function activateRagVectorRun(runId) {
+      const dataset = value("rag_vector_dataset");
+      if (!dataset) {
+        setText("rag_vector_status", "Selecione um dataset para ativar uma run vetorial.");
+        return;
+      }
+      try {
+        setText("rag_vector_status", `Ativando run vetorial #${display(runId)}...`);
+        await postJson(`/api/rag-vector/runs/${encodeURIComponent(runId)}/activate?dataset=${encodeURIComponent(dataset)}`, {});
+        await loadRagCurationDataset(dataset);
+        await loadRagVectorPreview(dataset);
+        setText("rag_vector_status", `Run vetorial #${display(runId)} ativada para ${display(dataset)}.`);
+      } catch (error) {
+        setText("rag_vector_status", friendlyErrorMessage(error.message));
+      }
+    }
+
+    async function deleteRagVectorRun(runId, retrievalName) {
+      const dataset = value("rag_vector_dataset");
+      if (!dataset) {
+        setText("rag_vector_status", "Selecione um dataset para excluir uma run vetorial.");
+        return;
+      }
+      if (!confirmAction(`Excluir a run vetorial ${display(retrievalName)} (#${display(runId)})?`)) return;
+      try {
+        setText("rag_vector_status", `Excluindo run vetorial #${display(runId)}...`);
+        const response = await fetch(`/api/rag-vector/runs/${encodeURIComponent(runId)}?dataset=${encodeURIComponent(dataset)}`, {
+          method: "DELETE",
+          headers: {"x-csrf-token": csrfToken},
+        });
+        const parsed = await readJsonResponse(response, "Falha ao excluir a run vetorial.");
+        if (!response.ok) throw new Error(parsed.data?.detail || parsed.responseText || "Falha ao excluir a run vetorial.");
+        await loadRagCurationDataset(dataset);
+        await loadRagVectorPreview(dataset);
+        setText("rag_vector_status", `Run vetorial #${display(runId)} excluida de ${display(dataset)}.`);
+      } catch (error) {
+        setText("rag_vector_status", friendlyErrorMessage(error.message));
       }
     }
 
