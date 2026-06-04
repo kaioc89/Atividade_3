@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict svrRapXQBgtW6elZ4RZCYcukUbgXFUZUgE76OCpk2BzZUwnEYv5aAi1zCcf3gAN
+\restrict NITGHPy5oTdoAbWql9dXtYhukdglV91mU8Cdp0il2eHE6hwe5EW5bi9E1SBcAA9
 
 -- Dumped from database version 18.4 (Debian 18.4-1.pgdg12+1)
 -- Dumped by pg_dump version 18.4 (Debian 18.4-1.pgdg12+1)
@@ -20,25 +20,21 @@ SET client_min_messages = warning;
 SET row_security = off;
 
 --
--- Name: av3; Type: SCHEMA; Schema: -; Owner: postgres
+-- Name: av3; Type: SCHEMA; Schema: -; Owner: -
 --
 
 CREATE SCHEMA av3;
 
 
-ALTER SCHEMA av3 OWNER TO postgres;
-
 --
--- Name: public; Type: SCHEMA; Schema: -; Owner: postgres
+-- Name: public; Type: SCHEMA; Schema: -; Owner: -
 --
 
 -- *not* creating schema, since initdb creates it
 
 
-ALTER SCHEMA public OWNER TO postgres;
-
 --
--- Name: SCHEMA public; Type: COMMENT; Schema: -; Owner: postgres
+-- Name: SCHEMA public; Type: COMMENT; Schema: -; Owner: -
 --
 
 COMMENT ON SCHEMA public IS '';
@@ -52,7 +48,7 @@ CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA public;
 
 
 --
--- Name: EXTENSION vector; Type: COMMENT; Schema: -; Owner: 
+-- Name: EXTENSION vector; Type: COMMENT; Schema: -; Owner: -
 --
 
 COMMENT ON EXTENSION vector IS 'vector data type and ivfflat and hnsw access methods';
@@ -63,7 +59,7 @@ SET default_tablespace = '';
 SET default_table_access_method = heap;
 
 --
--- Name: candidate_answer_context_chunks; Type: TABLE; Schema: av3; Owner: postgres
+-- Name: candidate_answer_context_chunks; Type: TABLE; Schema: av3; Owner: -
 --
 
 CREATE TABLE av3.candidate_answer_context_chunks (
@@ -80,10 +76,8 @@ CREATE TABLE av3.candidate_answer_context_chunks (
 );
 
 
-ALTER TABLE av3.candidate_answer_context_chunks OWNER TO postgres;
-
 --
--- Name: candidate_answer_context_chunks_id_answer_context_chunk_seq; Type: SEQUENCE; Schema: av3; Owner: postgres
+-- Name: candidate_answer_context_chunks_id_answer_context_chunk_seq; Type: SEQUENCE; Schema: av3; Owner: -
 --
 
 CREATE SEQUENCE av3.candidate_answer_context_chunks_id_answer_context_chunk_seq
@@ -95,17 +89,15 @@ CREATE SEQUENCE av3.candidate_answer_context_chunks_id_answer_context_chunk_seq
     CACHE 1;
 
 
-ALTER SEQUENCE av3.candidate_answer_context_chunks_id_answer_context_chunk_seq OWNER TO postgres;
-
 --
--- Name: candidate_answer_context_chunks_id_answer_context_chunk_seq; Type: SEQUENCE OWNED BY; Schema: av3; Owner: postgres
+-- Name: candidate_answer_context_chunks_id_answer_context_chunk_seq; Type: SEQUENCE OWNED BY; Schema: av3; Owner: -
 --
 
 ALTER SEQUENCE av3.candidate_answer_context_chunks_id_answer_context_chunk_seq OWNED BY av3.candidate_answer_context_chunks.id_answer_context_chunk;
 
 
 --
--- Name: candidate_answers; Type: TABLE; Schema: av3; Owner: postgres
+-- Name: candidate_answers; Type: TABLE; Schema: av3; Owner: -
 --
 
 CREATE TABLE av3.candidate_answers (
@@ -126,10 +118,8 @@ CREATE TABLE av3.candidate_answers (
 );
 
 
-ALTER TABLE av3.candidate_answers OWNER TO postgres;
-
 --
--- Name: candidate_answers_id_candidate_answer_seq; Type: SEQUENCE; Schema: av3; Owner: postgres
+-- Name: candidate_answers_id_candidate_answer_seq; Type: SEQUENCE; Schema: av3; Owner: -
 --
 
 CREATE SEQUENCE av3.candidate_answers_id_candidate_answer_seq
@@ -141,17 +131,15 @@ CREATE SEQUENCE av3.candidate_answers_id_candidate_answer_seq
     CACHE 1;
 
 
-ALTER SEQUENCE av3.candidate_answers_id_candidate_answer_seq OWNER TO postgres;
-
 --
--- Name: candidate_answers_id_candidate_answer_seq; Type: SEQUENCE OWNED BY; Schema: av3; Owner: postgres
+-- Name: candidate_answers_id_candidate_answer_seq; Type: SEQUENCE OWNED BY; Schema: av3; Owner: -
 --
 
 ALTER SEQUENCE av3.candidate_answers_id_candidate_answer_seq OWNED BY av3.candidate_answers.id_candidate_answer;
 
 
 --
--- Name: candidate_runs; Type: TABLE; Schema: av3; Owner: postgres
+-- Name: candidate_runs; Type: TABLE; Schema: av3; Owner: -
 --
 
 CREATE TABLE av3.candidate_runs (
@@ -176,10 +164,8 @@ CREATE TABLE av3.candidate_runs (
 );
 
 
-ALTER TABLE av3.candidate_runs OWNER TO postgres;
-
 --
--- Name: candidate_runs_id_candidate_run_seq; Type: SEQUENCE; Schema: av3; Owner: postgres
+-- Name: candidate_runs_id_candidate_run_seq; Type: SEQUENCE; Schema: av3; Owner: -
 --
 
 CREATE SEQUENCE av3.candidate_runs_id_candidate_run_seq
@@ -191,17 +177,15 @@ CREATE SEQUENCE av3.candidate_runs_id_candidate_run_seq
     CACHE 1;
 
 
-ALTER SEQUENCE av3.candidate_runs_id_candidate_run_seq OWNER TO postgres;
-
 --
--- Name: candidate_runs_id_candidate_run_seq; Type: SEQUENCE OWNED BY; Schema: av3; Owner: postgres
+-- Name: candidate_runs_id_candidate_run_seq; Type: SEQUENCE OWNED BY; Schema: av3; Owner: -
 --
 
 ALTER SEQUENCE av3.candidate_runs_id_candidate_run_seq OWNED BY av3.candidate_runs.id_candidate_run;
 
 
 --
--- Name: curadoria_artigos; Type: TABLE; Schema: av3; Owner: postgres
+-- Name: curadoria_artigos; Type: TABLE; Schema: av3; Owner: -
 --
 
 CREATE TABLE av3.curadoria_artigos (
@@ -215,10 +199,8 @@ CREATE TABLE av3.curadoria_artigos (
 );
 
 
-ALTER TABLE av3.curadoria_artigos OWNER TO postgres;
-
 --
--- Name: curadoria_artigos_id_curadoria_artigo_seq; Type: SEQUENCE; Schema: av3; Owner: postgres
+-- Name: curadoria_artigos_id_curadoria_artigo_seq; Type: SEQUENCE; Schema: av3; Owner: -
 --
 
 CREATE SEQUENCE av3.curadoria_artigos_id_curadoria_artigo_seq
@@ -230,17 +212,15 @@ CREATE SEQUENCE av3.curadoria_artigos_id_curadoria_artigo_seq
     CACHE 1;
 
 
-ALTER SEQUENCE av3.curadoria_artigos_id_curadoria_artigo_seq OWNER TO postgres;
-
 --
--- Name: curadoria_artigos_id_curadoria_artigo_seq; Type: SEQUENCE OWNED BY; Schema: av3; Owner: postgres
+-- Name: curadoria_artigos_id_curadoria_artigo_seq; Type: SEQUENCE OWNED BY; Schema: av3; Owner: -
 --
 
 ALTER SEQUENCE av3.curadoria_artigos_id_curadoria_artigo_seq OWNED BY av3.curadoria_artigos.id_curadoria_artigo;
 
 
 --
--- Name: curadoria_import_items_raw; Type: TABLE; Schema: av3; Owner: postgres
+-- Name: curadoria_import_items_raw; Type: TABLE; Schema: av3; Owner: -
 --
 
 CREATE TABLE av3.curadoria_import_items_raw (
@@ -256,10 +236,8 @@ CREATE TABLE av3.curadoria_import_items_raw (
 );
 
 
-ALTER TABLE av3.curadoria_import_items_raw OWNER TO postgres;
-
 --
--- Name: curadoria_import_items_raw_id_raw_item_seq; Type: SEQUENCE; Schema: av3; Owner: postgres
+-- Name: curadoria_import_items_raw_id_raw_item_seq; Type: SEQUENCE; Schema: av3; Owner: -
 --
 
 CREATE SEQUENCE av3.curadoria_import_items_raw_id_raw_item_seq
@@ -271,17 +249,15 @@ CREATE SEQUENCE av3.curadoria_import_items_raw_id_raw_item_seq
     CACHE 1;
 
 
-ALTER SEQUENCE av3.curadoria_import_items_raw_id_raw_item_seq OWNER TO postgres;
-
 --
--- Name: curadoria_import_items_raw_id_raw_item_seq; Type: SEQUENCE OWNED BY; Schema: av3; Owner: postgres
+-- Name: curadoria_import_items_raw_id_raw_item_seq; Type: SEQUENCE OWNED BY; Schema: av3; Owner: -
 --
 
 ALTER SEQUENCE av3.curadoria_import_items_raw_id_raw_item_seq OWNED BY av3.curadoria_import_items_raw.id_raw_item;
 
 
 --
--- Name: curadoria_import_runs; Type: TABLE; Schema: av3; Owner: postgres
+-- Name: curadoria_import_runs; Type: TABLE; Schema: av3; Owner: -
 --
 
 CREATE TABLE av3.curadoria_import_runs (
@@ -298,10 +274,8 @@ CREATE TABLE av3.curadoria_import_runs (
 );
 
 
-ALTER TABLE av3.curadoria_import_runs OWNER TO postgres;
-
 --
--- Name: curadoria_import_runs_id_import_run_seq; Type: SEQUENCE; Schema: av3; Owner: postgres
+-- Name: curadoria_import_runs_id_import_run_seq; Type: SEQUENCE; Schema: av3; Owner: -
 --
 
 CREATE SEQUENCE av3.curadoria_import_runs_id_import_run_seq
@@ -313,17 +287,15 @@ CREATE SEQUENCE av3.curadoria_import_runs_id_import_run_seq
     CACHE 1;
 
 
-ALTER SEQUENCE av3.curadoria_import_runs_id_import_run_seq OWNER TO postgres;
-
 --
--- Name: curadoria_import_runs_id_import_run_seq; Type: SEQUENCE OWNED BY; Schema: av3; Owner: postgres
+-- Name: curadoria_import_runs_id_import_run_seq; Type: SEQUENCE OWNED BY; Schema: av3; Owner: -
 --
 
 ALTER SEQUENCE av3.curadoria_import_runs_id_import_run_seq OWNED BY av3.curadoria_import_runs.id_import_run;
 
 
 --
--- Name: curadoria_questoes; Type: TABLE; Schema: av3; Owner: postgres
+-- Name: curadoria_questoes; Type: TABLE; Schema: av3; Owner: -
 --
 
 CREATE TABLE av3.curadoria_questoes (
@@ -360,10 +332,8 @@ CREATE TABLE av3.curadoria_questoes (
 );
 
 
-ALTER TABLE av3.curadoria_questoes OWNER TO postgres;
-
 --
--- Name: curadoria_questoes_id_curadoria_seq; Type: SEQUENCE; Schema: av3; Owner: postgres
+-- Name: curadoria_questoes_id_curadoria_seq; Type: SEQUENCE; Schema: av3; Owner: -
 --
 
 CREATE SEQUENCE av3.curadoria_questoes_id_curadoria_seq
@@ -375,17 +345,15 @@ CREATE SEQUENCE av3.curadoria_questoes_id_curadoria_seq
     CACHE 1;
 
 
-ALTER SEQUENCE av3.curadoria_questoes_id_curadoria_seq OWNER TO postgres;
-
 --
--- Name: curadoria_questoes_id_curadoria_seq; Type: SEQUENCE OWNED BY; Schema: av3; Owner: postgres
+-- Name: curadoria_questoes_id_curadoria_seq; Type: SEQUENCE OWNED BY; Schema: av3; Owner: -
 --
 
 ALTER SEQUENCE av3.curadoria_questoes_id_curadoria_seq OWNED BY av3.curadoria_questoes.id_curadoria;
 
 
 --
--- Name: embedding_model_configs; Type: TABLE; Schema: av3; Owner: postgres
+-- Name: embedding_model_configs; Type: TABLE; Schema: av3; Owner: -
 --
 
 CREATE TABLE av3.embedding_model_configs (
@@ -403,10 +371,8 @@ CREATE TABLE av3.embedding_model_configs (
 );
 
 
-ALTER TABLE av3.embedding_model_configs OWNER TO postgres;
-
 --
--- Name: embedding_model_configs_id_embedding_config_seq; Type: SEQUENCE; Schema: av3; Owner: postgres
+-- Name: embedding_model_configs_id_embedding_config_seq; Type: SEQUENCE; Schema: av3; Owner: -
 --
 
 CREATE SEQUENCE av3.embedding_model_configs_id_embedding_config_seq
@@ -418,17 +384,15 @@ CREATE SEQUENCE av3.embedding_model_configs_id_embedding_config_seq
     CACHE 1;
 
 
-ALTER SEQUENCE av3.embedding_model_configs_id_embedding_config_seq OWNER TO postgres;
-
 --
--- Name: embedding_model_configs_id_embedding_config_seq; Type: SEQUENCE OWNED BY; Schema: av3; Owner: postgres
+-- Name: embedding_model_configs_id_embedding_config_seq; Type: SEQUENCE OWNED BY; Schema: av3; Owner: -
 --
 
 ALTER SEQUENCE av3.embedding_model_configs_id_embedding_config_seq OWNED BY av3.embedding_model_configs.id_embedding_config;
 
 
 --
--- Name: prompt_candidatos; Type: TABLE; Schema: av3; Owner: postgres
+-- Name: prompt_candidatos; Type: TABLE; Schema: av3; Owner: -
 --
 
 CREATE TABLE av3.prompt_candidatos (
@@ -445,10 +409,8 @@ CREATE TABLE av3.prompt_candidatos (
 );
 
 
-ALTER TABLE av3.prompt_candidatos OWNER TO postgres;
-
 --
--- Name: prompt_candidatos_id_prompt_candidato_seq; Type: SEQUENCE; Schema: av3; Owner: postgres
+-- Name: prompt_candidatos_id_prompt_candidato_seq; Type: SEQUENCE; Schema: av3; Owner: -
 --
 
 CREATE SEQUENCE av3.prompt_candidatos_id_prompt_candidato_seq
@@ -460,17 +422,15 @@ CREATE SEQUENCE av3.prompt_candidatos_id_prompt_candidato_seq
     CACHE 1;
 
 
-ALTER SEQUENCE av3.prompt_candidatos_id_prompt_candidato_seq OWNER TO postgres;
-
 --
--- Name: prompt_candidatos_id_prompt_candidato_seq; Type: SEQUENCE OWNED BY; Schema: av3; Owner: postgres
+-- Name: prompt_candidatos_id_prompt_candidato_seq; Type: SEQUENCE OWNED BY; Schema: av3; Owner: -
 --
 
 ALTER SEQUENCE av3.prompt_candidatos_id_prompt_candidato_seq OWNED BY av3.prompt_candidatos.id_prompt_candidato;
 
 
 --
--- Name: rag_chunks; Type: TABLE; Schema: av3; Owner: postgres
+-- Name: rag_chunks; Type: TABLE; Schema: av3; Owner: -
 --
 
 CREATE TABLE av3.rag_chunks (
@@ -496,10 +456,8 @@ CREATE TABLE av3.rag_chunks (
 );
 
 
-ALTER TABLE av3.rag_chunks OWNER TO postgres;
-
 --
--- Name: rag_chunks_id_chunk_seq; Type: SEQUENCE; Schema: av3; Owner: postgres
+-- Name: rag_chunks_id_chunk_seq; Type: SEQUENCE; Schema: av3; Owner: -
 --
 
 CREATE SEQUENCE av3.rag_chunks_id_chunk_seq
@@ -511,17 +469,15 @@ CREATE SEQUENCE av3.rag_chunks_id_chunk_seq
     CACHE 1;
 
 
-ALTER SEQUENCE av3.rag_chunks_id_chunk_seq OWNER TO postgres;
-
 --
--- Name: rag_chunks_id_chunk_seq; Type: SEQUENCE OWNED BY; Schema: av3; Owner: postgres
+-- Name: rag_chunks_id_chunk_seq; Type: SEQUENCE OWNED BY; Schema: av3; Owner: -
 --
 
 ALTER SEQUENCE av3.rag_chunks_id_chunk_seq OWNED BY av3.rag_chunks.id_chunk;
 
 
 --
--- Name: rag_documents; Type: TABLE; Schema: av3; Owner: postgres
+-- Name: rag_documents; Type: TABLE; Schema: av3; Owner: -
 --
 
 CREATE TABLE av3.rag_documents (
@@ -544,10 +500,8 @@ CREATE TABLE av3.rag_documents (
 );
 
 
-ALTER TABLE av3.rag_documents OWNER TO postgres;
-
 --
--- Name: rag_documents_id_document_seq; Type: SEQUENCE; Schema: av3; Owner: postgres
+-- Name: rag_documents_id_document_seq; Type: SEQUENCE; Schema: av3; Owner: -
 --
 
 CREATE SEQUENCE av3.rag_documents_id_document_seq
@@ -559,17 +513,15 @@ CREATE SEQUENCE av3.rag_documents_id_document_seq
     CACHE 1;
 
 
-ALTER SEQUENCE av3.rag_documents_id_document_seq OWNER TO postgres;
-
 --
--- Name: rag_documents_id_document_seq; Type: SEQUENCE OWNED BY; Schema: av3; Owner: postgres
+-- Name: rag_documents_id_document_seq; Type: SEQUENCE OWNED BY; Schema: av3; Owner: -
 --
 
 ALTER SEQUENCE av3.rag_documents_id_document_seq OWNED BY av3.rag_documents.id_document;
 
 
 --
--- Name: rag_embeddings; Type: TABLE; Schema: av3; Owner: postgres
+-- Name: rag_embeddings; Type: TABLE; Schema: av3; Owner: -
 --
 
 CREATE TABLE av3.rag_embeddings (
@@ -583,10 +535,8 @@ CREATE TABLE av3.rag_embeddings (
 );
 
 
-ALTER TABLE av3.rag_embeddings OWNER TO postgres;
-
 --
--- Name: rag_embeddings_id_embedding_seq; Type: SEQUENCE; Schema: av3; Owner: postgres
+-- Name: rag_embeddings_id_embedding_seq; Type: SEQUENCE; Schema: av3; Owner: -
 --
 
 CREATE SEQUENCE av3.rag_embeddings_id_embedding_seq
@@ -598,17 +548,15 @@ CREATE SEQUENCE av3.rag_embeddings_id_embedding_seq
     CACHE 1;
 
 
-ALTER SEQUENCE av3.rag_embeddings_id_embedding_seq OWNER TO postgres;
-
 --
--- Name: rag_embeddings_id_embedding_seq; Type: SEQUENCE OWNED BY; Schema: av3; Owner: postgres
+-- Name: rag_embeddings_id_embedding_seq; Type: SEQUENCE OWNED BY; Schema: av3; Owner: -
 --
 
 ALTER SEQUENCE av3.rag_embeddings_id_embedding_seq OWNED BY av3.rag_embeddings.id_embedding;
 
 
 --
--- Name: retrieval_runs; Type: TABLE; Schema: av3; Owner: postgres
+-- Name: retrieval_runs; Type: TABLE; Schema: av3; Owner: -
 --
 
 CREATE TABLE av3.retrieval_runs (
@@ -629,10 +577,8 @@ CREATE TABLE av3.retrieval_runs (
 );
 
 
-ALTER TABLE av3.retrieval_runs OWNER TO postgres;
-
 --
--- Name: retrieval_runs_id_retrieval_run_seq; Type: SEQUENCE; Schema: av3; Owner: postgres
+-- Name: retrieval_runs_id_retrieval_run_seq; Type: SEQUENCE; Schema: av3; Owner: -
 --
 
 CREATE SEQUENCE av3.retrieval_runs_id_retrieval_run_seq
@@ -644,17 +590,15 @@ CREATE SEQUENCE av3.retrieval_runs_id_retrieval_run_seq
     CACHE 1;
 
 
-ALTER SEQUENCE av3.retrieval_runs_id_retrieval_run_seq OWNER TO postgres;
-
 --
--- Name: retrieval_runs_id_retrieval_run_seq; Type: SEQUENCE OWNED BY; Schema: av3; Owner: postgres
+-- Name: retrieval_runs_id_retrieval_run_seq; Type: SEQUENCE OWNED BY; Schema: av3; Owner: -
 --
 
 ALTER SEQUENCE av3.retrieval_runs_id_retrieval_run_seq OWNED BY av3.retrieval_runs.id_retrieval_run;
 
 
 --
--- Name: avaliacao_juiz_detalhes; Type: TABLE; Schema: public; Owner: postgres
+-- Name: avaliacao_juiz_detalhes; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.avaliacao_juiz_detalhes (
@@ -673,10 +617,8 @@ CREATE TABLE public.avaliacao_juiz_detalhes (
 );
 
 
-ALTER TABLE public.avaliacao_juiz_detalhes OWNER TO postgres;
-
 --
--- Name: avaliacao_juiz_detalhes_id_detalhe_seq; Type: SEQUENCE; Schema: public; Owner: postgres
+-- Name: avaliacao_juiz_detalhes_id_detalhe_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
 CREATE SEQUENCE public.avaliacao_juiz_detalhes_id_detalhe_seq
@@ -688,17 +630,15 @@ CREATE SEQUENCE public.avaliacao_juiz_detalhes_id_detalhe_seq
     CACHE 1;
 
 
-ALTER SEQUENCE public.avaliacao_juiz_detalhes_id_detalhe_seq OWNER TO postgres;
-
 --
--- Name: avaliacao_juiz_detalhes_id_detalhe_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
+-- Name: avaliacao_juiz_detalhes_id_detalhe_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
 --
 
 ALTER SEQUENCE public.avaliacao_juiz_detalhes_id_detalhe_seq OWNED BY public.avaliacao_juiz_detalhes.id_detalhe;
 
 
 --
--- Name: avaliacoes_juiz; Type: TABLE; Schema: public; Owner: postgres
+-- Name: avaliacoes_juiz; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.avaliacoes_juiz (
@@ -717,10 +657,8 @@ CREATE TABLE public.avaliacoes_juiz (
 );
 
 
-ALTER TABLE public.avaliacoes_juiz OWNER TO postgres;
-
 --
--- Name: avaliacoes_juiz_id_avaliacao_seq; Type: SEQUENCE; Schema: public; Owner: postgres
+-- Name: avaliacoes_juiz_id_avaliacao_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
 CREATE SEQUENCE public.avaliacoes_juiz_id_avaliacao_seq
@@ -732,17 +670,15 @@ CREATE SEQUENCE public.avaliacoes_juiz_id_avaliacao_seq
     CACHE 1;
 
 
-ALTER SEQUENCE public.avaliacoes_juiz_id_avaliacao_seq OWNER TO postgres;
-
 --
--- Name: avaliacoes_juiz_id_avaliacao_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
+-- Name: avaliacoes_juiz_id_avaliacao_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
 --
 
 ALTER SEQUENCE public.avaliacoes_juiz_id_avaliacao_seq OWNED BY public.avaliacoes_juiz.id_avaliacao;
 
 
 --
--- Name: datasets; Type: TABLE; Schema: public; Owner: postgres
+-- Name: datasets; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.datasets (
@@ -752,10 +688,8 @@ CREATE TABLE public.datasets (
 );
 
 
-ALTER TABLE public.datasets OWNER TO postgres;
-
 --
--- Name: datasets_id_dataset_seq; Type: SEQUENCE; Schema: public; Owner: postgres
+-- Name: datasets_id_dataset_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
 CREATE SEQUENCE public.datasets_id_dataset_seq
@@ -767,17 +701,15 @@ CREATE SEQUENCE public.datasets_id_dataset_seq
     CACHE 1;
 
 
-ALTER SEQUENCE public.datasets_id_dataset_seq OWNER TO postgres;
-
 --
--- Name: datasets_id_dataset_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
+-- Name: datasets_id_dataset_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
 --
 
 ALTER SEQUENCE public.datasets_id_dataset_seq OWNED BY public.datasets.id_dataset;
 
 
 --
--- Name: meta_avaliacoes; Type: TABLE; Schema: public; Owner: postgres
+-- Name: meta_avaliacoes; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.meta_avaliacoes (
@@ -791,10 +723,8 @@ CREATE TABLE public.meta_avaliacoes (
 );
 
 
-ALTER TABLE public.meta_avaliacoes OWNER TO postgres;
-
 --
--- Name: meta_avaliacoes_id_meta_avaliacao_seq; Type: SEQUENCE; Schema: public; Owner: postgres
+-- Name: meta_avaliacoes_id_meta_avaliacao_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
 CREATE SEQUENCE public.meta_avaliacoes_id_meta_avaliacao_seq
@@ -806,17 +736,15 @@ CREATE SEQUENCE public.meta_avaliacoes_id_meta_avaliacao_seq
     CACHE 1;
 
 
-ALTER SEQUENCE public.meta_avaliacoes_id_meta_avaliacao_seq OWNER TO postgres;
-
 --
--- Name: meta_avaliacoes_id_meta_avaliacao_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
+-- Name: meta_avaliacoes_id_meta_avaliacao_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
 --
 
 ALTER SEQUENCE public.meta_avaliacoes_id_meta_avaliacao_seq OWNED BY public.meta_avaliacoes.id_meta_avaliacao;
 
 
 --
--- Name: modelos; Type: TABLE; Schema: public; Owner: postgres
+-- Name: modelos; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.modelos (
@@ -829,10 +757,8 @@ CREATE TABLE public.modelos (
 );
 
 
-ALTER TABLE public.modelos OWNER TO postgres;
-
 --
--- Name: modelos_id_modelo_seq; Type: SEQUENCE; Schema: public; Owner: postgres
+-- Name: modelos_id_modelo_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
 CREATE SEQUENCE public.modelos_id_modelo_seq
@@ -844,17 +770,15 @@ CREATE SEQUENCE public.modelos_id_modelo_seq
     CACHE 1;
 
 
-ALTER SEQUENCE public.modelos_id_modelo_seq OWNER TO postgres;
-
 --
--- Name: modelos_id_modelo_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
+-- Name: modelos_id_modelo_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
 --
 
 ALTER SEQUENCE public.modelos_id_modelo_seq OWNED BY public.modelos.id_modelo;
 
 
 --
--- Name: perguntas; Type: TABLE; Schema: public; Owner: postgres
+-- Name: perguntas; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.perguntas (
@@ -866,10 +790,8 @@ CREATE TABLE public.perguntas (
 );
 
 
-ALTER TABLE public.perguntas OWNER TO postgres;
-
 --
--- Name: perguntas_id_pergunta_seq; Type: SEQUENCE; Schema: public; Owner: postgres
+-- Name: perguntas_id_pergunta_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
 CREATE SEQUENCE public.perguntas_id_pergunta_seq
@@ -881,17 +803,15 @@ CREATE SEQUENCE public.perguntas_id_pergunta_seq
     CACHE 1;
 
 
-ALTER SEQUENCE public.perguntas_id_pergunta_seq OWNER TO postgres;
-
 --
--- Name: perguntas_id_pergunta_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
+-- Name: perguntas_id_pergunta_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
 --
 
 ALTER SEQUENCE public.perguntas_id_pergunta_seq OWNED BY public.perguntas.id_pergunta;
 
 
 --
--- Name: prompt_juizes; Type: TABLE; Schema: public; Owner: postgres
+-- Name: prompt_juizes; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.prompt_juizes (
@@ -909,10 +829,8 @@ CREATE TABLE public.prompt_juizes (
 );
 
 
-ALTER TABLE public.prompt_juizes OWNER TO postgres;
-
 --
--- Name: prompt_juizes_id_prompt_juiz_seq; Type: SEQUENCE; Schema: public; Owner: postgres
+-- Name: prompt_juizes_id_prompt_juiz_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
 CREATE SEQUENCE public.prompt_juizes_id_prompt_juiz_seq
@@ -924,17 +842,15 @@ CREATE SEQUENCE public.prompt_juizes_id_prompt_juiz_seq
     CACHE 1;
 
 
-ALTER SEQUENCE public.prompt_juizes_id_prompt_juiz_seq OWNER TO postgres;
-
 --
--- Name: prompt_juizes_id_prompt_juiz_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
+-- Name: prompt_juizes_id_prompt_juiz_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
 --
 
 ALTER SEQUENCE public.prompt_juizes_id_prompt_juiz_seq OWNED BY public.prompt_juizes.id_prompt_juiz;
 
 
 --
--- Name: respostas_atividade_1; Type: TABLE; Schema: public; Owner: postgres
+-- Name: respostas_atividade_1; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.respostas_atividade_1 (
@@ -948,10 +864,8 @@ CREATE TABLE public.respostas_atividade_1 (
 );
 
 
-ALTER TABLE public.respostas_atividade_1 OWNER TO postgres;
-
 --
--- Name: respostas_atividade_1_id_resposta_seq; Type: SEQUENCE; Schema: public; Owner: postgres
+-- Name: respostas_atividade_1_id_resposta_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
 CREATE SEQUENCE public.respostas_atividade_1_id_resposta_seq
@@ -963,17 +877,15 @@ CREATE SEQUENCE public.respostas_atividade_1_id_resposta_seq
     CACHE 1;
 
 
-ALTER SEQUENCE public.respostas_atividade_1_id_resposta_seq OWNER TO postgres;
-
 --
--- Name: respostas_atividade_1_id_resposta_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
+-- Name: respostas_atividade_1_id_resposta_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
 --
 
 ALTER SEQUENCE public.respostas_atividade_1_id_resposta_seq OWNED BY public.respostas_atividade_1.id_resposta;
 
 
 --
--- Name: stage_respostas_disc_import; Type: TABLE; Schema: public; Owner: postgres
+-- Name: stage_respostas_disc_import; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.stage_respostas_disc_import (
@@ -987,10 +899,8 @@ CREATE TABLE public.stage_respostas_disc_import (
 );
 
 
-ALTER TABLE public.stage_respostas_disc_import OWNER TO postgres;
-
 --
--- Name: stage_respostas_obj_import; Type: TABLE; Schema: public; Owner: postgres
+-- Name: stage_respostas_obj_import; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.stage_respostas_obj_import (
@@ -1004,157 +914,155 @@ CREATE TABLE public.stage_respostas_obj_import (
 );
 
 
-ALTER TABLE public.stage_respostas_obj_import OWNER TO postgres;
-
 --
--- Name: candidate_answer_context_chunks id_answer_context_chunk; Type: DEFAULT; Schema: av3; Owner: postgres
+-- Name: candidate_answer_context_chunks id_answer_context_chunk; Type: DEFAULT; Schema: av3; Owner: -
 --
 
 ALTER TABLE ONLY av3.candidate_answer_context_chunks ALTER COLUMN id_answer_context_chunk SET DEFAULT nextval('av3.candidate_answer_context_chunks_id_answer_context_chunk_seq'::regclass);
 
 
 --
--- Name: candidate_answers id_candidate_answer; Type: DEFAULT; Schema: av3; Owner: postgres
+-- Name: candidate_answers id_candidate_answer; Type: DEFAULT; Schema: av3; Owner: -
 --
 
 ALTER TABLE ONLY av3.candidate_answers ALTER COLUMN id_candidate_answer SET DEFAULT nextval('av3.candidate_answers_id_candidate_answer_seq'::regclass);
 
 
 --
--- Name: candidate_runs id_candidate_run; Type: DEFAULT; Schema: av3; Owner: postgres
+-- Name: candidate_runs id_candidate_run; Type: DEFAULT; Schema: av3; Owner: -
 --
 
 ALTER TABLE ONLY av3.candidate_runs ALTER COLUMN id_candidate_run SET DEFAULT nextval('av3.candidate_runs_id_candidate_run_seq'::regclass);
 
 
 --
--- Name: curadoria_artigos id_curadoria_artigo; Type: DEFAULT; Schema: av3; Owner: postgres
+-- Name: curadoria_artigos id_curadoria_artigo; Type: DEFAULT; Schema: av3; Owner: -
 --
 
 ALTER TABLE ONLY av3.curadoria_artigos ALTER COLUMN id_curadoria_artigo SET DEFAULT nextval('av3.curadoria_artigos_id_curadoria_artigo_seq'::regclass);
 
 
 --
--- Name: curadoria_import_items_raw id_raw_item; Type: DEFAULT; Schema: av3; Owner: postgres
+-- Name: curadoria_import_items_raw id_raw_item; Type: DEFAULT; Schema: av3; Owner: -
 --
 
 ALTER TABLE ONLY av3.curadoria_import_items_raw ALTER COLUMN id_raw_item SET DEFAULT nextval('av3.curadoria_import_items_raw_id_raw_item_seq'::regclass);
 
 
 --
--- Name: curadoria_import_runs id_import_run; Type: DEFAULT; Schema: av3; Owner: postgres
+-- Name: curadoria_import_runs id_import_run; Type: DEFAULT; Schema: av3; Owner: -
 --
 
 ALTER TABLE ONLY av3.curadoria_import_runs ALTER COLUMN id_import_run SET DEFAULT nextval('av3.curadoria_import_runs_id_import_run_seq'::regclass);
 
 
 --
--- Name: curadoria_questoes id_curadoria; Type: DEFAULT; Schema: av3; Owner: postgres
+-- Name: curadoria_questoes id_curadoria; Type: DEFAULT; Schema: av3; Owner: -
 --
 
 ALTER TABLE ONLY av3.curadoria_questoes ALTER COLUMN id_curadoria SET DEFAULT nextval('av3.curadoria_questoes_id_curadoria_seq'::regclass);
 
 
 --
--- Name: embedding_model_configs id_embedding_config; Type: DEFAULT; Schema: av3; Owner: postgres
+-- Name: embedding_model_configs id_embedding_config; Type: DEFAULT; Schema: av3; Owner: -
 --
 
 ALTER TABLE ONLY av3.embedding_model_configs ALTER COLUMN id_embedding_config SET DEFAULT nextval('av3.embedding_model_configs_id_embedding_config_seq'::regclass);
 
 
 --
--- Name: prompt_candidatos id_prompt_candidato; Type: DEFAULT; Schema: av3; Owner: postgres
+-- Name: prompt_candidatos id_prompt_candidato; Type: DEFAULT; Schema: av3; Owner: -
 --
 
 ALTER TABLE ONLY av3.prompt_candidatos ALTER COLUMN id_prompt_candidato SET DEFAULT nextval('av3.prompt_candidatos_id_prompt_candidato_seq'::regclass);
 
 
 --
--- Name: rag_chunks id_chunk; Type: DEFAULT; Schema: av3; Owner: postgres
+-- Name: rag_chunks id_chunk; Type: DEFAULT; Schema: av3; Owner: -
 --
 
 ALTER TABLE ONLY av3.rag_chunks ALTER COLUMN id_chunk SET DEFAULT nextval('av3.rag_chunks_id_chunk_seq'::regclass);
 
 
 --
--- Name: rag_documents id_document; Type: DEFAULT; Schema: av3; Owner: postgres
+-- Name: rag_documents id_document; Type: DEFAULT; Schema: av3; Owner: -
 --
 
 ALTER TABLE ONLY av3.rag_documents ALTER COLUMN id_document SET DEFAULT nextval('av3.rag_documents_id_document_seq'::regclass);
 
 
 --
--- Name: rag_embeddings id_embedding; Type: DEFAULT; Schema: av3; Owner: postgres
+-- Name: rag_embeddings id_embedding; Type: DEFAULT; Schema: av3; Owner: -
 --
 
 ALTER TABLE ONLY av3.rag_embeddings ALTER COLUMN id_embedding SET DEFAULT nextval('av3.rag_embeddings_id_embedding_seq'::regclass);
 
 
 --
--- Name: retrieval_runs id_retrieval_run; Type: DEFAULT; Schema: av3; Owner: postgres
+-- Name: retrieval_runs id_retrieval_run; Type: DEFAULT; Schema: av3; Owner: -
 --
 
 ALTER TABLE ONLY av3.retrieval_runs ALTER COLUMN id_retrieval_run SET DEFAULT nextval('av3.retrieval_runs_id_retrieval_run_seq'::regclass);
 
 
 --
--- Name: avaliacao_juiz_detalhes id_detalhe; Type: DEFAULT; Schema: public; Owner: postgres
+-- Name: avaliacao_juiz_detalhes id_detalhe; Type: DEFAULT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.avaliacao_juiz_detalhes ALTER COLUMN id_detalhe SET DEFAULT nextval('public.avaliacao_juiz_detalhes_id_detalhe_seq'::regclass);
 
 
 --
--- Name: avaliacoes_juiz id_avaliacao; Type: DEFAULT; Schema: public; Owner: postgres
+-- Name: avaliacoes_juiz id_avaliacao; Type: DEFAULT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.avaliacoes_juiz ALTER COLUMN id_avaliacao SET DEFAULT nextval('public.avaliacoes_juiz_id_avaliacao_seq'::regclass);
 
 
 --
--- Name: datasets id_dataset; Type: DEFAULT; Schema: public; Owner: postgres
+-- Name: datasets id_dataset; Type: DEFAULT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.datasets ALTER COLUMN id_dataset SET DEFAULT nextval('public.datasets_id_dataset_seq'::regclass);
 
 
 --
--- Name: meta_avaliacoes id_meta_avaliacao; Type: DEFAULT; Schema: public; Owner: postgres
+-- Name: meta_avaliacoes id_meta_avaliacao; Type: DEFAULT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.meta_avaliacoes ALTER COLUMN id_meta_avaliacao SET DEFAULT nextval('public.meta_avaliacoes_id_meta_avaliacao_seq'::regclass);
 
 
 --
--- Name: modelos id_modelo; Type: DEFAULT; Schema: public; Owner: postgres
+-- Name: modelos id_modelo; Type: DEFAULT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.modelos ALTER COLUMN id_modelo SET DEFAULT nextval('public.modelos_id_modelo_seq'::regclass);
 
 
 --
--- Name: perguntas id_pergunta; Type: DEFAULT; Schema: public; Owner: postgres
+-- Name: perguntas id_pergunta; Type: DEFAULT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.perguntas ALTER COLUMN id_pergunta SET DEFAULT nextval('public.perguntas_id_pergunta_seq'::regclass);
 
 
 --
--- Name: prompt_juizes id_prompt_juiz; Type: DEFAULT; Schema: public; Owner: postgres
+-- Name: prompt_juizes id_prompt_juiz; Type: DEFAULT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.prompt_juizes ALTER COLUMN id_prompt_juiz SET DEFAULT nextval('public.prompt_juizes_id_prompt_juiz_seq'::regclass);
 
 
 --
--- Name: respostas_atividade_1 id_resposta; Type: DEFAULT; Schema: public; Owner: postgres
+-- Name: respostas_atividade_1 id_resposta; Type: DEFAULT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.respostas_atividade_1 ALTER COLUMN id_resposta SET DEFAULT nextval('public.respostas_atividade_1_id_resposta_seq'::regclass);
 
 
 --
--- Data for Name: candidate_answer_context_chunks; Type: TABLE DATA; Schema: av3; Owner: postgres
+-- Data for Name: candidate_answer_context_chunks; Type: TABLE DATA; Schema: av3; Owner: -
 --
 
 COPY av3.candidate_answer_context_chunks (id_answer_context_chunk, id_candidate_answer, id_chunk, rank, similarity_score, chunk_text_snapshot, source_url, metadata_jsonb, created_at) FROM stdin;
@@ -1162,7 +1070,7 @@ COPY av3.candidate_answer_context_chunks (id_answer_context_chunk, id_candidate_
 
 
 --
--- Data for Name: candidate_answers; Type: TABLE DATA; Schema: av3; Owner: postgres
+-- Data for Name: candidate_answers; Type: TABLE DATA; Schema: av3; Owner: -
 --
 
 COPY av3.candidate_answers (id_candidate_answer, id_candidate_run, id_pergunta, model_name, answer_text, final_choice, rendered_prompt, status, error_message, latency_ms, raw_response_jsonb, created_at) FROM stdin;
@@ -1170,7 +1078,7 @@ COPY av3.candidate_answers (id_candidate_answer, id_candidate_run, id_pergunta, 
 
 
 --
--- Data for Name: candidate_runs; Type: TABLE DATA; Schema: av3; Owner: postgres
+-- Data for Name: candidate_runs; Type: TABLE DATA; Schema: av3; Owner: -
 --
 
 COPY av3.candidate_runs (id_candidate_run, dataset_code, id_retrieval_run, id_prompt_candidato, model_name, provider, temperature, max_tokens, top_p, batch_size, run_status, started_at, finished_at, created_by, metadata_jsonb, created_at) FROM stdin;
@@ -1178,7 +1086,7 @@ COPY av3.candidate_runs (id_candidate_run, dataset_code, id_retrieval_run, id_pr
 
 
 --
--- Data for Name: curadoria_artigos; Type: TABLE DATA; Schema: av3; Owner: postgres
+-- Data for Name: curadoria_artigos; Type: TABLE DATA; Schema: av3; Owner: -
 --
 
 COPY av3.curadoria_artigos (id_curadoria_artigo, id_curadoria, ordem, artigo, topico, relevancia, tipo) FROM stdin;
@@ -1186,7 +1094,7 @@ COPY av3.curadoria_artigos (id_curadoria_artigo, id_curadoria, ordem, artigo, to
 
 
 --
--- Data for Name: curadoria_import_items_raw; Type: TABLE DATA; Schema: av3; Owner: postgres
+-- Data for Name: curadoria_import_items_raw; Type: TABLE DATA; Schema: av3; Owner: -
 --
 
 COPY av3.curadoria_import_items_raw (id_raw_item, id_import_run, dataset_code, question_external_id, question_sequence, id_pergunta, payload_hash, payload_jsonb, created_at) FROM stdin;
@@ -1194,7 +1102,7 @@ COPY av3.curadoria_import_items_raw (id_raw_item, id_import_run, dataset_code, q
 
 
 --
--- Data for Name: curadoria_import_runs; Type: TABLE DATA; Schema: av3; Owner: postgres
+-- Data for Name: curadoria_import_runs; Type: TABLE DATA; Schema: av3; Owner: -
 --
 
 COPY av3.curadoria_import_runs (id_import_run, dataset_code, dataset_name, filename, payload_hash, imported_by, imported_at, item_count, article_count, ativo) FROM stdin;
@@ -1202,7 +1110,7 @@ COPY av3.curadoria_import_runs (id_import_run, dataset_code, dataset_name, filen
 
 
 --
--- Data for Name: curadoria_questoes; Type: TABLE DATA; Schema: av3; Owner: postgres
+-- Data for Name: curadoria_questoes; Type: TABLE DATA; Schema: av3; Owner: -
 --
 
 COPY av3.curadoria_questoes (id_curadoria, id_import_run, dataset_code, dataset_name, id_pergunta, question_external_id, question_sequence, tipo_questao, prompt_system, questao, gabarito_jsonb, perguntas_jsonb, alternativas_jsonb, pontuacao_total, dificuldade_nivel, dificuldade_escala, dificuldade_criterios_jsonb, disciplina, assunto, tema, norma, lei, url, urn, curador, dt_classificacao, metadados_jsonb, raw_payload_jsonb, payload_hash, created_at) FROM stdin;
@@ -1210,7 +1118,7 @@ COPY av3.curadoria_questoes (id_curadoria, id_import_run, dataset_code, dataset_
 
 
 --
--- Data for Name: embedding_model_configs; Type: TABLE DATA; Schema: av3; Owner: postgres
+-- Data for Name: embedding_model_configs; Type: TABLE DATA; Schema: av3; Owner: -
 --
 
 COPY av3.embedding_model_configs (id_embedding_config, dataset_code, dataset_name, provider, model_name, dimensions, api_base_url, notes, updated_by, updated_at) FROM stdin;
@@ -1218,7 +1126,7 @@ COPY av3.embedding_model_configs (id_embedding_config, dataset_code, dataset_nam
 
 
 --
--- Data for Name: prompt_candidatos; Type: TABLE DATA; Schema: av3; Owner: postgres
+-- Data for Name: prompt_candidatos; Type: TABLE DATA; Schema: av3; Owner: -
 --
 
 COPY av3.prompt_candidatos (id_prompt_candidato, dataset_code, versao, ds_persona, ds_contexto, ds_instrucao_rag, ds_saida, ativo, created_by, created_at) FROM stdin;
@@ -1226,7 +1134,7 @@ COPY av3.prompt_candidatos (id_prompt_candidato, dataset_code, versao, ds_person
 
 
 --
--- Data for Name: rag_chunks; Type: TABLE DATA; Schema: av3; Owner: postgres
+-- Data for Name: rag_chunks; Type: TABLE DATA; Schema: av3; Owner: -
 --
 
 COPY av3.rag_chunks (id_chunk, id_document, id_curadoria, id_curadoria_artigo, id_pergunta, chunk_index, chunk_text, token_count, chunking_strategy, source_kind, artigo, topico, relevancia, tipo, tema, assunto, metadata_jsonb, content_hash, created_at) FROM stdin;
@@ -1234,7 +1142,7 @@ COPY av3.rag_chunks (id_chunk, id_document, id_curadoria, id_curadoria_artigo, i
 
 
 --
--- Data for Name: rag_documents; Type: TABLE DATA; Schema: av3; Owner: postgres
+-- Data for Name: rag_documents; Type: TABLE DATA; Schema: av3; Owner: -
 --
 
 COPY av3.rag_documents (id_document, id_import_run, dataset_code, dataset_name, document_key, source_name, source_type, source_url, title, lei, norma, urn, temporal_reason, inclusion_criteria, metadata_jsonb, created_at) FROM stdin;
@@ -1242,7 +1150,7 @@ COPY av3.rag_documents (id_document, id_import_run, dataset_code, dataset_name, 
 
 
 --
--- Data for Name: rag_embeddings; Type: TABLE DATA; Schema: av3; Owner: postgres
+-- Data for Name: rag_embeddings; Type: TABLE DATA; Schema: av3; Owner: -
 --
 
 COPY av3.rag_embeddings (id_embedding, id_chunk, embedding_model, embedding_dimensions, embedding_vector, metadata_jsonb, created_at) FROM stdin;
@@ -1250,7 +1158,7 @@ COPY av3.rag_embeddings (id_embedding, id_chunk, embedding_model, embedding_dime
 
 
 --
--- Data for Name: retrieval_runs; Type: TABLE DATA; Schema: av3; Owner: postgres
+-- Data for Name: retrieval_runs; Type: TABLE DATA; Schema: av3; Owner: -
 --
 
 COPY av3.retrieval_runs (id_retrieval_run, id_import_run, dataset_code, name, retrieval_strategy, embedding_model, top_k, vector_enabled, lexical_enabled, rerank_enabled, ativo, metadata_jsonb, created_at) FROM stdin;
@@ -1258,7 +1166,7 @@ COPY av3.retrieval_runs (id_retrieval_run, id_import_run, dataset_code, name, re
 
 
 --
--- Data for Name: avaliacao_juiz_detalhes; Type: TABLE DATA; Schema: public; Owner: postgres
+-- Data for Name: avaliacao_juiz_detalhes; Type: TABLE DATA; Schema: public; Owner: -
 --
 
 COPY public.avaliacao_juiz_detalhes (id_detalhe, id_avaliacao, legal_accuracy, hallucination_risk, rubric_alignment, requires_human_review, criteria, raw_output_jsonb, source_log_path, run_id, created_at, updated_at) FROM stdin;
@@ -1266,7 +1174,7 @@ COPY public.avaliacao_juiz_detalhes (id_detalhe, id_avaliacao, legal_accuracy, h
 
 
 --
--- Data for Name: avaliacoes_juiz; Type: TABLE DATA; Schema: public; Owner: postgres
+-- Data for Name: avaliacoes_juiz; Type: TABLE DATA; Schema: public; Owner: -
 --
 
 COPY public.avaliacoes_juiz (id_avaliacao, id_resposta_ativa1, id_modelo_juiz, id_prompt_juiz, nota_atribuida, chain_of_thought, papel_juiz, rodada_julgamento, motivo_acionamento, status_avaliacao, data_avaliacao) FROM stdin;
@@ -1274,7 +1182,7 @@ COPY public.avaliacoes_juiz (id_avaliacao, id_resposta_ativa1, id_modelo_juiz, i
 
 
 --
--- Data for Name: datasets; Type: TABLE DATA; Schema: public; Owner: postgres
+-- Data for Name: datasets; Type: TABLE DATA; Schema: public; Owner: -
 --
 
 COPY public.datasets (id_dataset, nome_dataset, dominio) FROM stdin;
@@ -1284,7 +1192,7 @@ COPY public.datasets (id_dataset, nome_dataset, dominio) FROM stdin;
 
 
 --
--- Data for Name: meta_avaliacoes; Type: TABLE DATA; Schema: public; Owner: postgres
+-- Data for Name: meta_avaliacoes; Type: TABLE DATA; Schema: public; Owner: -
 --
 
 COPY public.meta_avaliacoes (id_meta_avaliacao, id_avaliacao, nm_avaliador, vl_nota, ds_justificativa, created_at) FROM stdin;
@@ -1292,7 +1200,7 @@ COPY public.meta_avaliacoes (id_meta_avaliacao, id_avaliacao, nm_avaliador, vl_n
 
 
 --
--- Data for Name: modelos; Type: TABLE DATA; Schema: public; Owner: postgres
+-- Data for Name: modelos; Type: TABLE DATA; Schema: public; Owner: -
 --
 
 COPY public.modelos (id_modelo, nome_modelo, versao, parametro_precisao, tipo_modelo) FROM stdin;
@@ -1320,7 +1228,7 @@ COPY public.modelos (id_modelo, nome_modelo, versao, parametro_precisao, tipo_mo
 
 
 --
--- Data for Name: perguntas; Type: TABLE DATA; Schema: public; Owner: postgres
+-- Data for Name: perguntas; Type: TABLE DATA; Schema: public; Owner: -
 --
 
 COPY public.perguntas (id_pergunta, id_dataset, enunciado, resposta_ouro, metadados) FROM stdin;
@@ -2136,7 +2044,7 @@ COPY public.perguntas (id_pergunta, id_dataset, enunciado, resposta_ouro, metada
 
 
 --
--- Data for Name: prompt_juizes; Type: TABLE DATA; Schema: public; Owner: postgres
+-- Data for Name: prompt_juizes; Type: TABLE DATA; Schema: public; Owner: -
 --
 
 COPY public.prompt_juizes (id_prompt_juiz, id_dataset, versao, ds_prompt, ds_persona, ds_contexto, ds_rubrica, ds_saida, created_at, created_by, ativo) FROM stdin;
@@ -2146,7 +2054,7 @@ COPY public.prompt_juizes (id_prompt_juiz, id_dataset, versao, ds_prompt, ds_per
 
 
 --
--- Data for Name: respostas_atividade_1; Type: TABLE DATA; Schema: public; Owner: postgres
+-- Data for Name: respostas_atividade_1; Type: TABLE DATA; Schema: public; Owner: -
 --
 
 COPY public.respostas_atividade_1 (id_resposta, id_pergunta, id_modelo, texto_resposta, tempo_inferencia_ms, data_geracao) FROM stdin;
@@ -4578,7 +4486,7 @@ COPY public.respostas_atividade_1 (id_resposta, id_pergunta, id_modelo, texto_re
 
 
 --
--- Data for Name: stage_respostas_disc_import; Type: TABLE DATA; Schema: public; Owner: postgres
+-- Data for Name: stage_respostas_disc_import; Type: TABLE DATA; Schema: public; Owner: -
 --
 
 COPY public.stage_respostas_disc_import (nome_modelo, versao, parametro_precisao, id_pergunta, texto_resposta, tempo_inferencia_ms, data_geracao) FROM stdin;
@@ -4724,7 +4632,7 @@ Jurema:7b	7B	INT4	140	A questão aborda duas situações distintas envolvendo em
 
 
 --
--- Data for Name: stage_respostas_obj_import; Type: TABLE DATA; Schema: public; Owner: postgres
+-- Data for Name: stage_respostas_obj_import; Type: TABLE DATA; Schema: public; Owner: -
 --
 
 COPY public.stage_respostas_obj_import (nome_modelo, versao, parametro_precisao, id_pergunta, texto_resposta, tempo_inferencia_ms, data_geracao) FROM stdin;
@@ -6208,154 +6116,154 @@ Jurema:7b	7B	INT4	1476	C	176.958757	2026-04-28T03:16:27Z
 
 
 --
--- Name: candidate_answer_context_chunks_id_answer_context_chunk_seq; Type: SEQUENCE SET; Schema: av3; Owner: postgres
+-- Name: candidate_answer_context_chunks_id_answer_context_chunk_seq; Type: SEQUENCE SET; Schema: av3; Owner: -
 --
 
 SELECT pg_catalog.setval('av3.candidate_answer_context_chunks_id_answer_context_chunk_seq', 1, false);
 
 
 --
--- Name: candidate_answers_id_candidate_answer_seq; Type: SEQUENCE SET; Schema: av3; Owner: postgres
+-- Name: candidate_answers_id_candidate_answer_seq; Type: SEQUENCE SET; Schema: av3; Owner: -
 --
 
 SELECT pg_catalog.setval('av3.candidate_answers_id_candidate_answer_seq', 1, false);
 
 
 --
--- Name: candidate_runs_id_candidate_run_seq; Type: SEQUENCE SET; Schema: av3; Owner: postgres
+-- Name: candidate_runs_id_candidate_run_seq; Type: SEQUENCE SET; Schema: av3; Owner: -
 --
 
 SELECT pg_catalog.setval('av3.candidate_runs_id_candidate_run_seq', 1, false);
 
 
 --
--- Name: curadoria_artigos_id_curadoria_artigo_seq; Type: SEQUENCE SET; Schema: av3; Owner: postgres
+-- Name: curadoria_artigos_id_curadoria_artigo_seq; Type: SEQUENCE SET; Schema: av3; Owner: -
 --
 
 SELECT pg_catalog.setval('av3.curadoria_artigos_id_curadoria_artigo_seq', 1, false);
 
 
 --
--- Name: curadoria_import_items_raw_id_raw_item_seq; Type: SEQUENCE SET; Schema: av3; Owner: postgres
+-- Name: curadoria_import_items_raw_id_raw_item_seq; Type: SEQUENCE SET; Schema: av3; Owner: -
 --
 
 SELECT pg_catalog.setval('av3.curadoria_import_items_raw_id_raw_item_seq', 1, false);
 
 
 --
--- Name: curadoria_import_runs_id_import_run_seq; Type: SEQUENCE SET; Schema: av3; Owner: postgres
+-- Name: curadoria_import_runs_id_import_run_seq; Type: SEQUENCE SET; Schema: av3; Owner: -
 --
 
 SELECT pg_catalog.setval('av3.curadoria_import_runs_id_import_run_seq', 1, false);
 
 
 --
--- Name: curadoria_questoes_id_curadoria_seq; Type: SEQUENCE SET; Schema: av3; Owner: postgres
+-- Name: curadoria_questoes_id_curadoria_seq; Type: SEQUENCE SET; Schema: av3; Owner: -
 --
 
 SELECT pg_catalog.setval('av3.curadoria_questoes_id_curadoria_seq', 1, false);
 
 
 --
--- Name: embedding_model_configs_id_embedding_config_seq; Type: SEQUENCE SET; Schema: av3; Owner: postgres
+-- Name: embedding_model_configs_id_embedding_config_seq; Type: SEQUENCE SET; Schema: av3; Owner: -
 --
 
 SELECT pg_catalog.setval('av3.embedding_model_configs_id_embedding_config_seq', 1, false);
 
 
 --
--- Name: prompt_candidatos_id_prompt_candidato_seq; Type: SEQUENCE SET; Schema: av3; Owner: postgres
+-- Name: prompt_candidatos_id_prompt_candidato_seq; Type: SEQUENCE SET; Schema: av3; Owner: -
 --
 
 SELECT pg_catalog.setval('av3.prompt_candidatos_id_prompt_candidato_seq', 1, false);
 
 
 --
--- Name: rag_chunks_id_chunk_seq; Type: SEQUENCE SET; Schema: av3; Owner: postgres
+-- Name: rag_chunks_id_chunk_seq; Type: SEQUENCE SET; Schema: av3; Owner: -
 --
 
 SELECT pg_catalog.setval('av3.rag_chunks_id_chunk_seq', 1, false);
 
 
 --
--- Name: rag_documents_id_document_seq; Type: SEQUENCE SET; Schema: av3; Owner: postgres
+-- Name: rag_documents_id_document_seq; Type: SEQUENCE SET; Schema: av3; Owner: -
 --
 
 SELECT pg_catalog.setval('av3.rag_documents_id_document_seq', 1, false);
 
 
 --
--- Name: rag_embeddings_id_embedding_seq; Type: SEQUENCE SET; Schema: av3; Owner: postgres
+-- Name: rag_embeddings_id_embedding_seq; Type: SEQUENCE SET; Schema: av3; Owner: -
 --
 
 SELECT pg_catalog.setval('av3.rag_embeddings_id_embedding_seq', 1, false);
 
 
 --
--- Name: retrieval_runs_id_retrieval_run_seq; Type: SEQUENCE SET; Schema: av3; Owner: postgres
+-- Name: retrieval_runs_id_retrieval_run_seq; Type: SEQUENCE SET; Schema: av3; Owner: -
 --
 
 SELECT pg_catalog.setval('av3.retrieval_runs_id_retrieval_run_seq', 1, false);
 
 
 --
--- Name: avaliacao_juiz_detalhes_id_detalhe_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
+-- Name: avaliacao_juiz_detalhes_id_detalhe_seq; Type: SEQUENCE SET; Schema: public; Owner: -
 --
 
 SELECT pg_catalog.setval('public.avaliacao_juiz_detalhes_id_detalhe_seq', 1, false);
 
 
 --
--- Name: avaliacoes_juiz_id_avaliacao_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
+-- Name: avaliacoes_juiz_id_avaliacao_seq; Type: SEQUENCE SET; Schema: public; Owner: -
 --
 
 SELECT pg_catalog.setval('public.avaliacoes_juiz_id_avaliacao_seq', 1, false);
 
 
 --
--- Name: datasets_id_dataset_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
+-- Name: datasets_id_dataset_seq; Type: SEQUENCE SET; Schema: public; Owner: -
 --
 
 SELECT pg_catalog.setval('public.datasets_id_dataset_seq', 2, true);
 
 
 --
--- Name: meta_avaliacoes_id_meta_avaliacao_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
+-- Name: meta_avaliacoes_id_meta_avaliacao_seq; Type: SEQUENCE SET; Schema: public; Owner: -
 --
 
 SELECT pg_catalog.setval('public.meta_avaliacoes_id_meta_avaliacao_seq', 1, false);
 
 
 --
--- Name: modelos_id_modelo_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
+-- Name: modelos_id_modelo_seq; Type: SEQUENCE SET; Schema: public; Owner: -
 --
 
 SELECT pg_catalog.setval('public.modelos_id_modelo_seq', 20, true);
 
 
 --
--- Name: perguntas_id_pergunta_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
+-- Name: perguntas_id_pergunta_seq; Type: SEQUENCE SET; Schema: public; Owner: -
 --
 
 SELECT pg_catalog.setval('public.perguntas_id_pergunta_seq', 1476, true);
 
 
 --
--- Name: prompt_juizes_id_prompt_juiz_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
+-- Name: prompt_juizes_id_prompt_juiz_seq; Type: SEQUENCE SET; Schema: public; Owner: -
 --
 
 SELECT pg_catalog.setval('public.prompt_juizes_id_prompt_juiz_seq', 2, true);
 
 
 --
--- Name: respostas_atividade_1_id_resposta_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
+-- Name: respostas_atividade_1_id_resposta_seq; Type: SEQUENCE SET; Schema: public; Owner: -
 --
 
 SELECT pg_catalog.setval('public.respostas_atividade_1_id_resposta_seq', 2828, true);
 
 
 --
--- Name: candidate_answer_context_chunks candidate_answer_context_chunk_id_candidate_answer_id_chunk_key; Type: CONSTRAINT; Schema: av3; Owner: postgres
+-- Name: candidate_answer_context_chunks candidate_answer_context_chunk_id_candidate_answer_id_chunk_key; Type: CONSTRAINT; Schema: av3; Owner: -
 --
 
 ALTER TABLE ONLY av3.candidate_answer_context_chunks
@@ -6363,7 +6271,7 @@ ALTER TABLE ONLY av3.candidate_answer_context_chunks
 
 
 --
--- Name: candidate_answer_context_chunks candidate_answer_context_chunks_id_candidate_answer_rank_key; Type: CONSTRAINT; Schema: av3; Owner: postgres
+-- Name: candidate_answer_context_chunks candidate_answer_context_chunks_id_candidate_answer_rank_key; Type: CONSTRAINT; Schema: av3; Owner: -
 --
 
 ALTER TABLE ONLY av3.candidate_answer_context_chunks
@@ -6371,7 +6279,7 @@ ALTER TABLE ONLY av3.candidate_answer_context_chunks
 
 
 --
--- Name: candidate_answer_context_chunks candidate_answer_context_chunks_pkey; Type: CONSTRAINT; Schema: av3; Owner: postgres
+-- Name: candidate_answer_context_chunks candidate_answer_context_chunks_pkey; Type: CONSTRAINT; Schema: av3; Owner: -
 --
 
 ALTER TABLE ONLY av3.candidate_answer_context_chunks
@@ -6379,7 +6287,7 @@ ALTER TABLE ONLY av3.candidate_answer_context_chunks
 
 
 --
--- Name: candidate_answers candidate_answers_id_candidate_run_id_pergunta_key; Type: CONSTRAINT; Schema: av3; Owner: postgres
+-- Name: candidate_answers candidate_answers_id_candidate_run_id_pergunta_key; Type: CONSTRAINT; Schema: av3; Owner: -
 --
 
 ALTER TABLE ONLY av3.candidate_answers
@@ -6387,7 +6295,7 @@ ALTER TABLE ONLY av3.candidate_answers
 
 
 --
--- Name: candidate_answers candidate_answers_pkey; Type: CONSTRAINT; Schema: av3; Owner: postgres
+-- Name: candidate_answers candidate_answers_pkey; Type: CONSTRAINT; Schema: av3; Owner: -
 --
 
 ALTER TABLE ONLY av3.candidate_answers
@@ -6395,7 +6303,7 @@ ALTER TABLE ONLY av3.candidate_answers
 
 
 --
--- Name: candidate_runs candidate_runs_pkey; Type: CONSTRAINT; Schema: av3; Owner: postgres
+-- Name: candidate_runs candidate_runs_pkey; Type: CONSTRAINT; Schema: av3; Owner: -
 --
 
 ALTER TABLE ONLY av3.candidate_runs
@@ -6403,7 +6311,7 @@ ALTER TABLE ONLY av3.candidate_runs
 
 
 --
--- Name: curadoria_artigos curadoria_artigos_pkey; Type: CONSTRAINT; Schema: av3; Owner: postgres
+-- Name: curadoria_artigos curadoria_artigos_pkey; Type: CONSTRAINT; Schema: av3; Owner: -
 --
 
 ALTER TABLE ONLY av3.curadoria_artigos
@@ -6411,7 +6319,7 @@ ALTER TABLE ONLY av3.curadoria_artigos
 
 
 --
--- Name: curadoria_import_items_raw curadoria_import_items_raw_pkey; Type: CONSTRAINT; Schema: av3; Owner: postgres
+-- Name: curadoria_import_items_raw curadoria_import_items_raw_pkey; Type: CONSTRAINT; Schema: av3; Owner: -
 --
 
 ALTER TABLE ONLY av3.curadoria_import_items_raw
@@ -6419,7 +6327,7 @@ ALTER TABLE ONLY av3.curadoria_import_items_raw
 
 
 --
--- Name: curadoria_import_runs curadoria_import_runs_dataset_code_payload_hash_key; Type: CONSTRAINT; Schema: av3; Owner: postgres
+-- Name: curadoria_import_runs curadoria_import_runs_dataset_code_payload_hash_key; Type: CONSTRAINT; Schema: av3; Owner: -
 --
 
 ALTER TABLE ONLY av3.curadoria_import_runs
@@ -6427,7 +6335,7 @@ ALTER TABLE ONLY av3.curadoria_import_runs
 
 
 --
--- Name: curadoria_import_runs curadoria_import_runs_pkey; Type: CONSTRAINT; Schema: av3; Owner: postgres
+-- Name: curadoria_import_runs curadoria_import_runs_pkey; Type: CONSTRAINT; Schema: av3; Owner: -
 --
 
 ALTER TABLE ONLY av3.curadoria_import_runs
@@ -6435,7 +6343,7 @@ ALTER TABLE ONLY av3.curadoria_import_runs
 
 
 --
--- Name: curadoria_questoes curadoria_questoes_id_import_run_dataset_code_question_sequ_key; Type: CONSTRAINT; Schema: av3; Owner: postgres
+-- Name: curadoria_questoes curadoria_questoes_id_import_run_dataset_code_question_sequ_key; Type: CONSTRAINT; Schema: av3; Owner: -
 --
 
 ALTER TABLE ONLY av3.curadoria_questoes
@@ -6443,7 +6351,7 @@ ALTER TABLE ONLY av3.curadoria_questoes
 
 
 --
--- Name: curadoria_questoes curadoria_questoes_pkey; Type: CONSTRAINT; Schema: av3; Owner: postgres
+-- Name: curadoria_questoes curadoria_questoes_pkey; Type: CONSTRAINT; Schema: av3; Owner: -
 --
 
 ALTER TABLE ONLY av3.curadoria_questoes
@@ -6451,7 +6359,7 @@ ALTER TABLE ONLY av3.curadoria_questoes
 
 
 --
--- Name: embedding_model_configs embedding_model_configs_dataset_code_key; Type: CONSTRAINT; Schema: av3; Owner: postgres
+-- Name: embedding_model_configs embedding_model_configs_dataset_code_key; Type: CONSTRAINT; Schema: av3; Owner: -
 --
 
 ALTER TABLE ONLY av3.embedding_model_configs
@@ -6459,7 +6367,7 @@ ALTER TABLE ONLY av3.embedding_model_configs
 
 
 --
--- Name: embedding_model_configs embedding_model_configs_pkey; Type: CONSTRAINT; Schema: av3; Owner: postgres
+-- Name: embedding_model_configs embedding_model_configs_pkey; Type: CONSTRAINT; Schema: av3; Owner: -
 --
 
 ALTER TABLE ONLY av3.embedding_model_configs
@@ -6467,7 +6375,7 @@ ALTER TABLE ONLY av3.embedding_model_configs
 
 
 --
--- Name: prompt_candidatos prompt_candidatos_dataset_code_versao_key; Type: CONSTRAINT; Schema: av3; Owner: postgres
+-- Name: prompt_candidatos prompt_candidatos_dataset_code_versao_key; Type: CONSTRAINT; Schema: av3; Owner: -
 --
 
 ALTER TABLE ONLY av3.prompt_candidatos
@@ -6475,7 +6383,7 @@ ALTER TABLE ONLY av3.prompt_candidatos
 
 
 --
--- Name: prompt_candidatos prompt_candidatos_pkey; Type: CONSTRAINT; Schema: av3; Owner: postgres
+-- Name: prompt_candidatos prompt_candidatos_pkey; Type: CONSTRAINT; Schema: av3; Owner: -
 --
 
 ALTER TABLE ONLY av3.prompt_candidatos
@@ -6483,7 +6391,7 @@ ALTER TABLE ONLY av3.prompt_candidatos
 
 
 --
--- Name: rag_chunks rag_chunks_id_document_chunk_index_key; Type: CONSTRAINT; Schema: av3; Owner: postgres
+-- Name: rag_chunks rag_chunks_id_document_chunk_index_key; Type: CONSTRAINT; Schema: av3; Owner: -
 --
 
 ALTER TABLE ONLY av3.rag_chunks
@@ -6491,7 +6399,7 @@ ALTER TABLE ONLY av3.rag_chunks
 
 
 --
--- Name: rag_chunks rag_chunks_pkey; Type: CONSTRAINT; Schema: av3; Owner: postgres
+-- Name: rag_chunks rag_chunks_pkey; Type: CONSTRAINT; Schema: av3; Owner: -
 --
 
 ALTER TABLE ONLY av3.rag_chunks
@@ -6499,7 +6407,7 @@ ALTER TABLE ONLY av3.rag_chunks
 
 
 --
--- Name: rag_documents rag_documents_id_import_run_document_key_key; Type: CONSTRAINT; Schema: av3; Owner: postgres
+-- Name: rag_documents rag_documents_id_import_run_document_key_key; Type: CONSTRAINT; Schema: av3; Owner: -
 --
 
 ALTER TABLE ONLY av3.rag_documents
@@ -6507,7 +6415,7 @@ ALTER TABLE ONLY av3.rag_documents
 
 
 --
--- Name: rag_documents rag_documents_pkey; Type: CONSTRAINT; Schema: av3; Owner: postgres
+-- Name: rag_documents rag_documents_pkey; Type: CONSTRAINT; Schema: av3; Owner: -
 --
 
 ALTER TABLE ONLY av3.rag_documents
@@ -6515,7 +6423,7 @@ ALTER TABLE ONLY av3.rag_documents
 
 
 --
--- Name: rag_embeddings rag_embeddings_id_chunk_embedding_model_key; Type: CONSTRAINT; Schema: av3; Owner: postgres
+-- Name: rag_embeddings rag_embeddings_id_chunk_embedding_model_key; Type: CONSTRAINT; Schema: av3; Owner: -
 --
 
 ALTER TABLE ONLY av3.rag_embeddings
@@ -6523,7 +6431,7 @@ ALTER TABLE ONLY av3.rag_embeddings
 
 
 --
--- Name: rag_embeddings rag_embeddings_pkey; Type: CONSTRAINT; Schema: av3; Owner: postgres
+-- Name: rag_embeddings rag_embeddings_pkey; Type: CONSTRAINT; Schema: av3; Owner: -
 --
 
 ALTER TABLE ONLY av3.rag_embeddings
@@ -6531,7 +6439,7 @@ ALTER TABLE ONLY av3.rag_embeddings
 
 
 --
--- Name: retrieval_runs retrieval_runs_pkey; Type: CONSTRAINT; Schema: av3; Owner: postgres
+-- Name: retrieval_runs retrieval_runs_pkey; Type: CONSTRAINT; Schema: av3; Owner: -
 --
 
 ALTER TABLE ONLY av3.retrieval_runs
@@ -6539,7 +6447,7 @@ ALTER TABLE ONLY av3.retrieval_runs
 
 
 --
--- Name: avaliacao_juiz_detalhes avaliacao_juiz_detalhes_id_avaliacao_key; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: avaliacao_juiz_detalhes avaliacao_juiz_detalhes_id_avaliacao_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.avaliacao_juiz_detalhes
@@ -6547,7 +6455,7 @@ ALTER TABLE ONLY public.avaliacao_juiz_detalhes
 
 
 --
--- Name: avaliacao_juiz_detalhes avaliacao_juiz_detalhes_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: avaliacao_juiz_detalhes avaliacao_juiz_detalhes_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.avaliacao_juiz_detalhes
@@ -6555,7 +6463,7 @@ ALTER TABLE ONLY public.avaliacao_juiz_detalhes
 
 
 --
--- Name: avaliacoes_juiz avaliacoes_juiz_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: avaliacoes_juiz avaliacoes_juiz_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.avaliacoes_juiz
@@ -6563,7 +6471,7 @@ ALTER TABLE ONLY public.avaliacoes_juiz
 
 
 --
--- Name: datasets datasets_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: datasets datasets_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.datasets
@@ -6571,7 +6479,7 @@ ALTER TABLE ONLY public.datasets
 
 
 --
--- Name: meta_avaliacoes meta_avaliacoes_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: meta_avaliacoes meta_avaliacoes_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.meta_avaliacoes
@@ -6579,7 +6487,7 @@ ALTER TABLE ONLY public.meta_avaliacoes
 
 
 --
--- Name: modelos modelos_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: modelos modelos_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.modelos
@@ -6587,7 +6495,7 @@ ALTER TABLE ONLY public.modelos
 
 
 --
--- Name: perguntas perguntas_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: perguntas perguntas_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.perguntas
@@ -6595,7 +6503,7 @@ ALTER TABLE ONLY public.perguntas
 
 
 --
--- Name: prompt_juizes prompt_juizes_id_dataset_versao_key; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: prompt_juizes prompt_juizes_id_dataset_versao_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.prompt_juizes
@@ -6603,7 +6511,7 @@ ALTER TABLE ONLY public.prompt_juizes
 
 
 --
--- Name: prompt_juizes prompt_juizes_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: prompt_juizes prompt_juizes_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.prompt_juizes
@@ -6611,7 +6519,7 @@ ALTER TABLE ONLY public.prompt_juizes
 
 
 --
--- Name: respostas_atividade_1 respostas_atividade_1_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: respostas_atividade_1 respostas_atividade_1_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.respostas_atividade_1
@@ -6619,147 +6527,147 @@ ALTER TABLE ONLY public.respostas_atividade_1
 
 
 --
--- Name: idx_candidate_answer_context_chunks_answer_rank; Type: INDEX; Schema: av3; Owner: postgres
+-- Name: idx_candidate_answer_context_chunks_answer_rank; Type: INDEX; Schema: av3; Owner: -
 --
 
 CREATE INDEX idx_candidate_answer_context_chunks_answer_rank ON av3.candidate_answer_context_chunks USING btree (id_candidate_answer, rank);
 
 
 --
--- Name: idx_candidate_answers_run_status; Type: INDEX; Schema: av3; Owner: postgres
+-- Name: idx_candidate_answers_run_status; Type: INDEX; Schema: av3; Owner: -
 --
 
 CREATE INDEX idx_candidate_answers_run_status ON av3.candidate_answers USING btree (id_candidate_run, status);
 
 
 --
--- Name: idx_candidate_runs_dataset_created; Type: INDEX; Schema: av3; Owner: postgres
+-- Name: idx_candidate_runs_dataset_created; Type: INDEX; Schema: av3; Owner: -
 --
 
 CREATE INDEX idx_candidate_runs_dataset_created ON av3.candidate_runs USING btree (dataset_code, created_at DESC);
 
 
 --
--- Name: idx_curadoria_import_items_raw_dataset_run; Type: INDEX; Schema: av3; Owner: postgres
+-- Name: idx_curadoria_import_items_raw_dataset_run; Type: INDEX; Schema: av3; Owner: -
 --
 
 CREATE INDEX idx_curadoria_import_items_raw_dataset_run ON av3.curadoria_import_items_raw USING btree (dataset_code, id_import_run, question_sequence);
 
 
 --
--- Name: idx_curadoria_import_runs_active_dataset; Type: INDEX; Schema: av3; Owner: postgres
+-- Name: idx_curadoria_import_runs_active_dataset; Type: INDEX; Schema: av3; Owner: -
 --
 
 CREATE UNIQUE INDEX idx_curadoria_import_runs_active_dataset ON av3.curadoria_import_runs USING btree (dataset_code) WHERE ativo;
 
 
 --
--- Name: idx_curadoria_questoes_dataset_run; Type: INDEX; Schema: av3; Owner: postgres
+-- Name: idx_curadoria_questoes_dataset_run; Type: INDEX; Schema: av3; Owner: -
 --
 
 CREATE INDEX idx_curadoria_questoes_dataset_run ON av3.curadoria_questoes USING btree (dataset_code, id_import_run, question_sequence);
 
 
 --
--- Name: idx_embedding_model_configs_dataset; Type: INDEX; Schema: av3; Owner: postgres
+-- Name: idx_embedding_model_configs_dataset; Type: INDEX; Schema: av3; Owner: -
 --
 
 CREATE INDEX idx_embedding_model_configs_dataset ON av3.embedding_model_configs USING btree (dataset_code, updated_at DESC);
 
 
 --
--- Name: idx_prompt_candidatos_active_dataset; Type: INDEX; Schema: av3; Owner: postgres
+-- Name: idx_prompt_candidatos_active_dataset; Type: INDEX; Schema: av3; Owner: -
 --
 
 CREATE UNIQUE INDEX idx_prompt_candidatos_active_dataset ON av3.prompt_candidatos USING btree (dataset_code) WHERE ativo;
 
 
 --
--- Name: idx_rag_chunks_document; Type: INDEX; Schema: av3; Owner: postgres
+-- Name: idx_rag_chunks_document; Type: INDEX; Schema: av3; Owner: -
 --
 
 CREATE INDEX idx_rag_chunks_document ON av3.rag_chunks USING btree (id_document, chunk_index);
 
 
 --
--- Name: idx_rag_chunks_question; Type: INDEX; Schema: av3; Owner: postgres
+-- Name: idx_rag_chunks_question; Type: INDEX; Schema: av3; Owner: -
 --
 
 CREATE INDEX idx_rag_chunks_question ON av3.rag_chunks USING btree (id_pergunta, source_kind);
 
 
 --
--- Name: idx_rag_documents_import_dataset; Type: INDEX; Schema: av3; Owner: postgres
+-- Name: idx_rag_documents_import_dataset; Type: INDEX; Schema: av3; Owner: -
 --
 
 CREATE INDEX idx_rag_documents_import_dataset ON av3.rag_documents USING btree (id_import_run, dataset_code);
 
 
 --
--- Name: idx_rag_embeddings_chunk_model; Type: INDEX; Schema: av3; Owner: postgres
+-- Name: idx_rag_embeddings_chunk_model; Type: INDEX; Schema: av3; Owner: -
 --
 
 CREATE INDEX idx_rag_embeddings_chunk_model ON av3.rag_embeddings USING btree (id_chunk, embedding_model);
 
 
 --
--- Name: idx_retrieval_runs_active_dataset; Type: INDEX; Schema: av3; Owner: postgres
+-- Name: idx_retrieval_runs_active_dataset; Type: INDEX; Schema: av3; Owner: -
 --
 
 CREATE UNIQUE INDEX idx_retrieval_runs_active_dataset ON av3.retrieval_runs USING btree (dataset_code) WHERE ativo;
 
 
 --
--- Name: idx_retrieval_runs_import_dataset; Type: INDEX; Schema: av3; Owner: postgres
+-- Name: idx_retrieval_runs_import_dataset; Type: INDEX; Schema: av3; Owner: -
 --
 
 CREATE INDEX idx_retrieval_runs_import_dataset ON av3.retrieval_runs USING btree (id_import_run, dataset_code, created_at DESC);
 
 
 --
--- Name: idx_avaliacoes_juiz; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_avaliacoes_juiz; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_avaliacoes_juiz ON public.avaliacoes_juiz USING btree (id_modelo_juiz);
 
 
 --
--- Name: idx_avaliacoes_resposta; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_avaliacoes_resposta; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_avaliacoes_resposta ON public.avaliacoes_juiz USING btree (id_resposta_ativa1);
 
 
 --
--- Name: idx_perguntas_dataset; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_perguntas_dataset; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_perguntas_dataset ON public.perguntas USING btree (id_dataset);
 
 
 --
--- Name: idx_prompt_juizes_active_per_dataset; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_prompt_juizes_active_per_dataset; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE UNIQUE INDEX idx_prompt_juizes_active_per_dataset ON public.prompt_juizes USING btree (id_dataset) WHERE ativo;
 
 
 --
--- Name: idx_respostas_modelo; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_respostas_modelo; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_respostas_modelo ON public.respostas_atividade_1 USING btree (id_modelo);
 
 
 --
--- Name: idx_respostas_pergunta; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_respostas_pergunta; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_respostas_pergunta ON public.respostas_atividade_1 USING btree (id_pergunta);
 
 
 --
--- Name: candidate_answer_context_chunks candidate_answer_context_chunks_id_candidate_answer_fkey; Type: FK CONSTRAINT; Schema: av3; Owner: postgres
+-- Name: candidate_answer_context_chunks candidate_answer_context_chunks_id_candidate_answer_fkey; Type: FK CONSTRAINT; Schema: av3; Owner: -
 --
 
 ALTER TABLE ONLY av3.candidate_answer_context_chunks
@@ -6767,7 +6675,7 @@ ALTER TABLE ONLY av3.candidate_answer_context_chunks
 
 
 --
--- Name: candidate_answer_context_chunks candidate_answer_context_chunks_id_chunk_fkey; Type: FK CONSTRAINT; Schema: av3; Owner: postgres
+-- Name: candidate_answer_context_chunks candidate_answer_context_chunks_id_chunk_fkey; Type: FK CONSTRAINT; Schema: av3; Owner: -
 --
 
 ALTER TABLE ONLY av3.candidate_answer_context_chunks
@@ -6775,7 +6683,7 @@ ALTER TABLE ONLY av3.candidate_answer_context_chunks
 
 
 --
--- Name: candidate_answers candidate_answers_id_candidate_run_fkey; Type: FK CONSTRAINT; Schema: av3; Owner: postgres
+-- Name: candidate_answers candidate_answers_id_candidate_run_fkey; Type: FK CONSTRAINT; Schema: av3; Owner: -
 --
 
 ALTER TABLE ONLY av3.candidate_answers
@@ -6783,7 +6691,7 @@ ALTER TABLE ONLY av3.candidate_answers
 
 
 --
--- Name: candidate_answers candidate_answers_id_pergunta_fkey; Type: FK CONSTRAINT; Schema: av3; Owner: postgres
+-- Name: candidate_answers candidate_answers_id_pergunta_fkey; Type: FK CONSTRAINT; Schema: av3; Owner: -
 --
 
 ALTER TABLE ONLY av3.candidate_answers
@@ -6791,7 +6699,7 @@ ALTER TABLE ONLY av3.candidate_answers
 
 
 --
--- Name: candidate_runs candidate_runs_id_prompt_candidato_fkey; Type: FK CONSTRAINT; Schema: av3; Owner: postgres
+-- Name: candidate_runs candidate_runs_id_prompt_candidato_fkey; Type: FK CONSTRAINT; Schema: av3; Owner: -
 --
 
 ALTER TABLE ONLY av3.candidate_runs
@@ -6799,7 +6707,7 @@ ALTER TABLE ONLY av3.candidate_runs
 
 
 --
--- Name: candidate_runs candidate_runs_id_retrieval_run_fkey; Type: FK CONSTRAINT; Schema: av3; Owner: postgres
+-- Name: candidate_runs candidate_runs_id_retrieval_run_fkey; Type: FK CONSTRAINT; Schema: av3; Owner: -
 --
 
 ALTER TABLE ONLY av3.candidate_runs
@@ -6807,7 +6715,7 @@ ALTER TABLE ONLY av3.candidate_runs
 
 
 --
--- Name: curadoria_artigos curadoria_artigos_id_curadoria_fkey; Type: FK CONSTRAINT; Schema: av3; Owner: postgres
+-- Name: curadoria_artigos curadoria_artigos_id_curadoria_fkey; Type: FK CONSTRAINT; Schema: av3; Owner: -
 --
 
 ALTER TABLE ONLY av3.curadoria_artigos
@@ -6815,7 +6723,7 @@ ALTER TABLE ONLY av3.curadoria_artigos
 
 
 --
--- Name: curadoria_import_items_raw curadoria_import_items_raw_id_import_run_fkey; Type: FK CONSTRAINT; Schema: av3; Owner: postgres
+-- Name: curadoria_import_items_raw curadoria_import_items_raw_id_import_run_fkey; Type: FK CONSTRAINT; Schema: av3; Owner: -
 --
 
 ALTER TABLE ONLY av3.curadoria_import_items_raw
@@ -6823,7 +6731,7 @@ ALTER TABLE ONLY av3.curadoria_import_items_raw
 
 
 --
--- Name: curadoria_import_items_raw curadoria_import_items_raw_id_pergunta_fkey; Type: FK CONSTRAINT; Schema: av3; Owner: postgres
+-- Name: curadoria_import_items_raw curadoria_import_items_raw_id_pergunta_fkey; Type: FK CONSTRAINT; Schema: av3; Owner: -
 --
 
 ALTER TABLE ONLY av3.curadoria_import_items_raw
@@ -6831,7 +6739,7 @@ ALTER TABLE ONLY av3.curadoria_import_items_raw
 
 
 --
--- Name: curadoria_questoes curadoria_questoes_id_import_run_fkey; Type: FK CONSTRAINT; Schema: av3; Owner: postgres
+-- Name: curadoria_questoes curadoria_questoes_id_import_run_fkey; Type: FK CONSTRAINT; Schema: av3; Owner: -
 --
 
 ALTER TABLE ONLY av3.curadoria_questoes
@@ -6839,7 +6747,7 @@ ALTER TABLE ONLY av3.curadoria_questoes
 
 
 --
--- Name: curadoria_questoes curadoria_questoes_id_pergunta_fkey; Type: FK CONSTRAINT; Schema: av3; Owner: postgres
+-- Name: curadoria_questoes curadoria_questoes_id_pergunta_fkey; Type: FK CONSTRAINT; Schema: av3; Owner: -
 --
 
 ALTER TABLE ONLY av3.curadoria_questoes
@@ -6847,7 +6755,7 @@ ALTER TABLE ONLY av3.curadoria_questoes
 
 
 --
--- Name: rag_chunks rag_chunks_id_curadoria_artigo_fkey; Type: FK CONSTRAINT; Schema: av3; Owner: postgres
+-- Name: rag_chunks rag_chunks_id_curadoria_artigo_fkey; Type: FK CONSTRAINT; Schema: av3; Owner: -
 --
 
 ALTER TABLE ONLY av3.rag_chunks
@@ -6855,7 +6763,7 @@ ALTER TABLE ONLY av3.rag_chunks
 
 
 --
--- Name: rag_chunks rag_chunks_id_curadoria_fkey; Type: FK CONSTRAINT; Schema: av3; Owner: postgres
+-- Name: rag_chunks rag_chunks_id_curadoria_fkey; Type: FK CONSTRAINT; Schema: av3; Owner: -
 --
 
 ALTER TABLE ONLY av3.rag_chunks
@@ -6863,7 +6771,7 @@ ALTER TABLE ONLY av3.rag_chunks
 
 
 --
--- Name: rag_chunks rag_chunks_id_document_fkey; Type: FK CONSTRAINT; Schema: av3; Owner: postgres
+-- Name: rag_chunks rag_chunks_id_document_fkey; Type: FK CONSTRAINT; Schema: av3; Owner: -
 --
 
 ALTER TABLE ONLY av3.rag_chunks
@@ -6871,7 +6779,7 @@ ALTER TABLE ONLY av3.rag_chunks
 
 
 --
--- Name: rag_chunks rag_chunks_id_pergunta_fkey; Type: FK CONSTRAINT; Schema: av3; Owner: postgres
+-- Name: rag_chunks rag_chunks_id_pergunta_fkey; Type: FK CONSTRAINT; Schema: av3; Owner: -
 --
 
 ALTER TABLE ONLY av3.rag_chunks
@@ -6879,7 +6787,7 @@ ALTER TABLE ONLY av3.rag_chunks
 
 
 --
--- Name: rag_documents rag_documents_id_import_run_fkey; Type: FK CONSTRAINT; Schema: av3; Owner: postgres
+-- Name: rag_documents rag_documents_id_import_run_fkey; Type: FK CONSTRAINT; Schema: av3; Owner: -
 --
 
 ALTER TABLE ONLY av3.rag_documents
@@ -6887,7 +6795,7 @@ ALTER TABLE ONLY av3.rag_documents
 
 
 --
--- Name: rag_embeddings rag_embeddings_id_chunk_fkey; Type: FK CONSTRAINT; Schema: av3; Owner: postgres
+-- Name: rag_embeddings rag_embeddings_id_chunk_fkey; Type: FK CONSTRAINT; Schema: av3; Owner: -
 --
 
 ALTER TABLE ONLY av3.rag_embeddings
@@ -6895,7 +6803,7 @@ ALTER TABLE ONLY av3.rag_embeddings
 
 
 --
--- Name: retrieval_runs retrieval_runs_id_import_run_fkey; Type: FK CONSTRAINT; Schema: av3; Owner: postgres
+-- Name: retrieval_runs retrieval_runs_id_import_run_fkey; Type: FK CONSTRAINT; Schema: av3; Owner: -
 --
 
 ALTER TABLE ONLY av3.retrieval_runs
@@ -6903,7 +6811,7 @@ ALTER TABLE ONLY av3.retrieval_runs
 
 
 --
--- Name: avaliacao_juiz_detalhes avaliacao_juiz_detalhes_id_avaliacao_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: avaliacao_juiz_detalhes avaliacao_juiz_detalhes_id_avaliacao_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.avaliacao_juiz_detalhes
@@ -6911,7 +6819,7 @@ ALTER TABLE ONLY public.avaliacao_juiz_detalhes
 
 
 --
--- Name: avaliacoes_juiz avaliacoes_juiz_id_modelo_juiz_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: avaliacoes_juiz avaliacoes_juiz_id_modelo_juiz_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.avaliacoes_juiz
@@ -6919,7 +6827,7 @@ ALTER TABLE ONLY public.avaliacoes_juiz
 
 
 --
--- Name: avaliacoes_juiz avaliacoes_juiz_id_prompt_juiz_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: avaliacoes_juiz avaliacoes_juiz_id_prompt_juiz_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.avaliacoes_juiz
@@ -6927,7 +6835,7 @@ ALTER TABLE ONLY public.avaliacoes_juiz
 
 
 --
--- Name: avaliacoes_juiz avaliacoes_juiz_id_resposta_ativa1_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: avaliacoes_juiz avaliacoes_juiz_id_resposta_ativa1_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.avaliacoes_juiz
@@ -6935,7 +6843,7 @@ ALTER TABLE ONLY public.avaliacoes_juiz
 
 
 --
--- Name: meta_avaliacoes meta_avaliacoes_id_avaliacao_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: meta_avaliacoes meta_avaliacoes_id_avaliacao_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.meta_avaliacoes
@@ -6943,7 +6851,7 @@ ALTER TABLE ONLY public.meta_avaliacoes
 
 
 --
--- Name: perguntas perguntas_id_dataset_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: perguntas perguntas_id_dataset_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.perguntas
@@ -6951,7 +6859,7 @@ ALTER TABLE ONLY public.perguntas
 
 
 --
--- Name: prompt_juizes prompt_juizes_id_dataset_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: prompt_juizes prompt_juizes_id_dataset_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.prompt_juizes
@@ -6959,7 +6867,7 @@ ALTER TABLE ONLY public.prompt_juizes
 
 
 --
--- Name: respostas_atividade_1 respostas_atividade_1_id_modelo_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: respostas_atividade_1 respostas_atividade_1_id_modelo_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.respostas_atividade_1
@@ -6967,7 +6875,7 @@ ALTER TABLE ONLY public.respostas_atividade_1
 
 
 --
--- Name: respostas_atividade_1 respostas_atividade_1_id_pergunta_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: respostas_atividade_1 respostas_atividade_1_id_pergunta_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.respostas_atividade_1
@@ -6975,15 +6883,8 @@ ALTER TABLE ONLY public.respostas_atividade_1
 
 
 --
--- Name: SCHEMA public; Type: ACL; Schema: -; Owner: postgres
---
-
-REVOKE USAGE ON SCHEMA public FROM PUBLIC;
-
-
---
 -- PostgreSQL database dump complete
 --
 
-\unrestrict svrRapXQBgtW6elZ4RZCYcukUbgXFUZUgE76OCpk2BzZUwnEYv5aAi1zCcf3gAN
+\unrestrict NITGHPy5oTdoAbWql9dXtYhukdglV91mU8Cdp0il2eHE6hwe5EW5bi9E1SBcAA9
 
