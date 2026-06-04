@@ -12,6 +12,7 @@ from .contracts import (
     CandidateAnswerContext,
     CandidateAnswerRecord,
     CandidatePromptRecord,
+    CandidateQuestionRecord,
     CandidateRunRecord,
     EligibilitySummary,
     EvaluationRecord,
@@ -153,6 +154,46 @@ def _default_prompt_config(dataset_name: str) -> dict[str, str]:
             '  "rubric_alignment": "Comentario curto sobre aderencia a rubrica.",\n'
             '  "requires_human_review": false\n'
             "}"
+        ),
+    }
+
+
+def _default_candidate_prompt_config(dataset_code: str) -> dict[str, str]:
+    if dataset_code.upper() == "J2":
+        return {
+            "persona": "Você é um candidato do exame da OAB respondendo uma questão de múltipla escolha.",
+            "context": (
+                "Questão original:\n```text\n{pergunta_oab}\n```\n\n"
+                "Alternativas:\n{alternativas}"
+            ),
+            "rag_instruction": (
+                "{contexto_rag}\n\n"
+                "Use os trechos recuperados apenas como apoio para escolher exatamente uma alternativa.\n"
+                "- Considere o enunciado e as alternativas apresentadas.\n"
+                "- Se houver incerteza, escolha a melhor alternativa com base no contexto disponível.\n"
+                "- Não invente normas, fatos ou jurisprudência."
+            ),
+            "output": (
+                "Explique sua escolha de forma breve.\n"
+                "Ao final, inclua exatamente uma linha no formato:\n"
+                "Alternativa final: X"
+            ),
+        }
+    return {
+        "persona": "Você é um candidato do exame da OAB respondendo uma questão discursiva.",
+        "context": "Questão original:\n```text\n{pergunta_oab}\n```",
+        "rag_instruction": (
+            "{contexto_rag}\n\n"
+            "Use os trechos recuperados apenas como apoio para fundamentar a resposta.\n"
+            "- Responda como candidato da OAB, em português.\n"
+            "- Se o contexto não for suficiente, reconheça a limitação sem inventar normas, fatos ou jurisprudência.\n"
+            "- Não mencione critérios de correção, respostas de referência ou avaliação."
+        ),
+        "output": (
+            "Entregue uma resposta objetiva e juridicamente fundamentada.\n"
+            "Finalize com o bloco:\n"
+            "Resposta final:\n"
+            "<sua resposta>"
         ),
     }
 
@@ -2838,6 +2879,237 @@ class JudgeRepository:
             )
             rows = cursor.fetchall()
         return [_row_to_candidate_answer(row) for row in rows]
+
+    def get_or_create_candidate_prompt(
+        self,
+        *,
+        dataset: str,
+        prompt_id: int | None = None,
+    ) -> CandidatePromptRecord:
+        """Return an explicit or active candidate prompt, creating a default active one if needed."""
+        dataset_code = dataset.upper()
+        with self.connection.cursor() as cursor:
+            if prompt_id is not None:
+                cursor.execute(
+                    """
+                    SELECT
+                        id_prompt_candidato,
+                        dataset_code,
+                        versao,
+                        ds_persona,
+                        ds_contexto,
+                        ds_instrucao_rag,
+                        ds_saida,
+                        ativo,
+                        created_by,
+                        created_at
+                    FROM av3.prompt_candidatos
+                    WHERE id_prompt_candidato = %s
+                      AND dataset_code = %s
+                    LIMIT 1;
+                    """,
+                    (int(prompt_id), dataset_code),
+                )
+                row = cursor.fetchone()
+                if row is None:
+                    raise ValueError(f"Prompt candidato {prompt_id} não encontrado para {dataset_code}.")
+                return _row_to_candidate_prompt(row)
+            cursor.execute(
+                """
+                SELECT
+                    id_prompt_candidato,
+                    dataset_code,
+                    versao,
+                    ds_persona,
+                    ds_contexto,
+                    ds_instrucao_rag,
+                    ds_saida,
+                    ativo,
+                    created_by,
+                    created_at
+                FROM av3.prompt_candidatos
+                WHERE dataset_code = %s
+                  AND ativo = TRUE
+                ORDER BY versao DESC, id_prompt_candidato DESC
+                LIMIT 1;
+                """,
+                (dataset_code,),
+            )
+            row = cursor.fetchone()
+        if row is not None:
+            return _row_to_candidate_prompt(row)
+        defaults = _default_candidate_prompt_config(dataset_code)
+        with self.connection:
+            with self.connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT COALESCE(MAX(versao), 0) + 1
+                    FROM av3.prompt_candidatos
+                    WHERE dataset_code = %s;
+                    """,
+                    (dataset_code,),
+                )
+                version = int(cursor.fetchone()[0])
+                cursor.execute(
+                    "UPDATE av3.prompt_candidatos SET ativo = FALSE WHERE dataset_code = %s AND ativo = TRUE;",
+                    (dataset_code,),
+                )
+                cursor.execute(
+                    """
+                    INSERT INTO av3.prompt_candidatos
+                        (
+                            dataset_code,
+                            versao,
+                            ds_persona,
+                            ds_contexto,
+                            ds_instrucao_rag,
+                            ds_saida,
+                            ativo,
+                            created_by
+                        )
+                    VALUES (%s, %s, %s, %s, %s, %s, TRUE, %s)
+                    RETURNING
+                        id_prompt_candidato,
+                        dataset_code,
+                        versao,
+                        ds_persona,
+                        ds_contexto,
+                        ds_instrucao_rag,
+                        ds_saida,
+                        ativo,
+                        created_by,
+                        created_at;
+                    """,
+                    (
+                        dataset_code,
+                        version,
+                        defaults["persona"],
+                        defaults["context"],
+                        defaults["rag_instruction"],
+                        defaults["output"],
+                        "system",
+                    ),
+                )
+                row = cursor.fetchone()
+        return _row_to_candidate_prompt(row)
+
+    def update_candidate_run_status(
+        self,
+        *,
+        candidate_run_id: int,
+        run_status: str,
+        finished_at: str | None,
+        metadata: dict[str, Any] | None = None,
+    ) -> None:
+        """Update the terminal status and summary metadata for one candidate run."""
+        with self.connection:
+            with self.connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    UPDATE av3.candidate_runs
+                    SET
+                        run_status = %s,
+                        finished_at = %s,
+                        metadata_jsonb = COALESCE(metadata_jsonb, '{}'::jsonb) || %s::jsonb
+                    WHERE id_candidate_run = %s;
+                    """,
+                    (
+                        run_status,
+                        finished_at,
+                        jsonb_dumps(metadata or {}),
+                        candidate_run_id,
+                    ),
+                )
+                if getattr(cursor, "rowcount", 1) == 0:
+                    raise ValueError(f"Candidate run not found: {candidate_run_id}.")
+
+    def select_candidate_questions(
+        self,
+        *,
+        dataset: str,
+        batch_size: int,
+        question_sequence_start: int | None,
+        question_sequence_end: int | None,
+        question_id: int | None,
+    ) -> list[CandidateQuestionRecord]:
+        """Select candidate-safe questions scoped to the active vector base."""
+        dataset_code = dataset.upper()
+        vector_summary = self.get_rag_vector_base_summary(dataset=dataset_code)
+        if vector_summary is None:
+            raise ValueError(f"No active RAG vector base found for {dataset_code}.")
+
+        conditions = ["q.dataset_code = %s", "q.id_import_run = %s"]
+        params: list[Any] = [dataset_code, vector_summary.import_run_id]
+        if question_id is not None:
+            conditions.append("q.id_pergunta = %s")
+            params.append(int(question_id))
+        if question_sequence_start is not None:
+            conditions.append("q.question_sequence >= %s")
+            params.append(int(question_sequence_start))
+        if question_sequence_end is not None:
+            conditions.append("q.question_sequence <= %s")
+            params.append(int(question_sequence_end))
+
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                f"""
+                SELECT
+                    q.id_pergunta,
+                    q.dataset_code,
+                    q.question_sequence,
+                    q.questao,
+                    q.alternativas_jsonb
+                FROM av3.curadoria_questoes q
+                WHERE {' AND '.join(conditions)}
+                ORDER BY q.question_sequence, q.id_pergunta
+                LIMIT %s;
+                """,
+                [*params, max(1, int(batch_size))],
+            )
+            rows = cursor.fetchall()
+        dataset_name = DATASET_ALIASES.get(dataset_code, dataset_code)
+        return [
+            CandidateQuestionRecord(
+                question_id=int(row[0]),
+                dataset=row[1],
+                dataset_name=dataset_name,
+                question_sequence=int(row[2]),
+                question_text=row[3],
+                alternatives=_parse_jsonb(row[4]),
+            )
+            for row in rows
+        ]
+
+    def successful_candidate_answer_exists(
+        self,
+        *,
+        dataset: str,
+        model_name: str,
+        question_id: int,
+        exclude_candidate_run_id: int | None = None,
+    ) -> bool:
+        """Return whether a successful answer already exists for this dataset/model/question."""
+        params: list[Any] = [dataset.upper(), model_name, question_id]
+        exclusion_clause = ""
+        if exclude_candidate_run_id is not None:
+            exclusion_clause = "AND r.id_candidate_run <> %s"
+            params.append(int(exclude_candidate_run_id))
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                f"""
+                SELECT 1
+                FROM av3.candidate_answers a
+                JOIN av3.candidate_runs r ON r.id_candidate_run = a.id_candidate_run
+                WHERE r.dataset_code = %s
+                  AND a.model_name = %s
+                  AND a.id_pergunta = %s
+                  AND a.status = 'success'
+                  {exclusion_clause}
+                LIMIT 1;
+                """,
+                params,
+            )
+            return cursor.fetchone() is not None
 
     def get_rag_embedding_model_config(self, *, dataset: str) -> RagEmbeddingModelConfigRecord | None:
         dataset_code = dataset.upper()

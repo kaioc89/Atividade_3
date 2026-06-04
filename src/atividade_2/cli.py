@@ -11,6 +11,7 @@ from .judge_clients.remote_http import RemoteJudgeError
 from .parser import JudgeParseError
 from .config import load_settings
 from .db import connect
+from .run_candidates_rag_service import RunCandidatesRagRequest, RunCandidatesRagService
 from .run_judge_service import ResolvedRun, RunJudgeRequest, RunJudgeService, format_execution_summary
 
 
@@ -167,6 +168,80 @@ def build_parser() -> argparse.ArgumentParser:
         help="Maximum chunk texts per embedding request.",
     )
     generate_rag_embeddings.set_defaults(handler=generate_rag_embeddings_command)
+
+    run_candidates_rag = subparsers.add_parser(
+        "run-candidates-rag",
+        help="Run the AV3 candidate RAG generation pipeline without subprocesses.",
+    )
+    run_candidates_rag.add_argument(
+        "--dataset",
+        choices=["J1", "J2", "OAB_Bench", "OAB_Exames"],
+        required=True,
+        help="Dataset to execute. J1 maps to OAB_Bench; J2 maps to OAB_Exames.",
+    )
+    run_candidates_rag.add_argument(
+        "--candidate-model",
+        required=True,
+        help="Candidate model alias or provider model id.",
+    )
+    run_candidates_rag.add_argument(
+        "--provider",
+        choices=["remote_http"],
+        required=True,
+        help="Candidate provider adapter.",
+    )
+    run_candidates_rag.add_argument(
+        "--batch-size",
+        type=_positive_int,
+        required=True,
+        help="Maximum pending questions to execute in this batch.",
+    )
+    run_candidates_rag.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Resolve configuration and print the execution summary without DB or remote candidate calls.",
+    )
+    run_candidates_rag.add_argument(
+        "--audit-log",
+        help="Path for detailed audit log. Defaults to logs/candidate-rag-<timestamp>.log.",
+    )
+    run_candidates_rag.add_argument(
+        "--question-id",
+        type=_positive_int,
+        help="Restrict execution to one explicit question id.",
+    )
+    run_candidates_rag.add_argument(
+        "--question-sequence-start",
+        type=_positive_int,
+        help="Lower inclusive sequence bound for question selection.",
+    )
+    run_candidates_rag.add_argument(
+        "--question-sequence-end",
+        type=_positive_int,
+        help="Upper inclusive sequence bound for question selection.",
+    )
+    run_candidates_rag.add_argument(
+        "--prompt-id",
+        type=_positive_int,
+        help="Use one explicit candidate prompt version instead of the active default.",
+    )
+    run_candidates_rag.add_argument(
+        "--retrieval-run-id",
+        type=_positive_int,
+        help="Validate against one explicit retrieval run id.",
+    )
+    run_candidates_rag.add_argument(
+        "--skip-existing",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Skip questions that already have a successful Com_RAG answer for the same dataset/model.",
+    )
+    run_candidates_rag.add_argument(
+        "--no-audit-animation",
+        action="store_true",
+        help="Disable animated terminal dots for long-running audit steps.",
+    )
+    run_candidates_rag.set_defaults(handler=run_candidates_rag_command)
     return parser
 
 
@@ -179,7 +254,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 0
     try:
         return handler(args)
-    except (ConfigurationError, RemoteJudgeError, JudgeParseError, RuntimeError) as error:
+    except (ConfigurationError, RemoteJudgeError, JudgeParseError, RuntimeError, ValueError) as error:
         parser.exit(2, f"error: {error}\n")
 
 
@@ -343,6 +418,41 @@ def generate_rag_embeddings_command(args: argparse.Namespace) -> int:
         print(f"- source_url_chunks: {source_summary.get('inserted_chunks', 0)}")
         for failure in source_summary.get("failures", []):
             print(f"- source_url_failure: {failure.get('url')} | {failure.get('reason')}")
+    return 0
+
+
+def run_candidates_rag_command(args: argparse.Namespace) -> int:
+    """Run or dry-run the AV3 candidate RAG generation pipeline."""
+    request = RunCandidatesRagRequest(
+        model_name=args.candidate_model,
+        provider=args.provider,
+        dataset=args.dataset,
+        batch_size=args.batch_size,
+        question_sequence_start=args.question_sequence_start,
+        question_sequence_end=args.question_sequence_end,
+        question_id=args.question_id,
+        prompt_id=args.prompt_id,
+        retrieval_run_id=args.retrieval_run_id,
+        skip_existing_successful=args.skip_existing,
+        dry_run=args.dry_run,
+        audit_log=args.audit_log,
+        no_audit_animation=args.no_audit_animation,
+    )
+    result = RunCandidatesRagService().run(request)
+    print(result.execution_summary)
+    print(f"Batch size: {result.batch_size}")
+    print(f"Audit log: {result.audit_log}")
+    if result.summary is not None:
+        print()
+        print("Execution result:")
+        print(f"Candidate run id: {result.candidate_run_id}")
+        print(f"Retrieval run id: {result.retrieval_run_id}")
+        print(f"Prompt id: {result.prompt_id}")
+        print(f"Selected questions: {result.summary.selected_questions}")
+        print(f"Processed questions: {result.summary.processed_questions}")
+        print(f"Successful answers: {result.summary.successful_answers}")
+        print(f"Failed answers: {result.summary.failed_answers}")
+        print(f"Skipped questions: {result.summary.skipped_questions}")
     return 0
 
 

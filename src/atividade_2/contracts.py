@@ -398,6 +398,32 @@ class CandidatePromptRecord:
 
 
 @dataclass(frozen=True)
+class CandidateQuestionRecord:
+    """Candidate-safe question record selected for one AV3 generation run."""
+
+    question_id: int
+    dataset: str
+    dataset_name: str
+    question_sequence: int
+    question_text: str
+    alternatives: Any = None
+
+
+@dataclass(frozen=True)
+class CandidatePromptContext:
+    """Candidate-safe input required to render one AV3 generation prompt."""
+
+    question_id: int
+    dataset_name: str
+    question_text: str
+    retrieved_chunks: list[RetrievedRagChunk]
+    alternatives: Any = None
+    retrieval_run_id: int | None = None
+    retrieval_name: str | None = None
+    top_k: int | None = None
+
+
+@dataclass(frozen=True)
 class CandidateRunRecord:
     """Persisted AV3 candidate generation run metadata."""
 
@@ -501,6 +527,18 @@ class RagRetrievalResult:
 @dataclass(frozen=True)
 class JudgeRawResponse:
     """Raw remote judge response plus provider metadata."""
+
+    text: str
+    provider: str
+    model: str
+    latency_ms: int
+    status_code: int | None = None
+    raw_response: dict[str, Any] | None = None
+
+
+@dataclass(frozen=True)
+class CandidateRawResponse:
+    """Raw remote candidate response plus provider metadata."""
 
     text: str
     provider: str
