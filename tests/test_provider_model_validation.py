@@ -48,6 +48,11 @@ def _openrouter_entries() -> tuple[ProviderModelCatalogEntry, ...]:
             model_id="google/gemini-3.5-flash",
             name="Gemini 3.5 Flash",
         ),
+        ProviderModelCatalogEntry(
+            provider="openrouter",
+            model_id="x-ai/grok-4.3",
+            name="Grok 4.3",
+        ),
     )
 
 
@@ -126,17 +131,17 @@ def test_missing_provider_model_ids_are_reported_as_missing() -> None:
     assert jose_gpt5.matched_model is None
 
 
-def test_openrouter_assignments_with_missing_model_ids_are_skipped_without_substitution() -> None:
+def test_jose_grok_is_found_when_fake_openrouter_contains_team_approved_substitution() -> None:
     report = _default_service().validate(include_pending_confirmation=True)
 
     jose_grok = next(item for item in report.items if item.id_modelo_av2 == 15)
 
     assert jose_grok.av3_provider == "openrouter"
     assert jose_grok.original_provider_model_id == "Grok 3"
-    assert jose_grok.status == "skipped_missing_model_id"
-    assert jose_grok.av3_provider_model_id is None
-    assert jose_grok.matched_model is None
-    assert "Grok 4" not in jose_grok.message
+    assert jose_grok.av3_provider_model_id == "x-ai/grok-4.3"
+    assert jose_grok.status == "found"
+    assert jose_grok.matched_model is not None
+    assert jose_grok.matched_model.model_id == "x-ai/grok-4.3"
 
 
 def test_excluded_assignments_are_skipped_when_requested() -> None:
@@ -185,9 +190,11 @@ def test_provider_client_error_produces_provider_error_without_crashing() -> Non
 
     jose_gpt5 = next(item for item in report.items if item.id_modelo_av2 == 14)
     diego_gemma = next(item for item in report.items if item.id_modelo_av2 == 6)
+    jose_grok = next(item for item in report.items if item.id_modelo_av2 == 15)
 
-    assert report.provider_errors == 1
+    assert report.provider_errors == 2
     assert jose_gpt5.status == "provider_error"
+    assert jose_grok.status == "provider_error"
     assert diego_gemma.status == "found"
 
 
@@ -229,7 +236,7 @@ def test_openrouter_provider_filter_includes_jose_grok_pending_assignment() -> N
     assert set(statuses) == {13, 14, 15}
     assert statuses[14] == "found"
     assert statuses[13] == "found"
-    assert statuses[15] == "skipped_missing_model_id"
+    assert statuses[15] == "found"
 
 
 def test_all_checked_featherless_ids_can_be_found_in_fake_catalog() -> None:

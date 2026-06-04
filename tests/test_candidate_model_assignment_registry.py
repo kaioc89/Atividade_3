@@ -349,10 +349,20 @@ def test_assignment_registry_query_helpers_filter_by_owner_dataset_question_prov
     jose_grok = repository.find_candidate_model_assignments_for_model_id(15)[0]
 
     assert jose_grok.owner == "José Bruno"
+    assert jose_grok.id_modelo_av2 == 15
+    assert jose_grok.av2_model_name == "grok-3"
+    assert jose_grok.original_provider_model_id == "Grok 3"
+    assert jose_grok.original_runtime == "Grok UI"
     assert jose_grok.av3_provider == "openrouter"
-    assert jose_grok.av3_provider_model_id is None
-    assert jose_grok.validation_status == "needs_provider_model_id_resolution"
-    assert jose_grok.is_runnable() is False
+    assert jose_grok.av3_provider_model_id == "x-ai/grok-4.3"
+    assert jose_grok.match_type == "same_family_newer_version_substitution"
+    assert jose_grok.validation_status == "approved_version_substitution"
+    assert jose_grok.notes == (
+        "Grok 3 label preserved from AV1/AV2. AV3 execution uses x-ai/grok-4.3 via "
+        "OpenRouter as a team-approved newer-version substitution because Grok 3 is "
+        "not currently available in the provider catalog."
+    )
+    assert jose_grok.is_runnable() is True
 
 
 def test_assignment_registry_runnable_pending_and_excluded_filters_follow_required_rules() -> None:
@@ -368,12 +378,12 @@ def test_assignment_registry_runnable_pending_and_excluded_filters_follow_requir
     gpt5_assignment = repository.find_candidate_model_assignments_for_model_id(14)[0]
 
     assert gpt5_assignment.is_runnable() is True
-    assert len(default_runnable) == 15
-    assert len(pending_enabled) == 16
+    assert len(default_runnable) == 16
+    assert len(pending_enabled) == 17
     assert 14 in {assignment.id_modelo_av2 for assignment in default_runnable}
     assert 13 not in {assignment.id_modelo_av2 for assignment in default_runnable}
+    assert 15 in {assignment.id_modelo_av2 for assignment in default_runnable}
     assert 13 in {assignment.id_modelo_av2 for assignment in pending_enabled}
-    assert 15 not in {assignment.id_modelo_av2 for assignment in pending_enabled}
     assert {assignment.id_modelo_av2 for assignment in excluded} == {8, 11, 12}
     assert {assignment.id_modelo_av2 for assignment in pending} == {13}
     assert all(assignment.av3_provider_model_id for assignment in default_runnable)
@@ -400,3 +410,21 @@ def test_assignment_registry_serialization_preserves_both_identities_and_helpers
         "Pending owner confirmation: Gemini subtype still needs exact confirmation."
     )
     assert assignment.ranges[0].dataset_code == "J1"
+
+
+def test_assignment_registry_serialization_preserves_grok_visible_identity_and_av3_execution_details() -> None:
+    repository, _cursor = _seeded_repository()
+    repository.upsert_default_candidate_model_assignments()
+
+    assignment = repository.find_candidate_model_assignments_for_model_id(15)[0]
+    payload = assignment.to_dict()
+
+    assert payload["id_modelo_av2"] == 15
+    assert payload["av2_model_name"] == "grok-3"
+    assert payload["original_provider_model_id"] == "Grok 3"
+    assert payload["original_runtime"] == "Grok UI"
+    assert payload["av3_provider"] == "openrouter"
+    assert payload["av3_provider_model_id"] == "x-ai/grok-4.3"
+    assert payload["match_type"] == "same_family_newer_version_substitution"
+    assert payload["validation_status"] == "approved_version_substitution"
+    assert payload["runnable"] is True

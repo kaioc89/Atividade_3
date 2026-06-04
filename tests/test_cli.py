@@ -302,6 +302,10 @@ def test_validate_provider_models_returns_nonzero_when_checked_model_is_missing(
                         provider="openrouter",
                         model_id="google/gemini-3.5-flash",
                     ),
+                    ProviderModelCatalogEntry(
+                        provider="openrouter",
+                        model_id="x-ai/grok-4.3",
+                    ),
                 )
             ),
             "featherless": FakeProviderCatalogClient(entries=()),
@@ -349,6 +353,10 @@ def test_validate_provider_models_reports_jose_grok_under_openrouter_when_pendin
                         provider="openrouter",
                         model_id="google/gemini-3.5-flash",
                     ),
+                    ProviderModelCatalogEntry(
+                        provider="openrouter",
+                        model_id="x-ai/grok-4.3",
+                    ),
                 )
             ),
             "featherless": FakeProviderCatalogClient(entries=()),
@@ -371,7 +379,8 @@ def test_validate_provider_models_reports_jose_grok_under_openrouter_when_pendin
     assert '"total_assignments": 3' in output
     assert '"id_modelo_av2": 15' in output
     assert '"av3_provider": "openrouter"' in output
-    assert '"status": "skipped_missing_model_id"' in output
+    assert '"av3_provider_model_id": "x-ai/grok-4.3"' in output
+    assert '"status": "found"' in output
 
 
 def test_validate_provider_models_returns_two_when_provider_catalog_fails(
@@ -402,7 +411,8 @@ def test_validate_provider_models_returns_two_when_provider_catalog_fails(
     output = capsys.readouterr().out
 
     assert exit_code == 2
-    assert '"provider_errors": 1' in output
+    assert '"total_assignments": 2' in output
+    assert '"provider_errors": 2' in output
 
 
 def test_run_judge_dry_run_prints_single_summary(capsys: pytest.CaptureFixture[str], tmp_path) -> None:

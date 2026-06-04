@@ -35,6 +35,7 @@ MatchType = Literal[
     "same_model_same_runtime",
     "same_model_different_quantization",
     "same_model_api_reproduction",
+    "same_family_newer_version_substitution",
     "same_family_version_needs_subtype_confirmation",
     "proprietary_api_resolved",
     "not_reproduced_provider_unavailable",
@@ -42,6 +43,7 @@ MatchType = Literal[
 ValidationStatus = Literal[
     "confirmed_by_owner",
     "confirmed_from_av2_artifacts",
+    "approved_version_substitution",
     "needs_owner_confirmation",
     "needs_owner_confirmation_gemini_subtype",
     "needs_provider_resolution",
@@ -71,6 +73,7 @@ MATCH_TYPE_VALUES: tuple[MatchType, ...] = (
     "same_model_same_runtime",
     "same_model_different_quantization",
     "same_model_api_reproduction",
+    "same_family_newer_version_substitution",
     "same_family_version_needs_subtype_confirmation",
     "proprietary_api_resolved",
     "not_reproduced_provider_unavailable",
@@ -78,6 +81,7 @@ MATCH_TYPE_VALUES: tuple[MatchType, ...] = (
 VALIDATION_STATUS_VALUES: tuple[ValidationStatus, ...] = (
     "confirmed_by_owner",
     "confirmed_from_av2_artifacts",
+    "approved_version_substitution",
     "needs_owner_confirmation",
     "needs_owner_confirmation_gemini_subtype",
     "needs_provider_resolution",

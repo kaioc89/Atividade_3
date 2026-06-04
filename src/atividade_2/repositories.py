@@ -485,13 +485,18 @@ def _default_candidate_model_assignments() -> tuple[CandidateModelAssignment, ..
             original_provider_model_id="Grok 3",
             original_runtime="Grok UI",
             av3_provider="openrouter",
-            av3_provider_model_id=None,
+            av3_provider_model_id="x-ai/grok-4.3",
             hf_model_id=None,
             artifact_format="api",
             original_quantization=None,
             av3_quantization="proprietary_api",
-            match_type="not_reproduced_provider_unavailable",
-            validation_status="needs_provider_model_id_resolution",
+            match_type="same_family_newer_version_substitution",
+            validation_status="approved_version_substitution",
+            notes=(
+                "Grok 3 label preserved from AV1/AV2. AV3 execution uses x-ai/grok-4.3 via "
+                "OpenRouter as a team-approved newer-version substitution because Grok 3 is "
+                "not currently available in the provider catalog."
+            ),
             ranges=jose_bruno_ranges,
         ),
         CandidateModelAssignment(
