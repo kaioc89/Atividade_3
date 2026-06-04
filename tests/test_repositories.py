@@ -6,6 +6,7 @@ from pathlib import Path
 from atividade_2.contracts import (
     CandidateAnswerContextChunkRecord,
     CandidateAnswerRecord,
+    CandidateQuestionRecord,
     CandidateRunRecord,
     EvaluationRecord,
     ModelSpec,
@@ -63,6 +64,7 @@ class MultiRecordingCursor:
         self.params = []
         self.fetchone_rows = list(fetchone_rows or [])
         self.fetchall_rows = list(fetchall_rows or [])
+        self.rowcount = 1
 
     def __enter__(self):
         return self
@@ -770,3 +772,139 @@ def test_list_candidate_answers_filters_by_run_and_status() -> None:
             created_at=created_at.isoformat(),
         )
     ]
+
+
+def test_get_or_create_candidate_prompt_returns_existing_active_prompt() -> None:
+    created_at = datetime(2026, 6, 4, 14, 40, 0)
+    cursor = MultiRecordingCursor(
+        fetchone_rows=[
+            (
+                12,
+                "J2",
+                3,
+                "persona",
+                "contexto",
+                "instrucao",
+                "saida",
+                True,
+                "tester",
+                created_at,
+            )
+        ]
+    )
+    repository = JudgeRepository(TransactionConnection(cursor))
+
+    record = repository.get_or_create_candidate_prompt(dataset="j2")
+
+    assert "FROM av3.prompt_candidatos" in cursor.queries[0]
+    assert "ativo = TRUE" in cursor.queries[0]
+    assert cursor.params[0] == ["J2"]
+    assert record.prompt_id == 12
+    assert record.dataset == "J2"
+    assert record.version == 3
+
+
+def test_get_or_create_candidate_prompt_seeds_default_active_prompt_when_missing() -> None:
+    created_at = datetime(2026, 6, 4, 14, 45, 0)
+    cursor = MultiRecordingCursor(
+        fetchone_rows=[
+            None,
+            (1,),
+            (
+                19,
+                "J1",
+                1,
+                "Você é um candidato do exame da OAB respondendo uma questão discursiva.",
+                "Questão original:\n```text\n{pergunta_oab}\n```",
+                "{contexto_rag}\n\nUse os trechos recuperados apenas como apoio para fundamentar a resposta.\n- Responda como candidato da OAB, em português.\n- Se o contexto não for suficiente, reconheça a limitação sem inventar normas, fatos ou jurisprudência.\n- Não mencione critérios de correção, respostas de referência ou avaliação.",
+                "Entregue uma resposta objetiva e juridicamente fundamentada.\nFinalize com o bloco:\nResposta final:\n<sua resposta>",
+                True,
+                "system",
+                created_at,
+            ),
+        ]
+    )
+    repository = JudgeRepository(TransactionConnection(cursor))
+
+    record = repository.get_or_create_candidate_prompt(dataset="J1")
+
+    assert "SELECT COALESCE(MAX(versao), 0) + 1" in cursor.queries[1]
+    assert "INSERT INTO av3.prompt_candidatos" in cursor.queries[3]
+    assert record.prompt_id == 19
+    assert record.active is True
+    assert record.created_by == "system"
+
+
+def test_select_candidate_questions_uses_active_vector_base_scope_and_filters() -> None:
+    cursor = MultiRecordingCursor(
+        fetchall_rows=[
+            [
+                (101, "J2", 8, "Qual alternativa correta?", '{"A": "Opcao A", "B": "Opcao B"}'),
+            ]
+        ]
+    )
+    repository = JudgeRepository(TransactionConnection(cursor))
+    repository.get_rag_vector_base_summary = lambda dataset: RagVectorBaseSummary(  # type: ignore[method-assign]
+        dataset=dataset,
+        dataset_name="OAB_Exames",
+        import_run_id=31,
+        active_curation_run_id=31,
+        matches_active_curation=True,
+        retrieval_run_id=21,
+        retrieval_name="j2_source_urls_v1",
+        retrieval_strategy="source_url_only_v1",
+        embedding_model="text-embedding-3-small",
+        top_k=5,
+        vector_enabled=True,
+        lexical_enabled=False,
+        rerank_enabled=False,
+        document_count=10,
+        chunk_count=50,
+        embedding_count=50,
+        status="pronta_com_embeddings",
+        created_at="2026-06-04T12:00:00",
+    )
+
+    records = repository.select_candidate_questions(
+        dataset="J2",
+        batch_size=2,
+        question_sequence_start=5,
+        question_sequence_end=9,
+        question_id=101,
+    )
+
+    assert "FROM av3.curadoria_questoes q" in cursor.queries[0]
+    assert "q.id_import_run = %s" in cursor.queries[0]
+    assert "q.id_pergunta = %s" in cursor.queries[0]
+    assert "q.question_sequence >= %s" in cursor.queries[0]
+    assert "q.question_sequence <= %s" in cursor.queries[0]
+    assert cursor.params[0] == ["J2", 31, 101, 5, 9, 2]
+    assert records == [
+        CandidateQuestionRecord(
+            question_id=101,
+            dataset="J2",
+            dataset_name="OAB_Exames",
+            question_sequence=8,
+            question_text="Qual alternativa correta?",
+            alternatives={"A": "Opcao A", "B": "Opcao B"},
+        )
+    ]
+
+
+def test_successful_candidate_answer_exists_filters_by_dataset_model_question_and_status() -> None:
+    cursor = MultiRecordingCursor(fetchone_rows=[(1,)])
+    repository = JudgeRepository(TransactionConnection(cursor))
+
+    exists = repository.successful_candidate_answer_exists(
+        dataset="j1",
+        model_name="candidate-model",
+        question_id=77,
+        exclude_candidate_run_id=17,
+    )
+
+    assert exists is True
+    assert "FROM av3.candidate_answers a" in cursor.queries[0]
+    assert "JOIN av3.candidate_runs r" in cursor.queries[0]
+    assert "a.status = 'success'" in cursor.queries[0]
+    assert "r.id_candidate_run <> %s" in cursor.queries[0]
+    assert cursor.params[0] == ["J1", "candidate-model", 77, 17]
