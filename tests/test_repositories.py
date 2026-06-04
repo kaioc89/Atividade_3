@@ -204,6 +204,23 @@ def test_rag_source_chunk_replacement_skips_duplicate_text_chunks() -> None:
     assert len(insert_queries) == 2
 
 
+def test_get_question_for_rag_retrieval_loads_only_candidate_safe_fields() -> None:
+    cursor = MultiRecordingCursor(fetchone_rows=[(41, "OAB_Bench", "Enunciado seguro.")])
+    repository = JudgeRepository(TransactionConnection(cursor))
+
+    result = repository.get_question_for_rag_retrieval(question_id=41, dataset="J1")
+
+    assert result is not None
+    assert result.question_id == 41
+    assert result.dataset == "J1"
+    assert result.question_text == "Enunciado seguro."
+    query = cursor.queries[0]
+    assert "p.enunciado" in query
+    assert "p.resposta_ouro" not in query
+    assert "gabarito_jsonb" not in query
+    assert cursor.params[0] == [41, "OAB_Bench"]
+
+
 def test_evaluation_details_schema_is_auxiliary_and_unique_by_evaluation() -> None:
     cursor = MultiRecordingCursor()
     repository = JudgeRepository(TransactionConnection(cursor))
