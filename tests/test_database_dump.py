@@ -124,6 +124,13 @@ def test_restore_backup_adds_dashboard_compatibility_columns(monkeypatch, tmp_pa
 
     service.restore_backup(backup_file)
 
+    reset_commands = [command for command in commands if "DROP SCHEMA IF EXISTS" in " ".join(command)]
+    assert len(reset_commands) == 1
+    reset_sql = " ".join(reset_commands[0])
+    assert "DROP SCHEMA IF EXISTS av3 CASCADE;" in reset_sql
+    assert "DROP SCHEMA IF EXISTS public CASCADE;" in reset_sql
+    assert "CREATE SCHEMA public;" in reset_sql
+
     alter_commands = [command for command in commands if "ALTER TABLE avaliacoes_juiz" in " ".join(command)]
     assert len(alter_commands) == 1
     alter_sql = " ".join(alter_commands[0])

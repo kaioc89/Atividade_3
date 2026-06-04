@@ -339,6 +339,85 @@ CREATE TABLE av3.retrieval_runs (
 );
 
 -- =========================
+-- 11. AV3 candidate RAG runs
+-- =========================
+CREATE TABLE av3.prompt_candidatos (
+    id_prompt_candidato SERIAL PRIMARY KEY,
+    dataset_code VARCHAR(10) NOT NULL,
+    versao INTEGER NOT NULL,
+    ds_persona TEXT NOT NULL,
+    ds_contexto TEXT NOT NULL,
+    ds_instrucao_rag TEXT NOT NULL,
+    ds_saida TEXT NOT NULL,
+    ativo BOOLEAN NOT NULL DEFAULT FALSE,
+    created_by VARCHAR(120) NOT NULL DEFAULT 'system',
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (dataset_code, versao)
+);
+
+CREATE TABLE av3.candidate_runs (
+    id_candidate_run SERIAL PRIMARY KEY,
+    dataset_code VARCHAR(10) NOT NULL,
+    id_retrieval_run INTEGER NOT NULL
+        REFERENCES av3.retrieval_runs(id_retrieval_run),
+    id_prompt_candidato INTEGER NOT NULL
+        REFERENCES av3.prompt_candidatos(id_prompt_candidato),
+    model_name VARCHAR(160) NOT NULL,
+    provider VARCHAR(80) NOT NULL,
+    temperature NUMERIC(5,3),
+    max_tokens INTEGER,
+    top_p NUMERIC(5,3),
+    batch_size INTEGER NOT NULL
+        CHECK (batch_size >= 1),
+    run_status VARCHAR(30) NOT NULL DEFAULT 'created'
+        CHECK (run_status IN ('created', 'running', 'completed', 'failed', 'cancelled')),
+    started_at TIMESTAMP,
+    finished_at TIMESTAMP,
+    created_by VARCHAR(120) NOT NULL DEFAULT 'system',
+    metadata_jsonb JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE av3.candidate_answers (
+    id_candidate_answer SERIAL PRIMARY KEY,
+    id_candidate_run INTEGER NOT NULL
+        REFERENCES av3.candidate_runs(id_candidate_run)
+        ON DELETE CASCADE,
+    id_pergunta INTEGER NOT NULL
+        REFERENCES perguntas(id_pergunta),
+    model_name VARCHAR(160) NOT NULL,
+    answer_text TEXT,
+    final_choice VARCHAR(10),
+    rendered_prompt TEXT NOT NULL,
+    status VARCHAR(30) NOT NULL DEFAULT 'created'
+        CHECK (status IN ('created', 'running', 'success', 'failed', 'skipped')),
+    error_message TEXT,
+    latency_ms INTEGER
+        CHECK (latency_ms IS NULL OR latency_ms >= 0),
+    raw_response_jsonb JSONB,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (id_candidate_run, id_pergunta)
+);
+
+CREATE TABLE av3.candidate_answer_context_chunks (
+    id_answer_context_chunk SERIAL PRIMARY KEY,
+    id_candidate_answer INTEGER NOT NULL
+        REFERENCES av3.candidate_answers(id_candidate_answer)
+        ON DELETE CASCADE,
+    id_chunk INTEGER NOT NULL
+        REFERENCES av3.rag_chunks(id_chunk),
+    rank INTEGER NOT NULL
+        CHECK (rank >= 1),
+    similarity_score NUMERIC(10,6),
+    chunk_text_snapshot TEXT NOT NULL,
+    source_url TEXT,
+    metadata_jsonb JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (id_candidate_answer, rank),
+    UNIQUE (id_candidate_answer, id_chunk)
+);
+
+-- =========================
 -- Indexes
 -- =========================
 
@@ -416,3 +495,20 @@ ON av3.embedding_model_configs(dataset_code, updated_at DESC);
 -- Retrieval runs by source import and dataset.
 CREATE INDEX idx_retrieval_runs_import_dataset
 ON av3.retrieval_runs(id_import_run, dataset_code, created_at DESC);
+
+-- Active candidate prompt version per dataset.
+CREATE UNIQUE INDEX idx_prompt_candidatos_active_dataset
+ON av3.prompt_candidatos(dataset_code)
+WHERE ativo;
+
+-- Candidate runs by dataset and recency.
+CREATE INDEX idx_candidate_runs_dataset_created
+ON av3.candidate_runs(dataset_code, created_at DESC);
+
+-- Candidate answers by run and status.
+CREATE INDEX idx_candidate_answers_run_status
+ON av3.candidate_answers(id_candidate_run, status);
+
+-- Context chunk snapshots by answer and rank.
+CREATE INDEX idx_candidate_answer_context_chunks_answer_rank
+ON av3.candidate_answer_context_chunks(id_candidate_answer, rank);

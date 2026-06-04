@@ -56,7 +56,7 @@ make db-up
 O comando:
 
 - copia `.env.example` para `.env` se necessário;
-- baixa `pgvector/pgvector:pg18` se a imagem não existir localmente;
+- baixa `pgvector/pgvector:0.8.2-pg18` se a imagem não existir localmente;
 - sobe o container `topicos-av2-postgres`;
 - valida conexão com `app_dev`;
 - cria `app_test` se ainda não existir.
@@ -83,7 +83,7 @@ make db-migrate-or-create
 
 Esse comando usa `backup_atividade_2_reset.sql`. Se o banco já tiver tabelas públicas, o restore é ignorado para evitar sobrescrever dados locais.
 
-Para forçar o restore sobre um banco já populado, limpando o schema `public` antes de restaurar:
+Para forçar o restore sobre um banco já populado, limpando os schemas `public` e `av3` antes de restaurar:
 
 ```bash
 make db-migrate-or-create FORCE=1

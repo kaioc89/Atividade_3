@@ -8,7 +8,11 @@ from collections.abc import Iterable
 from typing import Any, Protocol
 
 from .contracts import (
+    CandidateAnswerContextChunkRecord,
     CandidateAnswerContext,
+    CandidateAnswerRecord,
+    CandidatePromptRecord,
+    CandidateRunRecord,
     EligibilitySummary,
     EvaluationRecord,
     JudgePromptConfigRecord,
@@ -812,6 +816,117 @@ class JudgeRepository:
             """
         )
 
+    def _ensure_candidate_rag_schema(self, cursor: Any) -> None:
+        cursor.execute("CREATE SCHEMA IF NOT EXISTS av3;")
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS av3.prompt_candidatos (
+                id_prompt_candidato SERIAL PRIMARY KEY,
+                dataset_code VARCHAR(10) NOT NULL,
+                versao INTEGER NOT NULL,
+                ds_persona TEXT NOT NULL,
+                ds_contexto TEXT NOT NULL,
+                ds_instrucao_rag TEXT NOT NULL,
+                ds_saida TEXT NOT NULL,
+                ativo BOOLEAN NOT NULL DEFAULT FALSE,
+                created_by VARCHAR(120) NOT NULL DEFAULT 'system',
+                created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+                UNIQUE (dataset_code, versao)
+            );
+            """
+        )
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS av3.candidate_runs (
+                id_candidate_run SERIAL PRIMARY KEY,
+                dataset_code VARCHAR(10) NOT NULL,
+                id_retrieval_run INTEGER NOT NULL
+                    REFERENCES av3.retrieval_runs(id_retrieval_run),
+                id_prompt_candidato INTEGER NOT NULL
+                    REFERENCES av3.prompt_candidatos(id_prompt_candidato),
+                model_name VARCHAR(160) NOT NULL,
+                provider VARCHAR(80) NOT NULL,
+                temperature NUMERIC(5,3),
+                max_tokens INTEGER,
+                top_p NUMERIC(5,3),
+                batch_size INTEGER NOT NULL CHECK (batch_size >= 1),
+                run_status VARCHAR(30) NOT NULL DEFAULT 'created'
+                    CHECK (run_status IN ('created', 'running', 'completed', 'failed', 'cancelled')),
+                started_at TIMESTAMP,
+                finished_at TIMESTAMP,
+                created_by VARCHAR(120) NOT NULL DEFAULT 'system',
+                metadata_jsonb JSONB NOT NULL DEFAULT '{}'::jsonb,
+                created_at TIMESTAMP NOT NULL DEFAULT NOW()
+            );
+            """
+        )
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS av3.candidate_answers (
+                id_candidate_answer SERIAL PRIMARY KEY,
+                id_candidate_run INTEGER NOT NULL
+                    REFERENCES av3.candidate_runs(id_candidate_run) ON DELETE CASCADE,
+                id_pergunta INTEGER NOT NULL
+                    REFERENCES public.perguntas(id_pergunta),
+                model_name VARCHAR(160) NOT NULL,
+                answer_text TEXT,
+                final_choice VARCHAR(10),
+                rendered_prompt TEXT NOT NULL,
+                status VARCHAR(30) NOT NULL DEFAULT 'created'
+                    CHECK (status IN ('created', 'running', 'success', 'failed', 'skipped')),
+                error_message TEXT,
+                latency_ms INTEGER CHECK (latency_ms IS NULL OR latency_ms >= 0),
+                raw_response_jsonb JSONB,
+                created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+                UNIQUE (id_candidate_run, id_pergunta)
+            );
+            """
+        )
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS av3.candidate_answer_context_chunks (
+                id_answer_context_chunk SERIAL PRIMARY KEY,
+                id_candidate_answer INTEGER NOT NULL
+                    REFERENCES av3.candidate_answers(id_candidate_answer) ON DELETE CASCADE,
+                id_chunk INTEGER NOT NULL
+                    REFERENCES av3.rag_chunks(id_chunk),
+                rank INTEGER NOT NULL CHECK (rank >= 1),
+                similarity_score NUMERIC(10,6),
+                chunk_text_snapshot TEXT NOT NULL,
+                source_url TEXT,
+                metadata_jsonb JSONB NOT NULL DEFAULT '{}'::jsonb,
+                created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+                UNIQUE (id_candidate_answer, rank),
+                UNIQUE (id_candidate_answer, id_chunk)
+            );
+            """
+        )
+        cursor.execute(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_prompt_candidatos_active_dataset
+            ON av3.prompt_candidatos (dataset_code)
+            WHERE ativo;
+            """
+        )
+        cursor.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_candidate_runs_dataset_created
+            ON av3.candidate_runs (dataset_code, created_at DESC);
+            """
+        )
+        cursor.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_candidate_answers_run_status
+            ON av3.candidate_answers (id_candidate_run, status);
+            """
+        )
+        cursor.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_candidate_answer_context_chunks_answer_rank
+            ON av3.candidate_answer_context_chunks (id_candidate_answer, rank);
+            """
+        )
+
     def rollback_evaluation_details_schema(self) -> None:
         """Drop only the auxiliary judge details table."""
         with self.connection:
@@ -835,6 +950,7 @@ class JudgeRepository:
                 self._ensure_evaluation_details_schema(cursor)
                 self._ensure_rag_curation_schema(cursor)
                 self._ensure_rag_vector_schema(cursor)
+                self._ensure_candidate_rag_schema(cursor)
 
     def select_candidate_answers(self, *, dataset: str, limit: int | None) -> list[CandidateAnswerContext]:
         """Select AV1 answers with question/reference context."""
@@ -2424,6 +2540,273 @@ class JudgeRepository:
                     (import_run_id, dataset_code),
                 )
 
+    def create_candidate_run(self, *, run: CandidateRunRecord) -> CandidateRunRecord:
+        """Insert one AV3 candidate generation run and return the stored row."""
+        with self.connection:
+            with self.connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    INSERT INTO av3.candidate_runs
+                        (
+                            dataset_code,
+                            id_retrieval_run,
+                            id_prompt_candidato,
+                            model_name,
+                            provider,
+                            temperature,
+                            max_tokens,
+                            top_p,
+                            batch_size,
+                            run_status,
+                            started_at,
+                            finished_at,
+                            created_by,
+                            metadata_jsonb
+                        )
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb)
+                    RETURNING
+                        id_candidate_run,
+                        dataset_code,
+                        id_retrieval_run,
+                        id_prompt_candidato,
+                        model_name,
+                        provider,
+                        temperature,
+                        max_tokens,
+                        top_p,
+                        batch_size,
+                        run_status,
+                        started_at,
+                        finished_at,
+                        created_by,
+                        metadata_jsonb,
+                        created_at;
+                    """,
+                    (
+                        run.dataset.upper(),
+                        run.retrieval_run_id,
+                        run.prompt_id,
+                        run.model_name,
+                        run.provider,
+                        run.temperature,
+                        run.max_tokens,
+                        run.top_p,
+                        run.batch_size,
+                        run.run_status,
+                        run.started_at,
+                        run.finished_at,
+                        run.created_by,
+                        jsonb_dumps(run.metadata),
+                    ),
+                )
+                row = cursor.fetchone()
+        return _row_to_candidate_run(row)
+
+    def persist_candidate_answer(self, *, answer: CandidateAnswerRecord) -> CandidateAnswerRecord:
+        """Insert or update one AV3 candidate answer keyed by run and question."""
+        with self.connection:
+            with self.connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    INSERT INTO av3.candidate_answers
+                        (
+                            id_candidate_run,
+                            id_pergunta,
+                            model_name,
+                            answer_text,
+                            final_choice,
+                            rendered_prompt,
+                            status,
+                            error_message,
+                            latency_ms,
+                            raw_response_jsonb
+                        )
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb)
+                    ON CONFLICT (id_candidate_run, id_pergunta) DO UPDATE
+                    SET
+                        model_name = EXCLUDED.model_name,
+                        answer_text = EXCLUDED.answer_text,
+                        final_choice = EXCLUDED.final_choice,
+                        rendered_prompt = EXCLUDED.rendered_prompt,
+                        status = EXCLUDED.status,
+                        error_message = EXCLUDED.error_message,
+                        latency_ms = EXCLUDED.latency_ms,
+                        raw_response_jsonb = EXCLUDED.raw_response_jsonb
+                    RETURNING
+                        id_candidate_answer,
+                        id_candidate_run,
+                        id_pergunta,
+                        model_name,
+                        answer_text,
+                        final_choice,
+                        rendered_prompt,
+                        status,
+                        error_message,
+                        latency_ms,
+                        raw_response_jsonb,
+                        created_at;
+                    """,
+                    (
+                        answer.candidate_run_id,
+                        answer.question_id,
+                        answer.model_name,
+                        answer.answer_text,
+                        answer.final_choice,
+                        answer.rendered_prompt,
+                        answer.status,
+                        answer.error_message,
+                        answer.latency_ms,
+                        jsonb_dumps(answer.raw_response),
+                    ),
+                )
+                row = cursor.fetchone()
+        return _row_to_candidate_answer(row)
+
+    def persist_candidate_answer_context_chunks(
+        self,
+        *,
+        candidate_answer_id: int,
+        chunks: list[CandidateAnswerContextChunkRecord],
+    ) -> list[CandidateAnswerContextChunkRecord]:
+        """Replace the stored chunk snapshot set for one candidate answer."""
+        for chunk in chunks:
+            if chunk.candidate_answer_id != candidate_answer_id:
+                raise ValueError(
+                    "All context chunks must belong to the same candidate answer."
+                )
+        with self.connection:
+            with self.connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    DELETE FROM av3.candidate_answer_context_chunks
+                    WHERE id_candidate_answer = %s;
+                    """,
+                    (candidate_answer_id,),
+                )
+                rows = []
+                for chunk in chunks:
+                    cursor.execute(
+                        """
+                        INSERT INTO av3.candidate_answer_context_chunks
+                            (
+                                id_candidate_answer,
+                                id_chunk,
+                                rank,
+                                similarity_score,
+                                chunk_text_snapshot,
+                                source_url,
+                                metadata_jsonb
+                            )
+                        VALUES (%s, %s, %s, %s, %s, %s, %s::jsonb)
+                        RETURNING
+                            id_answer_context_chunk,
+                            id_candidate_answer,
+                            id_chunk,
+                            rank,
+                            similarity_score,
+                            chunk_text_snapshot,
+                            source_url,
+                            metadata_jsonb,
+                            created_at;
+                        """,
+                        (
+                            candidate_answer_id,
+                            chunk.chunk_id,
+                            chunk.rank,
+                            chunk.similarity_score,
+                            chunk.chunk_text_snapshot,
+                            chunk.source_url,
+                            jsonb_dumps(chunk.metadata),
+                        ),
+                    )
+                    rows.append(cursor.fetchone())
+        return [_row_to_candidate_answer_context_chunk(row) for row in rows]
+
+    def list_candidate_runs(
+        self,
+        *,
+        dataset: str | None = None,
+        run_status: str | None = None,
+        limit: int = 50,
+    ) -> list[CandidateRunRecord]:
+        """Return candidate runs optionally filtered by dataset and status."""
+        conditions: list[str] = []
+        params: list[Any] = []
+        if dataset is not None:
+            conditions.append("dataset_code = %s")
+            params.append(dataset.upper())
+        if run_status is not None:
+            conditions.append("run_status = %s")
+            params.append(run_status)
+        where_sql = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                f"""
+                SELECT
+                    id_candidate_run,
+                    dataset_code,
+                    id_retrieval_run,
+                    id_prompt_candidato,
+                    model_name,
+                    provider,
+                    temperature,
+                    max_tokens,
+                    top_p,
+                    batch_size,
+                    run_status,
+                    started_at,
+                    finished_at,
+                    created_by,
+                    metadata_jsonb,
+                    created_at
+                FROM av3.candidate_runs
+                {where_sql}
+                ORDER BY created_at DESC, id_candidate_run DESC
+                LIMIT %s;
+                """,
+                [*params, max(1, int(limit))],
+            )
+            rows = cursor.fetchall()
+        return [_row_to_candidate_run(row) for row in rows]
+
+    def list_candidate_answers(
+        self,
+        *,
+        candidate_run_id: int,
+        status: str | None = None,
+    ) -> list[CandidateAnswerRecord]:
+        """Return stored candidate answers for one run with optional status filter."""
+        params: list[Any] = [candidate_run_id]
+        status_clause = ""
+        if status is not None:
+            status_clause = "AND status = %s"
+            params.append(status)
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                f"""
+                SELECT
+                    id_candidate_answer,
+                    id_candidate_run,
+                    id_pergunta,
+                    model_name,
+                    answer_text,
+                    final_choice,
+                    rendered_prompt,
+                    status,
+                    error_message,
+                    latency_ms,
+                    raw_response_jsonb,
+                    created_at
+                FROM av3.candidate_answers
+                WHERE id_candidate_run = %s
+                  {status_clause}
+                ORDER BY id_pergunta, id_candidate_answer;
+                """,
+                params,
+            )
+            rows = cursor.fetchall()
+        return [_row_to_candidate_answer(row) for row in rows]
+
     def get_rag_embedding_model_config(self, *, dataset: str) -> RagEmbeddingModelConfigRecord | None:
         dataset_code = dataset.upper()
         dataset_name = DATASET_ALIASES.get(dataset_code, dataset_code)
@@ -3935,6 +4318,74 @@ def _build_rag_chunk_text(
     else:
         lines.append("Resumo curado sem artigos especificos para esta questao.")
     return "\n".join(lines)
+
+
+def _row_to_candidate_prompt(row: Any) -> CandidatePromptRecord:
+    return CandidatePromptRecord(
+        prompt_id=int(row[0]),
+        dataset=row[1],
+        version=int(row[2]),
+        persona=row[3],
+        context=row[4],
+        rag_instruction=row[5],
+        output=row[6],
+        active=bool(row[7]),
+        created_by=row[8],
+        created_at=row[9].isoformat() if row[9] is not None else None,
+    )
+
+
+def _row_to_candidate_run(row: Any) -> CandidateRunRecord:
+    return CandidateRunRecord(
+        candidate_run_id=int(row[0]),
+        dataset=row[1],
+        retrieval_run_id=int(row[2]),
+        prompt_id=int(row[3]),
+        model_name=row[4],
+        provider=row[5],
+        temperature=float(row[6]) if row[6] is not None else None,
+        max_tokens=int(row[7]) if row[7] is not None else None,
+        top_p=float(row[8]) if row[8] is not None else None,
+        batch_size=int(row[9]),
+        run_status=row[10],
+        started_at=row[11].isoformat() if row[11] is not None else None,
+        finished_at=row[12].isoformat() if row[12] is not None else None,
+        created_by=row[13],
+        metadata=_normalize_metadata(row[14]),
+        created_at=row[15].isoformat() if row[15] is not None else None,
+    )
+
+
+def _row_to_candidate_answer(row: Any) -> CandidateAnswerRecord:
+    raw_response = _parse_jsonb(row[10])
+    return CandidateAnswerRecord(
+        candidate_answer_id=int(row[0]),
+        candidate_run_id=int(row[1]),
+        question_id=int(row[2]),
+        model_name=row[3],
+        answer_text=row[4],
+        final_choice=row[5],
+        rendered_prompt=row[6],
+        status=row[7],
+        error_message=row[8],
+        latency_ms=int(row[9]) if row[9] is not None else None,
+        raw_response=raw_response if isinstance(raw_response, dict) else None,
+        created_at=row[11].isoformat() if row[11] is not None else None,
+    )
+
+
+def _row_to_candidate_answer_context_chunk(row: Any) -> CandidateAnswerContextChunkRecord:
+    return CandidateAnswerContextChunkRecord(
+        answer_context_chunk_id=int(row[0]),
+        candidate_answer_id=int(row[1]),
+        chunk_id=int(row[2]),
+        rank=int(row[3]),
+        similarity_score=float(row[4]) if row[4] is not None else None,
+        chunk_text_snapshot=row[5],
+        source_url=row[6],
+        metadata=_normalize_metadata(row[7]),
+        created_at=row[8].isoformat() if row[8] is not None else None,
+    )
 
 
 def _row_to_rag_curation_import_run(row: Any) -> RagCurationImportRunRecord:

@@ -140,7 +140,7 @@ class DatabaseResetService:
                 "ON_ERROR_STOP=1",
                 database_url,
                 "-c",
-                "DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public;",
+                "DROP SCHEMA IF EXISTS av3 CASCADE; DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public;",
             ],
             self.timeout_seconds,
             secret=database_url,

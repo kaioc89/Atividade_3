@@ -1,6 +1,17 @@
 from __future__ import annotations
 
-from atividade_2.contracts import EvaluationRecord, ModelSpec, ParsedJudgeEvaluation, RagVectorBaseSummary
+from datetime import datetime
+from pathlib import Path
+
+from atividade_2.contracts import (
+    CandidateAnswerContextChunkRecord,
+    CandidateAnswerRecord,
+    CandidateRunRecord,
+    EvaluationRecord,
+    ModelSpec,
+    ParsedJudgeEvaluation,
+    RagVectorBaseSummary,
+)
 from atividade_2.evaluation_details import EvaluationDetails
 from atividade_2.repositories import JudgeRepository, _default_prompt_config
 
@@ -316,3 +327,429 @@ def test_persist_evaluation_details_uses_controlled_upsert() -> None:
     assert "COALESCE(EXCLUDED.legal_accuracy" in query
     assert "criteria = avaliacao_juiz_detalhes.criteria || EXCLUDED.criteria" in query
     assert "UPDATE avaliacoes_juiz" not in query
+
+
+def test_candidate_rag_schema_creates_prompt_table_with_active_prompt_index() -> None:
+    cursor = MultiRecordingCursor()
+    repository = JudgeRepository(TransactionConnection(cursor))
+
+    repository._ensure_candidate_rag_schema(cursor)
+
+    sql_statements = "\n".join(cursor.queries)
+    assert "CREATE TABLE IF NOT EXISTS av3.prompt_candidatos" in sql_statements
+    assert "id_prompt_candidato SERIAL PRIMARY KEY" in sql_statements
+    assert "UNIQUE (dataset_code, versao)" in sql_statements
+    assert "ds_instrucao_rag TEXT NOT NULL" in sql_statements
+    assert "created_by VARCHAR(120) NOT NULL DEFAULT 'system'" in sql_statements
+    assert "CREATE UNIQUE INDEX IF NOT EXISTS idx_prompt_candidatos_active_dataset" in sql_statements
+    assert "ON av3.prompt_candidatos (dataset_code)" in sql_statements
+    assert "WHERE ativo;" in sql_statements
+
+
+def test_candidate_rag_schema_creates_run_answer_and_chunk_constraints() -> None:
+    cursor = MultiRecordingCursor()
+    repository = JudgeRepository(TransactionConnection(cursor))
+
+    repository._ensure_candidate_rag_schema(cursor)
+
+    sql_statements = "\n".join(cursor.queries)
+    assert "CREATE TABLE IF NOT EXISTS av3.candidate_runs" in sql_statements
+    assert "REFERENCES av3.retrieval_runs(id_retrieval_run)" in sql_statements
+    assert "REFERENCES av3.prompt_candidatos(id_prompt_candidato)" in sql_statements
+    assert "batch_size INTEGER NOT NULL CHECK (batch_size >= 1)" in sql_statements
+    assert "run_status VARCHAR(30) NOT NULL DEFAULT 'created'" in sql_statements
+    assert "run_status IN ('created', 'running', 'completed', 'failed', 'cancelled')" in sql_statements
+    assert "CREATE TABLE IF NOT EXISTS av3.candidate_answers" in sql_statements
+    assert "REFERENCES av3.candidate_runs(id_candidate_run) ON DELETE CASCADE" in sql_statements
+    assert "REFERENCES public.perguntas(id_pergunta)" in sql_statements
+    assert "UNIQUE (id_candidate_run, id_pergunta)" in sql_statements
+    assert "status VARCHAR(30) NOT NULL DEFAULT 'created'" in sql_statements
+    assert "status IN ('created', 'running', 'success', 'failed', 'skipped')" in sql_statements
+    assert "latency_ms INTEGER CHECK (latency_ms IS NULL OR latency_ms >= 0)" in sql_statements
+    assert "CREATE TABLE IF NOT EXISTS av3.candidate_answer_context_chunks" in sql_statements
+    assert "REFERENCES av3.candidate_answers(id_candidate_answer) ON DELETE CASCADE" in sql_statements
+    assert "REFERENCES av3.rag_chunks(id_chunk)" in sql_statements
+    assert "UNIQUE (id_candidate_answer, rank)" in sql_statements
+    assert "UNIQUE (id_candidate_answer, id_chunk)" in sql_statements
+    assert "rank INTEGER NOT NULL CHECK (rank >= 1)" in sql_statements
+
+
+def test_candidate_rag_schema_is_idempotent_on_repeated_calls() -> None:
+    cursor = MultiRecordingCursor()
+    repository = JudgeRepository(TransactionConnection(cursor))
+
+    repository._ensure_candidate_rag_schema(cursor)
+    repository._ensure_candidate_rag_schema(cursor)
+
+    assert len(cursor.queries) == 18
+    assert all("IF NOT EXISTS" in query for query in cursor.queries)
+    assert all("DROP TABLE" not in query for query in cursor.queries)
+    assert all("ALTER TABLE" not in query for query in cursor.queries)
+
+
+def test_ensure_schema_invokes_candidate_rag_schema_after_vector_schema() -> None:
+    cursor = MultiRecordingCursor()
+    repository = JudgeRepository(TransactionConnection(cursor))
+    calls: list[str] = []
+
+    repository._ensure_prompt_schema = lambda inner_cursor: calls.append("prompt")  # type: ignore[method-assign]
+    repository._ensure_evaluation_prompt_fk = lambda inner_cursor: calls.append("evaluation-prompt-fk")  # type: ignore[method-assign]
+    repository._ensure_meta_evaluation_schema = lambda inner_cursor: calls.append("meta-evaluation")  # type: ignore[method-assign]
+    repository._ensure_evaluation_details_schema = lambda inner_cursor: calls.append("evaluation-details")  # type: ignore[method-assign]
+    repository._ensure_rag_curation_schema = lambda inner_cursor: calls.append("rag-curation")  # type: ignore[method-assign]
+    repository._ensure_rag_vector_schema = lambda inner_cursor: calls.append("rag-vector")  # type: ignore[method-assign]
+    repository._ensure_candidate_rag_schema = lambda inner_cursor: calls.append("candidate-rag")  # type: ignore[method-assign]
+
+    repository.ensure_schema()
+
+    assert calls == [
+        "prompt",
+        "evaluation-prompt-fk",
+        "meta-evaluation",
+        "evaluation-details",
+        "rag-curation",
+        "rag-vector",
+        "candidate-rag",
+    ]
+
+
+def test_candidate_schema_is_present_in_project_ddl() -> None:
+    ddl = Path("database/ddl_banco/ddl_atividade_2.sql").read_text(encoding="utf-8")
+
+    assert "CREATE TABLE av3.prompt_candidatos (" in ddl
+    assert "CREATE TABLE av3.candidate_runs (" in ddl
+    assert "CREATE TABLE av3.candidate_answers (" in ddl
+    assert "CREATE TABLE av3.candidate_answer_context_chunks (" in ddl
+    assert "CREATE UNIQUE INDEX idx_prompt_candidatos_active_dataset" in ddl
+    assert "CREATE INDEX idx_candidate_answers_run_status" in ddl
+
+
+def test_create_candidate_run_persists_metadata_json_and_returns_record() -> None:
+    created_at = datetime(2026, 6, 4, 13, 20, 0)
+    cursor = MultiRecordingCursor(
+        fetchone_rows=[
+            (
+                17,
+                "J1",
+                31,
+                7,
+                "candidate-model",
+                "openai",
+                0.2,
+                512,
+                0.95,
+                25,
+                "created",
+                None,
+                None,
+                "tester",
+                '{"mode": "rag", "top_k": 5}',
+                created_at,
+            )
+        ]
+    )
+    repository = JudgeRepository(TransactionConnection(cursor))
+
+    record = repository.create_candidate_run(
+        run=CandidateRunRecord(
+            candidate_run_id=None,
+            dataset="j1",
+            retrieval_run_id=31,
+            prompt_id=7,
+            model_name="candidate-model",
+            provider="openai",
+            batch_size=25,
+            temperature=0.2,
+            max_tokens=512,
+            top_p=0.95,
+            created_by="tester",
+            metadata={"top_k": 5, "mode": "rag"},
+        )
+    )
+
+    assert "INSERT INTO av3.candidate_runs" in cursor.queries[0]
+    assert "metadata_jsonb" in cursor.queries[0]
+    assert cursor.params[0] == [
+        "J1",
+        31,
+        7,
+        "candidate-model",
+        "openai",
+        0.2,
+        512,
+        0.95,
+        25,
+        "created",
+        None,
+        None,
+        "tester",
+        '{"mode": "rag", "top_k": 5}',
+    ]
+    assert record == CandidateRunRecord(
+        candidate_run_id=17,
+        dataset="J1",
+        retrieval_run_id=31,
+        prompt_id=7,
+        model_name="candidate-model",
+        provider="openai",
+        batch_size=25,
+        run_status="created",
+        temperature=0.2,
+        max_tokens=512,
+        top_p=0.95,
+        created_by="tester",
+        metadata={"mode": "rag", "top_k": 5},
+        created_at=created_at.isoformat(),
+    )
+
+
+def test_persist_candidate_answer_upserts_by_run_and_question() -> None:
+    created_at = datetime(2026, 6, 4, 13, 45, 0)
+    cursor = MultiRecordingCursor(
+        fetchone_rows=[
+            (
+                41,
+                17,
+                77,
+                "candidate-model",
+                "Resposta final",
+                "B",
+                "prompt renderizado",
+                "success",
+                None,
+                812,
+                '{"answer": "Resposta final", "usage": {"tokens": 11}}',
+                created_at,
+            )
+        ]
+    )
+    repository = JudgeRepository(TransactionConnection(cursor))
+
+    record = repository.persist_candidate_answer(
+        answer=CandidateAnswerRecord(
+            candidate_answer_id=None,
+            candidate_run_id=17,
+            question_id=77,
+            model_name="candidate-model",
+            rendered_prompt="prompt renderizado",
+            status="success",
+            answer_text="Resposta final",
+            final_choice="B",
+            latency_ms=812,
+            raw_response={"usage": {"tokens": 11}, "answer": "Resposta final"},
+        )
+    )
+
+    assert "INSERT INTO av3.candidate_answers" in cursor.queries[0]
+    assert "ON CONFLICT (id_candidate_run, id_pergunta) DO UPDATE" in cursor.queries[0]
+    assert cursor.params[0] == [
+        17,
+        77,
+        "candidate-model",
+        "Resposta final",
+        "B",
+        "prompt renderizado",
+        "success",
+        None,
+        812,
+        '{"answer": "Resposta final", "usage": {"tokens": 11}}',
+    ]
+    assert record == CandidateAnswerRecord(
+        candidate_answer_id=41,
+        candidate_run_id=17,
+        question_id=77,
+        model_name="candidate-model",
+        rendered_prompt="prompt renderizado",
+        status="success",
+        answer_text="Resposta final",
+        final_choice="B",
+        latency_ms=812,
+        raw_response={"answer": "Resposta final", "usage": {"tokens": 11}},
+        created_at=created_at.isoformat(),
+    )
+
+
+def test_persist_candidate_answer_context_chunks_replaces_existing_snapshots() -> None:
+    first_created_at = datetime(2026, 6, 4, 14, 0, 0)
+    second_created_at = datetime(2026, 6, 4, 14, 0, 1)
+    cursor = MultiRecordingCursor(
+        fetchone_rows=[
+            (
+                91,
+                41,
+                501,
+                1,
+                0.912345,
+                "Trecho 1",
+                "https://fonte.example/1",
+                '{"source_kind": "lei"}',
+                first_created_at,
+            ),
+            (
+                92,
+                41,
+                502,
+                2,
+                0.812345,
+                "Trecho 2",
+                None,
+                '{"source_kind": "questao"}',
+                second_created_at,
+            ),
+        ]
+    )
+    repository = JudgeRepository(TransactionConnection(cursor))
+
+    records = repository.persist_candidate_answer_context_chunks(
+        candidate_answer_id=41,
+        chunks=[
+            CandidateAnswerContextChunkRecord(
+                answer_context_chunk_id=None,
+                candidate_answer_id=41,
+                chunk_id=501,
+                rank=1,
+                chunk_text_snapshot="Trecho 1",
+                similarity_score=0.912345,
+                source_url="https://fonte.example/1",
+                metadata={"source_kind": "lei"},
+            ),
+            CandidateAnswerContextChunkRecord(
+                answer_context_chunk_id=None,
+                candidate_answer_id=41,
+                chunk_id=502,
+                rank=2,
+                chunk_text_snapshot="Trecho 2",
+                similarity_score=0.812345,
+                metadata={"source_kind": "questao"},
+            ),
+        ],
+    )
+
+    assert "DELETE FROM av3.candidate_answer_context_chunks" in cursor.queries[0]
+    assert cursor.params[0] == [41]
+    assert "INSERT INTO av3.candidate_answer_context_chunks" in cursor.queries[1]
+    assert "INSERT INTO av3.candidate_answer_context_chunks" in cursor.queries[2]
+    assert records == [
+        CandidateAnswerContextChunkRecord(
+            answer_context_chunk_id=91,
+            candidate_answer_id=41,
+            chunk_id=501,
+            rank=1,
+            chunk_text_snapshot="Trecho 1",
+            similarity_score=0.912345,
+            source_url="https://fonte.example/1",
+            metadata={"source_kind": "lei"},
+            created_at=first_created_at.isoformat(),
+        ),
+        CandidateAnswerContextChunkRecord(
+            answer_context_chunk_id=92,
+            candidate_answer_id=41,
+            chunk_id=502,
+            rank=2,
+            chunk_text_snapshot="Trecho 2",
+            similarity_score=0.812345,
+            source_url=None,
+            metadata={"source_kind": "questao"},
+            created_at=second_created_at.isoformat(),
+        ),
+    ]
+
+
+def test_list_candidate_runs_filters_by_dataset_and_status() -> None:
+    created_at = datetime(2026, 6, 4, 14, 10, 0)
+    cursor = MultiRecordingCursor(
+        fetchall_rows=[
+            [
+                (
+                    17,
+                    "J2",
+                    31,
+                    7,
+                    "candidate-model",
+                    "openai",
+                    None,
+                    256,
+                    None,
+                    10,
+                    "running",
+                    None,
+                    None,
+                    "system",
+                    "{}",
+                    created_at,
+                )
+            ]
+        ]
+    )
+    repository = JudgeRepository(TransactionConnection(cursor))
+
+    records = repository.list_candidate_runs(dataset="j2", run_status="running", limit=5)
+
+    assert "FROM av3.candidate_runs" in cursor.queries[0]
+    assert "WHERE dataset_code = %s AND run_status = %s" in cursor.queries[0]
+    assert cursor.params[0] == ["J2", "running", 5]
+    assert records == [
+        CandidateRunRecord(
+            candidate_run_id=17,
+            dataset="J2",
+            retrieval_run_id=31,
+            prompt_id=7,
+            model_name="candidate-model",
+            provider="openai",
+            batch_size=10,
+            run_status="running",
+            temperature=None,
+            max_tokens=256,
+            top_p=None,
+            created_by="system",
+            metadata={},
+            created_at=created_at.isoformat(),
+        )
+    ]
+
+
+def test_list_candidate_answers_filters_by_run_and_status() -> None:
+    created_at = datetime(2026, 6, 4, 14, 25, 0)
+    cursor = MultiRecordingCursor(
+        fetchall_rows=[
+            [
+                (
+                    41,
+                    17,
+                    77,
+                    "candidate-model",
+                    "Resposta final",
+                    "B",
+                    "prompt renderizado",
+                    "success",
+                    None,
+                    812,
+                    '{"answer": "Resposta final"}',
+                    created_at,
+                )
+            ]
+        ]
+    )
+    repository = JudgeRepository(TransactionConnection(cursor))
+
+    records = repository.list_candidate_answers(candidate_run_id=17, status="success")
+
+    assert "FROM av3.candidate_answers" in cursor.queries[0]
+    assert "WHERE id_candidate_run = %s" in cursor.queries[0]
+    assert "AND status = %s" in cursor.queries[0]
+    assert cursor.params[0] == [17, "success"]
+    assert records == [
+        CandidateAnswerRecord(
+            candidate_answer_id=41,
+            candidate_run_id=17,
+            question_id=77,
+            model_name="candidate-model",
+            rendered_prompt="prompt renderizado",
+            status="success",
+            answer_text="Resposta final",
+            final_choice="B",
+            latency_ms=812,
+            raw_response={"answer": "Resposta final"},
+            created_at=created_at.isoformat(),
+        )
+    ]
