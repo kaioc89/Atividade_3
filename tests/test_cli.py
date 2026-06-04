@@ -10,7 +10,14 @@ import pytest
 from atividade_2 import cli
 from atividade_2.config import load_settings, resolve_runtime_config
 from atividade_2.contracts import CandidateModelAssignment
-from atividade_2.provider_catalogs import FakeProviderCatalogClient, ProviderCatalogError
+from atividade_2.provider_catalogs import (
+    DEFAULT_FEATHERLESS_CATALOG_MAX_RESPONSE_BYTES,
+    DEFAULT_OPENROUTER_CATALOG_MAX_RESPONSE_BYTES,
+    FakeProviderCatalogClient,
+    FeatherlessCatalogClient,
+    OpenRouterCatalogClient,
+    ProviderCatalogError,
+)
 from atividade_2.provider_validation_contracts import ProviderModelCatalogEntry
 from atividade_2.repositories import _default_candidate_model_assignments
 from atividade_2.run_candidates_rag_service import CandidateRunSummary, RunCandidatesRagResult
@@ -159,6 +166,35 @@ def test_validate_provider_models_parser_supports_repeated_provider() -> None:
     assert args.provider == ["openrouter", "featherless"]
 
 
+def test_build_provider_catalog_clients_uses_env_overrides_for_catalog_limits() -> None:
+    clients = cli._build_provider_catalog_clients(
+        {
+            "OPENROUTER_CATALOG_MAX_RESPONSE_BYTES": "7000000",
+            "FEATHERLESS_CATALOG_MAX_RESPONSE_BYTES": "42000000",
+        }
+    )
+
+    openrouter_client = clients["openrouter"]
+    featherless_client = clients["featherless"]
+
+    assert isinstance(openrouter_client, OpenRouterCatalogClient)
+    assert isinstance(featherless_client, FeatherlessCatalogClient)
+    assert openrouter_client.max_response_bytes == 7_000_000
+    assert featherless_client.max_response_bytes == 42_000_000
+
+
+def test_build_provider_catalog_clients_uses_provider_default_catalog_limits() -> None:
+    clients = cli._build_provider_catalog_clients({})
+
+    openrouter_client = clients["openrouter"]
+    featherless_client = clients["featherless"]
+
+    assert isinstance(openrouter_client, OpenRouterCatalogClient)
+    assert isinstance(featherless_client, FeatherlessCatalogClient)
+    assert openrouter_client.max_response_bytes == DEFAULT_OPENROUTER_CATALOG_MAX_RESPONSE_BYTES
+    assert featherless_client.max_response_bytes == DEFAULT_FEATHERLESS_CATALOG_MAX_RESPONSE_BYTES
+
+
 def test_run_candidates_rag_parser_accepts_j1() -> None:
     parser = cli.build_parser()
 
@@ -286,6 +322,56 @@ def test_validate_provider_models_returns_nonzero_when_checked_model_is_missing(
 
     assert exit_code == 1
     assert '"missing": 1' in output
+
+
+def test_validate_provider_models_reports_jose_grok_under_openrouter_when_pending_enabled(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    from atividade_2 import repositories
+
+    monkeypatch.setattr(
+        repositories,
+        "JudgeRepository",
+        lambda connection: FakeAssignmentRepository(_default_candidate_model_assignments()),
+    )
+    monkeypatch.setattr(cli, "load_settings", lambda: SimpleNamespace(database_url="postgresql://example.invalid/app"))
+    monkeypatch.setattr(cli, "load_env", lambda: {})
+    monkeypatch.setattr(cli, "connect", lambda _database_url: SimpleNamespace(close=lambda: None))
+    monkeypatch.setattr(
+        cli,
+        "_build_provider_catalog_clients",
+        lambda _env: {
+            "openrouter": FakeProviderCatalogClient(
+                entries=(
+                    ProviderModelCatalogEntry(provider="openrouter", model_id="openai/gpt-5"),
+                    ProviderModelCatalogEntry(
+                        provider="openrouter",
+                        model_id="google/gemini-3.5-flash",
+                    ),
+                )
+            ),
+            "featherless": FakeProviderCatalogClient(entries=()),
+        },
+    )
+
+    exit_code = cli.main(
+        [
+            "validate-provider-models",
+            "--provider",
+            "openrouter",
+            "--include-pending-confirmation",
+            "--json",
+        ]
+    )
+
+    output = capsys.readouterr().out
+
+    assert exit_code == 0
+    assert '"total_assignments": 3' in output
+    assert '"id_modelo_av2": 15' in output
+    assert '"av3_provider": "openrouter"' in output
+    assert '"status": "skipped_missing_model_id"' in output
 
 
 def test_validate_provider_models_returns_two_when_provider_catalog_fails(

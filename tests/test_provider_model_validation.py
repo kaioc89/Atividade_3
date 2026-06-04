@@ -9,6 +9,8 @@ import pytest
 
 from atividade_2.contracts import CandidateModelAssignment
 from atividade_2.provider_catalogs import (
+    DEFAULT_FEATHERLESS_CATALOG_MAX_RESPONSE_BYTES,
+    DEFAULT_OPENROUTER_CATALOG_MAX_RESPONSE_BYTES,
     FakeProviderCatalogClient,
     FeatherlessCatalogClient,
     OpenRouterCatalogClient,
@@ -124,14 +126,17 @@ def test_missing_provider_model_ids_are_reported_as_missing() -> None:
     assert jose_gpt5.matched_model is None
 
 
-def test_unresolved_assignments_are_skipped() -> None:
-    report = _default_service().validate()
+def test_openrouter_assignments_with_missing_model_ids_are_skipped_without_substitution() -> None:
+    report = _default_service().validate(include_pending_confirmation=True)
 
     jose_grok = next(item for item in report.items if item.id_modelo_av2 == 15)
 
-    assert jose_grok.status == "skipped_unresolved"
+    assert jose_grok.av3_provider == "openrouter"
+    assert jose_grok.original_provider_model_id == "Grok 3"
+    assert jose_grok.status == "skipped_missing_model_id"
     assert jose_grok.av3_provider_model_id is None
     assert jose_grok.matched_model is None
+    assert "Grok 4" not in jose_grok.message
 
 
 def test_excluded_assignments_are_skipped_when_requested() -> None:
@@ -212,6 +217,21 @@ def test_jose_gemini_is_checked_when_pending_confirmation_is_enabled() -> None:
     assert jose_gemini.matched_model.model_id == "google/gemini-3.5-flash"
 
 
+def test_openrouter_provider_filter_includes_jose_grok_pending_assignment() -> None:
+    report = _default_service().validate(
+        providers=("openrouter",),
+        include_pending_confirmation=True,
+    )
+
+    statuses = {item.id_modelo_av2: item.status for item in report.items}
+
+    assert report.total_assignments == 3
+    assert set(statuses) == {13, 14, 15}
+    assert statuses[14] == "found"
+    assert statuses[13] == "found"
+    assert statuses[15] == "skipped_missing_model_id"
+
+
 def test_all_checked_featherless_ids_can_be_found_in_fake_catalog() -> None:
     report = _default_service().validate()
 
@@ -287,6 +307,58 @@ def test_featherless_catalog_client_accepts_top_level_list_shape() -> None:
         "google/gemma-3-12b-it",
     ]
     assert transport.calls[0][0] == "https://api.featherless.ai/v1/models"
+
+
+def test_openrouter_catalog_client_uses_provider_default_response_limit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    read_limits: list[int] = []
+
+    class FakeHttpResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, traceback) -> None:
+            return None
+
+        def getcode(self) -> int:
+            return 200
+
+        def read(self, limit: int) -> bytes:
+            read_limits.append(limit)
+            return b'{"data":[]}'
+
+    monkeypatch.setattr(urllib.request, "urlopen", lambda request, timeout=0: FakeHttpResponse())
+
+    OpenRouterCatalogClient().list_models()
+
+    assert read_limits == [DEFAULT_OPENROUTER_CATALOG_MAX_RESPONSE_BYTES + 1]
+
+
+def test_featherless_catalog_client_uses_provider_default_response_limit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    read_limits: list[int] = []
+
+    class FakeHttpResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, traceback) -> None:
+            return None
+
+        def getcode(self) -> int:
+            return 200
+
+        def read(self, limit: int) -> bytes:
+            read_limits.append(limit)
+            return b"[]"
+
+    monkeypatch.setattr(urllib.request, "urlopen", lambda request, timeout=0: FakeHttpResponse())
+
+    FeatherlessCatalogClient().list_models()
+
+    assert read_limits == [DEFAULT_FEATHERLESS_CATALOG_MAX_RESPONSE_BYTES + 1]
 
 
 def test_openrouter_catalog_client_raises_provider_catalog_error_on_invalid_json(

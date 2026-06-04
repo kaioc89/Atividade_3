@@ -12,6 +12,8 @@ from .provider_validation_contracts import ProviderModelCatalogEntry
 
 OPENROUTER_PROVIDER = "openrouter"
 FEATHERLESS_PROVIDER = "featherless"
+DEFAULT_OPENROUTER_CATALOG_MAX_RESPONSE_BYTES = 5_000_000
+DEFAULT_FEATHERLESS_CATALOG_MAX_RESPONSE_BYTES = 50_000_000
 
 
 class ProviderCatalogError(RuntimeError):
@@ -79,10 +81,11 @@ class OpenRouterCatalogClient:
     base_url: str = "https://openrouter.ai/api/v1"
     api_key: str | None = None
     timeout_seconds: int = 30
+    max_response_bytes: int = DEFAULT_OPENROUTER_CATALOG_MAX_RESPONSE_BYTES
     transport: CatalogHttpTransport | None = None
 
     def list_models(self) -> tuple[ProviderModelCatalogEntry, ...]:
-        transport = self.transport or UrllibCatalogHttpTransport()
+        transport = self.transport or UrllibCatalogHttpTransport(max_response_bytes=self.max_response_bytes)
         status_code, payload = transport.get(
             _resolve_catalog_url(self.base_url, "/models"),
             headers=_build_headers(self.api_key),
@@ -109,10 +112,11 @@ class FeatherlessCatalogClient:
     base_url: str = "https://api.featherless.ai/v1"
     api_key: str | None = None
     timeout_seconds: int = 30
+    max_response_bytes: int = DEFAULT_FEATHERLESS_CATALOG_MAX_RESPONSE_BYTES
     transport: CatalogHttpTransport | None = None
 
     def list_models(self) -> tuple[ProviderModelCatalogEntry, ...]:
-        transport = self.transport or UrllibCatalogHttpTransport()
+        transport = self.transport or UrllibCatalogHttpTransport(max_response_bytes=self.max_response_bytes)
         status_code, payload = transport.get(
             _resolve_catalog_url(self.base_url, "/models"),
             headers=_build_headers(self.api_key),

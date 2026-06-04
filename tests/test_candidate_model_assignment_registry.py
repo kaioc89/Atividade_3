@@ -343,9 +343,16 @@ def test_assignment_registry_query_helpers_filter_by_owner_dataset_question_prov
     assert {assignment.owner for assignment in j1_question_95} == {"Wagner"}
     assert len(j1_question_95) == 3
     assert out_of_range == ()
-    assert {assignment.id_modelo_av2 for assignment in openrouter_assignments} == {13, 14}
+    assert {assignment.id_modelo_av2 for assignment in openrouter_assignments} == {13, 14, 15}
     assert len(model_id_14) == 1
     assert model_id_14[0].owner == "José Bruno"
+    jose_grok = repository.find_candidate_model_assignments_for_model_id(15)[0]
+
+    assert jose_grok.owner == "José Bruno"
+    assert jose_grok.av3_provider == "openrouter"
+    assert jose_grok.av3_provider_model_id is None
+    assert jose_grok.validation_status == "needs_provider_model_id_resolution"
+    assert jose_grok.is_runnable() is False
 
 
 def test_assignment_registry_runnable_pending_and_excluded_filters_follow_required_rules() -> None:
@@ -367,7 +374,7 @@ def test_assignment_registry_runnable_pending_and_excluded_filters_follow_requir
     assert 13 not in {assignment.id_modelo_av2 for assignment in default_runnable}
     assert 13 in {assignment.id_modelo_av2 for assignment in pending_enabled}
     assert 15 not in {assignment.id_modelo_av2 for assignment in pending_enabled}
-    assert {assignment.id_modelo_av2 for assignment in excluded} == {8, 11, 12, 15}
+    assert {assignment.id_modelo_av2 for assignment in excluded} == {8, 11, 12}
     assert {assignment.id_modelo_av2 for assignment in pending} == {13}
     assert all(assignment.av3_provider_model_id for assignment in default_runnable)
     assert all(assignment.av3_provider not in {"excluded", "unresolved"} for assignment in default_runnable)

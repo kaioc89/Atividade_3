@@ -45,6 +45,7 @@ ValidationStatus = Literal[
     "needs_owner_confirmation",
     "needs_owner_confirmation_gemini_subtype",
     "needs_provider_resolution",
+    "needs_provider_model_id_resolution",
     "excluded_from_av3_run",
     "pending_team_confirmation",
 ]
@@ -80,6 +81,7 @@ VALIDATION_STATUS_VALUES: tuple[ValidationStatus, ...] = (
     "needs_owner_confirmation",
     "needs_owner_confirmation_gemini_subtype",
     "needs_provider_resolution",
+    "needs_provider_model_id_resolution",
     "excluded_from_av3_run",
     "pending_team_confirmation",
 )

@@ -12,7 +12,13 @@ from .judge_clients.remote_http import RemoteJudgeError
 from .parser import JudgeParseError
 from .config import load_env, load_settings
 from .db import connect
-from .provider_catalogs import FeatherlessCatalogClient, OpenRouterCatalogClient, ProviderCatalogClient
+from .provider_catalogs import (
+    DEFAULT_FEATHERLESS_CATALOG_MAX_RESPONSE_BYTES,
+    DEFAULT_OPENROUTER_CATALOG_MAX_RESPONSE_BYTES,
+    FeatherlessCatalogClient,
+    OpenRouterCatalogClient,
+    ProviderCatalogClient,
+)
 from .provider_model_validation import (
     SUPPORTED_PROVIDER_VALIDATION_PROVIDERS,
     format_provider_model_validation_report,
@@ -536,10 +542,20 @@ def _build_provider_catalog_clients(env_values: Mapping[str, str]) -> dict[str, 
         "openrouter": OpenRouterCatalogClient(
             base_url=env_values.get("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1"),
             api_key=_resolve_provider_api_key(env_values, explicit_key_name="OPENROUTER_API_KEY"),
+            max_response_bytes=_parse_catalog_max_response_bytes(
+                env_values,
+                key="OPENROUTER_CATALOG_MAX_RESPONSE_BYTES",
+                default=DEFAULT_OPENROUTER_CATALOG_MAX_RESPONSE_BYTES,
+            ),
         ),
         "featherless": FeatherlessCatalogClient(
             base_url=env_values.get("FEATHERLESS_BASE_URL", "https://api.featherless.ai/v1"),
             api_key=_resolve_provider_api_key(env_values, explicit_key_name="FEATHERLESS_API_KEY"),
+            max_response_bytes=_parse_catalog_max_response_bytes(
+                env_values,
+                key="FEATHERLESS_CATALOG_MAX_RESPONSE_BYTES",
+                default=DEFAULT_FEATHERLESS_CATALOG_MAX_RESPONSE_BYTES,
+            ),
         ),
     }
 
@@ -551,6 +567,24 @@ def _resolve_provider_api_key(
 ) -> str | None:
     explicit_value = (env_values.get(explicit_key_name) or "").strip()
     return explicit_value or None
+
+
+def _parse_catalog_max_response_bytes(
+    env_values: Mapping[str, str],
+    *,
+    key: str,
+    default: int,
+) -> int:
+    raw_value = (env_values.get(key) or "").strip()
+    if not raw_value:
+        return default
+    try:
+        parsed = int(raw_value)
+    except ValueError as error:
+        raise ConfigurationError(f"{key} must be an integer.") from error
+    if parsed < 1:
+        raise ConfigurationError(f"{key} must be >= 1.")
+    return parsed
 
 
 if __name__ == "__main__":
