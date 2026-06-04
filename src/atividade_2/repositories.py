@@ -27,6 +27,7 @@ from .contracts import (
     RagCurationItemSummary,
     RagEmbeddingGenerationSummary,
     RagEmbeddingModelConfigRecord,
+    RagRetrievalQuestion,
     RagBaseMaterializationSummary,
     RagVectorBaseSummary,
     RagVectorRunRecord,
@@ -1940,6 +1941,37 @@ class JudgeRepository:
             cursor.execute("SELECT nome_dataset FROM datasets WHERE nome_dataset = %s LIMIT 1;", (dataset_name,))
             row = cursor.fetchone()
         return str(row[0]) if row else None
+
+    def get_question_for_rag_retrieval(
+        self,
+        *,
+        question_id: int,
+        dataset: str,
+    ) -> RagRetrievalQuestion | None:
+        dataset_name = DATASET_ALIASES.get(dataset.upper(), dataset)
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT
+                    p.id_pergunta,
+                    d.nome_dataset,
+                    p.enunciado
+                FROM perguntas p
+                JOIN datasets d ON d.id_dataset = p.id_dataset
+                WHERE p.id_pergunta = %s
+                  AND d.nome_dataset = %s
+                LIMIT 1;
+                """,
+                (question_id, dataset_name),
+            )
+            row = cursor.fetchone()
+        if row is None:
+            return None
+        return RagRetrievalQuestion(
+            question_id=int(row[0]),
+            dataset=_dataset_label(str(row[1])),
+            question_text=str(row[2]),
+        )
 
     def list_question_sequence_map(self, *, dataset: str) -> dict[int, int]:
         dataset_name = DATASET_ALIASES.get(dataset.upper(), dataset)

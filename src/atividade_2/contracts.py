@@ -13,6 +13,13 @@ JudgeExecutionStrategy = Literal["sequential", "parallel", "adaptive"]
 AppEnvironment = Literal["dev", "test", "prod"]
 CandidateRunStatus = Literal["created", "running", "completed", "failed", "cancelled"]
 CandidateAnswerStatus = Literal["created", "running", "success", "failed", "skipped"]
+RagRetrievalStatus = Literal[
+    "success",
+    "question_not_found",
+    "vector_base_not_found",
+    "embedding_model_not_configured",
+    "no_chunks_found",
+]
 
 PROMPT_VERSION = "av2-judge-v3"
 RUBRIC_VERSION = "av2-legal-rubric-v2"
@@ -443,6 +450,52 @@ class CandidateAnswerContextChunkRecord:
     source_url: str | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
     created_at: str | None = None
+
+
+@dataclass(frozen=True)
+class RagRetrievalQuestion:
+    """Candidate-safe question payload used to retrieve AV3 RAG context."""
+
+    question_id: int
+    dataset: str
+    question_text: str
+
+
+@dataclass(frozen=True)
+class RetrievedRagChunk:
+    """One retrieved AV3 RAG chunk safe to expose to candidate prompting."""
+
+    rank: int
+    chunk_id: int
+    chunk_text: str
+    source_kind: str | None
+    document_id: int | None
+    document_key: str | None
+    lei: str | None
+    norma: str | None
+    url: str | None
+    urn: str | None
+    artigo: str | None
+    topico: str | None
+    relevancia: str | None
+    tipo: str | None
+    distance: float | None
+    similarity: float | None
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class RagRetrievalResult:
+    """Structured retrieval result for one AV3 question."""
+
+    question_id: int
+    dataset: str
+    retrieval_run_id: int | None
+    retrieval_name: str | None
+    embedding_model: str | None
+    top_k: int
+    status: RagRetrievalStatus
+    chunks: list[RetrievedRagChunk] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
