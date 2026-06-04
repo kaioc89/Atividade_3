@@ -11,6 +11,8 @@ from .contracts import (
     CandidateAnswerContextChunkRecord,
     CandidateAnswerContext,
     CandidateAnswerRecord,
+    CandidateModelAssignment,
+    CandidateModelAssignmentRange,
     CandidatePromptRecord,
     CandidateQuestionRecord,
     CandidateRunRecord,
@@ -196,6 +198,351 @@ def _default_candidate_prompt_config(dataset_code: str) -> dict[str, str]:
             "<sua resposta>"
         ),
     }
+
+
+def _candidate_assignment_ranges(
+    *ranges: tuple[str, int, int],
+) -> tuple[CandidateModelAssignmentRange, ...]:
+    return tuple(
+        CandidateModelAssignmentRange(
+            assignment_range_id=None,
+            assignment_id=None,
+            dataset_code=dataset_code,
+            question_sequence_start=question_sequence_start,
+            question_sequence_end=question_sequence_end,
+        )
+        for dataset_code, question_sequence_start, question_sequence_end in ranges
+    )
+
+
+def _default_candidate_model_assignments() -> tuple[CandidateModelAssignment, ...]:
+    diego_ranges = _candidate_assignment_ranges(("J1", 71, 82), ("J2", 739, 861))
+    kaio_ranges = _candidate_assignment_ranges(("J1", 83, 94), ("J2", 862, 984))
+    wagner_ranges = _candidate_assignment_ranges(("J1", 95, 106), ("J2", 985, 1107))
+    jose_bruno_ranges = _candidate_assignment_ranges(("J1", 119, 130), ("J2", 1231, 1353))
+    paulo_ranges = _candidate_assignment_ranges(("J1", 131, 140), ("J2", 1354, 1476))
+    return (
+        CandidateModelAssignment(
+            assignment_id=None,
+            id_modelo_av2=6,
+            owner="Diego",
+            original_provider_model_id="gemma2",
+            original_runtime="AV1 repository/local inference",
+            av3_provider="featherless",
+            av3_provider_model_id="google/gemma-2-2b-it",
+            hf_model_id="google/gemma-2-2b-it",
+            artifact_format="safetensors",
+            original_quantization="FP16",
+            av3_quantization="provider_default",
+            match_type="same_model_different_quantization",
+            validation_status="confirmed_from_av2_artifacts",
+            ranges=diego_ranges,
+        ),
+        CandidateModelAssignment(
+            assignment_id=None,
+            id_modelo_av2=9,
+            owner="Diego",
+            original_provider_model_id="llama323b",
+            original_runtime="AV1 repository/local inference",
+            av3_provider="featherless",
+            av3_provider_model_id="meta-llama/Llama-3.2-3B-Instruct",
+            hf_model_id="meta-llama/Llama-3.2-3B-Instruct",
+            artifact_format="safetensors",
+            original_quantization="FP16",
+            av3_quantization="provider_default",
+            match_type="same_model_different_quantization",
+            validation_status="confirmed_from_av2_artifacts",
+            ranges=diego_ranges,
+        ),
+        CandidateModelAssignment(
+            assignment_id=None,
+            id_modelo_av2=7,
+            owner="Diego",
+            original_provider_model_id="llama321b",
+            original_runtime="AV1 repository/local inference",
+            av3_provider="featherless",
+            av3_provider_model_id="meta-llama/Llama-3.2-1B-Instruct",
+            hf_model_id="meta-llama/Llama-3.2-1B-Instruct",
+            artifact_format="safetensors",
+            original_quantization="FP16",
+            av3_quantization="provider_default",
+            match_type="same_model_different_quantization",
+            validation_status="confirmed_from_av2_artifacts",
+            ranges=diego_ranges,
+        ),
+        CandidateModelAssignment(
+            assignment_id=None,
+            id_modelo_av2=10,
+            owner="Kaio",
+            original_provider_model_id="gemma-2-2b-it",
+            original_runtime="AV1 repository/local inference",
+            av3_provider="featherless",
+            av3_provider_model_id="google/gemma-2-2b-it",
+            hf_model_id="google/gemma-2-2b-it",
+            artifact_format="safetensors",
+            original_quantization="FP32",
+            av3_quantization="provider_default",
+            match_type="same_model_different_quantization",
+            validation_status="confirmed_from_av2_artifacts",
+            ranges=kaio_ranges,
+        ),
+        CandidateModelAssignment(
+            assignment_id=None,
+            id_modelo_av2=5,
+            owner="Kaio",
+            original_provider_model_id="Llama-3.2-3B-Instruct",
+            original_runtime="AV1 repository/local inference",
+            av3_provider="featherless",
+            av3_provider_model_id="meta-llama/Llama-3.2-3B-Instruct",
+            hf_model_id="meta-llama/Llama-3.2-3B-Instruct",
+            artifact_format="safetensors",
+            original_quantization="FP32",
+            av3_quantization="provider_default",
+            match_type="same_model_different_quantization",
+            validation_status="confirmed_from_av2_artifacts",
+            ranges=kaio_ranges,
+        ),
+        CandidateModelAssignment(
+            assignment_id=None,
+            id_modelo_av2=3,
+            owner="Kaio",
+            original_provider_model_id="Qwen2.5-3B-Instruct",
+            original_runtime="AV1 repository/local inference",
+            av3_provider="featherless",
+            av3_provider_model_id="Qwen/Qwen2.5-3B-Instruct",
+            hf_model_id="Qwen/Qwen2.5-3B-Instruct",
+            artifact_format="safetensors",
+            original_quantization="FP32",
+            av3_quantization="provider_default",
+            match_type="same_model_different_quantization",
+            validation_status="confirmed_from_av2_artifacts",
+            ranges=kaio_ranges,
+        ),
+        CandidateModelAssignment(
+            assignment_id=None,
+            id_modelo_av2=8,
+            owner="Wagner",
+            original_provider_model_id="jurema-7b",
+            original_runtime="local GGUF/Ollama-style execution",
+            av3_provider="excluded",
+            av3_provider_model_id=None,
+            hf_model_id="mauroneto/Jurema-7B-Q4_K_M-GGUF",
+            artifact_format="excluded",
+            original_quantization="Q4_K_M",
+            av3_quantization="excluded",
+            match_type="not_reproduced_provider_unavailable",
+            validation_status="excluded_from_av3_run",
+            ranges=wagner_ranges,
+        ),
+        CandidateModelAssignment(
+            assignment_id=None,
+            id_modelo_av2=4,
+            owner="Wagner",
+            original_provider_model_id="qwen2.5-7b-instruct",
+            original_runtime="local GGUF execution",
+            av3_provider="featherless",
+            av3_provider_model_id="Qwen/Qwen2.5-7B-Instruct",
+            hf_model_id="Qwen/Qwen2.5-7B-Instruct",
+            artifact_format="hosted",
+            original_quantization="GGUF-Q4_K_M",
+            av3_quantization="provider_default",
+            match_type="same_model_different_quantization",
+            validation_status="confirmed_from_av2_artifacts",
+            ranges=wagner_ranges,
+        ),
+        CandidateModelAssignment(
+            assignment_id=None,
+            id_modelo_av2=12,
+            owner="Wagner",
+            original_provider_model_id="curio-edu-7b",
+            original_runtime="local GGUF/Ollama-style execution",
+            av3_provider="excluded",
+            av3_provider_model_id=None,
+            hf_model_id="mradermacher/Curio-edu-7b-GGUF",
+            artifact_format="excluded",
+            original_quantization="Q4_K_M",
+            av3_quantization="excluded",
+            match_type="not_reproduced_provider_unavailable",
+            validation_status="excluded_from_av3_run",
+            ranges=wagner_ranges,
+        ),
+        CandidateModelAssignment(
+            assignment_id=None,
+            id_modelo_av2=16,
+            owner="Victor",
+            original_provider_model_id="qwen2-1.5b",
+            original_runtime="local GGUF execution",
+            av3_provider="featherless",
+            av3_provider_model_id="Qwen/Qwen2.5-1.5B-Instruct",
+            hf_model_id="Qwen/Qwen2.5-1.5B-Instruct",
+            artifact_format="hosted",
+            original_quantization="GGUF-Q4",
+            av3_quantization="provider_default",
+            match_type="same_model_different_quantization",
+            validation_status="confirmed_from_av2_artifacts",
+            ranges=_candidate_assignment_ranges(("J1", 107, 118)),
+        ),
+        CandidateModelAssignment(
+            assignment_id=None,
+            id_modelo_av2=19,
+            owner="Victor",
+            original_provider_model_id="qwen2.5-1.5b",
+            original_runtime="local GGUF execution",
+            av3_provider="featherless",
+            av3_provider_model_id="Qwen/Qwen2.5-1.5B-Instruct",
+            hf_model_id="Qwen/Qwen2.5-1.5B-Instruct",
+            artifact_format="hosted",
+            original_quantization="GGUF-Q4_K_M",
+            av3_quantization="provider_default",
+            match_type="same_model_different_quantization",
+            validation_status="confirmed_from_av2_artifacts",
+            ranges=_candidate_assignment_ranges(("J2", 1108, 1230)),
+        ),
+        CandidateModelAssignment(
+            assignment_id=None,
+            id_modelo_av2=17,
+            owner="Victor",
+            original_provider_model_id="phi-3-mini",
+            original_runtime="local GGUF execution",
+            av3_provider="featherless",
+            av3_provider_model_id="microsoft/Phi-3-mini-4k-instruct",
+            hf_model_id="microsoft/Phi-3-mini-4k-instruct",
+            artifact_format="hosted",
+            original_quantization="GGUF-Q4",
+            av3_quantization="provider_default",
+            match_type="same_model_different_quantization",
+            validation_status="confirmed_from_av2_artifacts",
+            ranges=_candidate_assignment_ranges(("J1", 107, 118), ("J2", 1108, 1230)),
+        ),
+        CandidateModelAssignment(
+            assignment_id=None,
+            id_modelo_av2=18,
+            owner="Victor",
+            original_provider_model_id="tinyllama-1.1b",
+            original_runtime="local GGUF execution",
+            av3_provider="featherless",
+            av3_provider_model_id="TinyLlama/TinyLlama-1.1B-Chat-v1.0",
+            hf_model_id="TinyLlama/TinyLlama-1.1B-Chat-v1.0",
+            artifact_format="hosted",
+            original_quantization="GGUF-Q4",
+            av3_quantization="provider_default",
+            match_type="same_model_different_quantization",
+            validation_status="confirmed_from_av2_artifacts",
+            ranges=_candidate_assignment_ranges(("J1", 107, 118)),
+        ),
+        CandidateModelAssignment(
+            assignment_id=None,
+            id_modelo_av2=20,
+            owner="Victor",
+            original_provider_model_id="tinyllama-1.1b",
+            original_runtime="local GGUF execution",
+            av3_provider="featherless",
+            av3_provider_model_id="TinyLlama/TinyLlama-1.1B-Chat-v1.0",
+            hf_model_id="TinyLlama/TinyLlama-1.1B-Chat-v1.0",
+            artifact_format="hosted",
+            original_quantization="GGUF-Q4_K_M",
+            av3_quantization="provider_default",
+            match_type="same_model_different_quantization",
+            validation_status="confirmed_from_av2_artifacts",
+            ranges=_candidate_assignment_ranges(("J2", 1108, 1230)),
+        ),
+        CandidateModelAssignment(
+            assignment_id=None,
+            id_modelo_av2=14,
+            owner="José Bruno",
+            original_provider_model_id="GPT-5",
+            original_runtime="ChatGPT UI",
+            av3_provider="openrouter",
+            av3_provider_model_id="openai/gpt-5",
+            hf_model_id=None,
+            artifact_format="api",
+            original_quantization=None,
+            av3_quantization="proprietary_api",
+            match_type="same_model_api_reproduction",
+            validation_status="confirmed_by_owner",
+            ranges=jose_bruno_ranges,
+        ),
+        CandidateModelAssignment(
+            assignment_id=None,
+            id_modelo_av2=13,
+            owner="José Bruno",
+            original_provider_model_id="Gemini 3.5",
+            original_runtime="Gemini UI",
+            av3_provider="openrouter",
+            av3_provider_model_id="google/gemini-3.5-flash",
+            hf_model_id=None,
+            artifact_format="api",
+            original_quantization=None,
+            av3_quantization="proprietary_api",
+            match_type="same_family_version_needs_subtype_confirmation",
+            validation_status="needs_owner_confirmation_gemini_subtype",
+            ranges=jose_bruno_ranges,
+        ),
+        CandidateModelAssignment(
+            assignment_id=None,
+            id_modelo_av2=15,
+            owner="José Bruno",
+            original_provider_model_id="Grok 3",
+            original_runtime="Grok UI",
+            av3_provider="unresolved",
+            av3_provider_model_id=None,
+            hf_model_id=None,
+            artifact_format="api",
+            original_quantization=None,
+            av3_quantization="proprietary_api",
+            match_type="not_reproduced_provider_unavailable",
+            validation_status="needs_provider_resolution",
+            ranges=jose_bruno_ranges,
+        ),
+        CandidateModelAssignment(
+            assignment_id=None,
+            id_modelo_av2=11,
+            owner="Paulo",
+            original_provider_model_id="Jurema:7b",
+            original_runtime="Ollama/local GGUF",
+            av3_provider="excluded",
+            av3_provider_model_id=None,
+            hf_model_id="mauroneto/Jurema-7B-Q4_K_M-GGUF",
+            artifact_format="excluded",
+            original_quantization="INT4/Ollama",
+            av3_quantization="excluded",
+            match_type="not_reproduced_provider_unavailable",
+            validation_status="excluded_from_av3_run",
+            ranges=paulo_ranges,
+        ),
+        CandidateModelAssignment(
+            assignment_id=None,
+            id_modelo_av2=1,
+            owner="Paulo",
+            original_provider_model_id="Gemma3:12b",
+            original_runtime="Ollama/local quantized",
+            av3_provider="featherless",
+            av3_provider_model_id="google/gemma-3-12b-it",
+            hf_model_id="google/gemma-3-12b-it",
+            artifact_format="hosted",
+            original_quantization="INT4/Ollama",
+            av3_quantization="provider_default",
+            match_type="same_model_different_quantization",
+            validation_status="confirmed_from_av2_artifacts",
+            ranges=paulo_ranges,
+        ),
+        CandidateModelAssignment(
+            assignment_id=None,
+            id_modelo_av2=2,
+            owner="Paulo",
+            original_provider_model_id="Llama3.1:8b",
+            original_runtime="Ollama/local quantized",
+            av3_provider="featherless",
+            av3_provider_model_id="meta-llama/Llama-3.1-8B-Instruct",
+            hf_model_id="meta-llama/Llama-3.1-8B-Instruct",
+            artifact_format="hosted",
+            original_quantization="INT4/Ollama",
+            av3_quantization="provider_default",
+            match_type="same_model_different_quantization",
+            validation_status="confirmed_from_av2_artifacts",
+            ranges=paulo_ranges,
+        ),
+    )
 
 
 class JudgeRepositoryProtocol(Protocol):
@@ -879,6 +1226,47 @@ class JudgeRepository:
         )
         cursor.execute(
             """
+            CREATE TABLE IF NOT EXISTS av3.candidate_model_assignments (
+                id_assignment SERIAL PRIMARY KEY,
+                id_modelo_av2 INTEGER NOT NULL
+                    REFERENCES public.modelos(id_modelo),
+                owner VARCHAR(120) NOT NULL,
+                original_provider_model_id VARCHAR(160) NOT NULL,
+                original_runtime VARCHAR(120) NOT NULL,
+                av3_provider VARCHAR(80) NOT NULL,
+                av3_provider_model_id VARCHAR(200),
+                hf_model_id VARCHAR(200),
+                artifact_format VARCHAR(40) NOT NULL,
+                original_quantization VARCHAR(80),
+                av3_quantization VARCHAR(80),
+                match_type VARCHAR(80) NOT NULL,
+                validation_status VARCHAR(80) NOT NULL,
+                notes TEXT,
+                active BOOLEAN NOT NULL DEFAULT TRUE,
+                created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+                updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+                UNIQUE (id_modelo_av2, owner, original_provider_model_id)
+            );
+            """
+        )
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS av3.candidate_model_assignment_ranges (
+                id_assignment_range SERIAL PRIMARY KEY,
+                id_assignment INTEGER NOT NULL
+                    REFERENCES av3.candidate_model_assignments(id_assignment) ON DELETE CASCADE,
+                dataset_code VARCHAR(10) NOT NULL
+                    CHECK (dataset_code IN ('J1', 'J2')),
+                question_sequence_start INTEGER NOT NULL
+                    CHECK (question_sequence_start >= 1),
+                question_sequence_end INTEGER NOT NULL
+                    CHECK (question_sequence_end >= question_sequence_start),
+                UNIQUE (id_assignment, dataset_code, question_sequence_start, question_sequence_end)
+            );
+            """
+        )
+        cursor.execute(
+            """
             CREATE TABLE IF NOT EXISTS av3.candidate_runs (
                 id_candidate_run SERIAL PRIMARY KEY,
                 dataset_code VARCHAR(10) NOT NULL,
@@ -948,6 +1336,25 @@ class JudgeRepository:
             CREATE UNIQUE INDEX IF NOT EXISTS idx_prompt_candidatos_active_dataset
             ON av3.prompt_candidatos (dataset_code)
             WHERE ativo;
+            """
+        )
+        cursor.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_candidate_model_assignments_owner_model
+            ON av3.candidate_model_assignments (owner, id_modelo_av2);
+            """
+        )
+        cursor.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_candidate_model_assignments_provider_status
+            ON av3.candidate_model_assignments (av3_provider, validation_status)
+            WHERE active;
+            """
+        )
+        cursor.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_candidate_model_assignment_ranges_dataset_sequence
+            ON av3.candidate_model_assignment_ranges (dataset_code, question_sequence_start, question_sequence_end);
             """
         )
         cursor.execute(
@@ -2993,6 +3400,278 @@ class JudgeRepository:
                 row = cursor.fetchone()
         return _row_to_candidate_prompt(row)
 
+    def _select_candidate_model_assignments(
+        self,
+        cursor: Any,
+        *,
+        assignment_id: int | None = None,
+    ) -> tuple[CandidateModelAssignment, ...]:
+        params: list[Any] = []
+        where_clause = ""
+        if assignment_id is not None:
+            where_clause = "WHERE a.id_assignment = %s"
+            params.append(int(assignment_id))
+        cursor.execute(
+            f"""
+            SELECT
+                a.id_assignment,
+                a.id_modelo_av2,
+                m.nome_modelo,
+                a.owner,
+                a.original_provider_model_id,
+                a.original_runtime,
+                a.av3_provider,
+                a.av3_provider_model_id,
+                a.hf_model_id,
+                a.artifact_format,
+                a.original_quantization,
+                a.av3_quantization,
+                a.match_type,
+                a.validation_status,
+                a.notes,
+                a.active,
+                a.created_at,
+                a.updated_at,
+                r.id_assignment_range,
+                r.dataset_code,
+                r.question_sequence_start,
+                r.question_sequence_end
+            FROM av3.candidate_model_assignments a
+            JOIN public.modelos m ON m.id_modelo = a.id_modelo_av2
+            LEFT JOIN av3.candidate_model_assignment_ranges r
+                ON r.id_assignment = a.id_assignment
+            {where_clause}
+            ORDER BY
+                a.owner,
+                a.id_modelo_av2,
+                r.dataset_code,
+                r.question_sequence_start,
+                r.question_sequence_end,
+                r.id_assignment_range;
+            """,
+            params,
+        )
+        return _rows_to_candidate_model_assignments(cursor.fetchall())
+
+    def _upsert_candidate_model_assignment(
+        self,
+        cursor: Any,
+        *,
+        assignment: CandidateModelAssignment,
+    ) -> CandidateModelAssignment:
+        cursor.execute(
+            """
+            SELECT id_modelo, nome_modelo
+            FROM public.modelos
+            WHERE id_modelo = %s
+            LIMIT 1;
+            """,
+            (assignment.id_modelo_av2,),
+        )
+        model_row = cursor.fetchone()
+        if model_row is None:
+            raise ValueError(
+                f"Missing public.modelos row for id_modelo_av2={assignment.id_modelo_av2}."
+            )
+        cursor.execute(
+            """
+            INSERT INTO av3.candidate_model_assignments
+                (
+                    id_modelo_av2,
+                    owner,
+                    original_provider_model_id,
+                    original_runtime,
+                    av3_provider,
+                    av3_provider_model_id,
+                    hf_model_id,
+                    artifact_format,
+                    original_quantization,
+                    av3_quantization,
+                    match_type,
+                    validation_status,
+                    notes,
+                    active
+                )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (id_modelo_av2, owner, original_provider_model_id) DO UPDATE
+            SET
+                original_runtime = EXCLUDED.original_runtime,
+                av3_provider = EXCLUDED.av3_provider,
+                av3_provider_model_id = EXCLUDED.av3_provider_model_id,
+                hf_model_id = EXCLUDED.hf_model_id,
+                artifact_format = EXCLUDED.artifact_format,
+                original_quantization = EXCLUDED.original_quantization,
+                av3_quantization = EXCLUDED.av3_quantization,
+                match_type = EXCLUDED.match_type,
+                validation_status = EXCLUDED.validation_status,
+                notes = EXCLUDED.notes,
+                active = EXCLUDED.active,
+                updated_at = NOW()
+            RETURNING id_assignment;
+            """,
+            (
+                assignment.id_modelo_av2,
+                assignment.owner,
+                assignment.original_provider_model_id,
+                assignment.original_runtime,
+                assignment.av3_provider,
+                assignment.av3_provider_model_id,
+                assignment.hf_model_id,
+                assignment.artifact_format,
+                assignment.original_quantization,
+                assignment.av3_quantization,
+                assignment.match_type,
+                assignment.validation_status,
+                assignment.notes,
+                assignment.active,
+            ),
+        )
+        stored_assignment_id = int(cursor.fetchone()[0])
+        cursor.execute(
+            """
+            DELETE FROM av3.candidate_model_assignment_ranges
+            WHERE id_assignment = %s;
+            """,
+            (stored_assignment_id,),
+        )
+        for assignment_range in assignment.ranges:
+            cursor.execute(
+                """
+                INSERT INTO av3.candidate_model_assignment_ranges
+                    (
+                        id_assignment,
+                        dataset_code,
+                        question_sequence_start,
+                        question_sequence_end
+                    )
+                VALUES (%s, %s, %s, %s)
+                RETURNING id_assignment_range;
+                """,
+                (
+                    stored_assignment_id,
+                    assignment_range.dataset_code,
+                    assignment_range.question_sequence_start,
+                    assignment_range.question_sequence_end,
+                ),
+            )
+            cursor.fetchone()
+        stored = self._select_candidate_model_assignments(cursor, assignment_id=stored_assignment_id)
+        if not stored:
+            raise ValueError(f"Assignment upsert failed for id_assignment={stored_assignment_id}.")
+        return stored[0]
+
+    def upsert_candidate_model_assignment(
+        self,
+        *,
+        assignment: CandidateModelAssignment,
+    ) -> CandidateModelAssignment:
+        """Insert or update one candidate-model assignment and replace its ranges."""
+        with self.connection:
+            with self.connection.cursor() as cursor:
+                return self._upsert_candidate_model_assignment(cursor, assignment=assignment)
+
+    def upsert_default_candidate_model_assignments(self) -> tuple[CandidateModelAssignment, ...]:
+        """Insert or update the full AV3 candidate-model registry seed."""
+        default_assignments = _default_candidate_model_assignments()
+        with self.connection:
+            with self.connection.cursor() as cursor:
+                for assignment in default_assignments:
+                    self._upsert_candidate_model_assignment(cursor, assignment=assignment)
+        return self.list_candidate_model_assignments()
+
+    def list_candidate_model_assignments(self) -> tuple[CandidateModelAssignment, ...]:
+        """Return every candidate-model assignment in the centralized AV3 registry."""
+        with self.connection.cursor() as cursor:
+            return self._select_candidate_model_assignments(cursor)
+
+    def find_candidate_model_assignments_for_owner(
+        self,
+        owner: str,
+    ) -> tuple[CandidateModelAssignment, ...]:
+        owner_key = _normalize_assignment_owner_key(owner)
+        return tuple(
+            assignment
+            for assignment in self.list_candidate_model_assignments()
+            if _normalize_assignment_owner_key(assignment.owner) == owner_key
+        )
+
+    def find_candidate_model_assignments_for_dataset(
+        self,
+        dataset: str,
+    ) -> tuple[CandidateModelAssignment, ...]:
+        dataset_code = _normalize_assignment_dataset_code(dataset)
+        return tuple(
+            assignment
+            for assignment in self.list_candidate_model_assignments()
+            if any(assignment_range.dataset_code == dataset_code for assignment_range in assignment.ranges)
+        )
+
+    def find_candidate_model_assignments_for_question(
+        self,
+        dataset: str,
+        question_sequence: int,
+    ) -> tuple[CandidateModelAssignment, ...]:
+        dataset_code = _normalize_assignment_dataset_code(dataset)
+        return tuple(
+            assignment
+            for assignment in self.list_candidate_model_assignments()
+            if assignment.covers(dataset=dataset_code, question_sequence=int(question_sequence))
+        )
+
+    def find_candidate_model_assignments_for_model_id(
+        self,
+        id_modelo_av2: int,
+    ) -> tuple[CandidateModelAssignment, ...]:
+        return tuple(
+            assignment
+            for assignment in self.list_candidate_model_assignments()
+            if assignment.id_modelo_av2 == int(id_modelo_av2)
+        )
+
+    def find_candidate_model_assignments_for_provider(
+        self,
+        provider: str,
+    ) -> tuple[CandidateModelAssignment, ...]:
+        normalized_provider = provider.strip().casefold()
+        return tuple(
+            assignment
+            for assignment in self.list_candidate_model_assignments()
+            if assignment.av3_provider.casefold() == normalized_provider
+        )
+
+    def list_pending_candidate_model_assignments(self) -> tuple[CandidateModelAssignment, ...]:
+        return tuple(
+            assignment
+            for assignment in self.list_candidate_model_assignments()
+            if assignment.validation_status
+            in {
+                "needs_owner_confirmation",
+                "needs_owner_confirmation_gemini_subtype",
+                "pending_team_confirmation",
+            }
+        )
+
+    def list_excluded_candidate_model_assignments(self) -> tuple[CandidateModelAssignment, ...]:
+        return tuple(
+            assignment
+            for assignment in self.list_candidate_model_assignments()
+            if (
+                assignment.av3_provider in {"excluded", "unresolved"}
+                or assignment.validation_status in {"needs_provider_resolution", "excluded_from_av3_run"}
+            )
+        )
+
+    def list_runnable_candidate_model_assignments(
+        self,
+        *,
+        include_pending_confirmation: bool = False,
+    ) -> tuple[CandidateModelAssignment, ...]:
+        return tuple(
+            assignment
+            for assignment in self.list_candidate_model_assignments()
+            if assignment.is_runnable(include_pending_confirmation=include_pending_confirmation)
+        )
+
     def update_candidate_run_status(
         self,
         *,
@@ -4406,6 +5085,18 @@ def _resolve_prompt_dataset_name(value: str) -> str:
     return DATASET_ALIASES.get(normalized.upper(), normalized)
 
 
+def _normalize_assignment_dataset_code(value: str) -> str:
+    dataset_code = value.strip().upper()
+    if dataset_code not in {"J1", "J2"}:
+        raise ValueError(f"Unsupported dataset code: {value!r}")
+    return dataset_code
+
+
+def _normalize_assignment_owner_key(value: str) -> str:
+    normalized = unicodedata.normalize("NFKD", value.strip().casefold())
+    return "".join(character for character in normalized if not unicodedata.combining(character))
+
+
 def _parse_jsonb(value: Any) -> Any:
     if value is None:
         return None
@@ -4659,6 +5350,55 @@ def _row_to_candidate_prompt(row: Any) -> CandidatePromptRecord:
         active=bool(row[7]),
         created_by=row[8],
         created_at=row[9].isoformat() if row[9] is not None else None,
+    )
+
+
+def _rows_to_candidate_model_assignments(rows: list[Any]) -> tuple[CandidateModelAssignment, ...]:
+    assignments_by_id: dict[int, dict[str, Any]] = {}
+    assignment_order: list[int] = []
+    assignment_ranges: dict[int, list[CandidateModelAssignmentRange]] = {}
+    for row in rows:
+        assignment_id = int(row[0])
+        if assignment_id not in assignments_by_id:
+            assignments_by_id[assignment_id] = {
+                "assignment_id": assignment_id,
+                "id_modelo_av2": int(row[1]),
+                "av2_model_name": row[2],
+                "owner": row[3],
+                "original_provider_model_id": row[4],
+                "original_runtime": row[5],
+                "av3_provider": row[6],
+                "av3_provider_model_id": row[7],
+                "hf_model_id": row[8],
+                "artifact_format": row[9],
+                "original_quantization": row[10],
+                "av3_quantization": row[11],
+                "match_type": row[12],
+                "validation_status": row[13],
+                "notes": row[14],
+                "active": bool(row[15]),
+                "created_at": row[16].isoformat() if row[16] is not None else None,
+                "updated_at": row[17].isoformat() if row[17] is not None else None,
+            }
+            assignment_ranges[assignment_id] = []
+            assignment_order.append(assignment_id)
+        if row[18] is None:
+            continue
+        assignment_ranges[assignment_id].append(
+            CandidateModelAssignmentRange(
+                assignment_range_id=int(row[18]),
+                assignment_id=assignment_id,
+                dataset_code=row[19],
+                question_sequence_start=int(row[20]),
+                question_sequence_end=int(row[21]),
+            )
+        )
+    return tuple(
+        CandidateModelAssignment(
+            **assignments_by_id[assignment_id],
+            ranges=tuple(assignment_ranges[assignment_id]),
+        )
+        for assignment_id in assignment_order
     )
 
 

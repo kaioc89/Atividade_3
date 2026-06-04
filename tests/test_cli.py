@@ -2,10 +2,17 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+from types import SimpleNamespace
+
 import pytest
 
 from atividade_2 import cli
 from atividade_2.config import load_settings, resolve_runtime_config
+from atividade_2.contracts import CandidateModelAssignment
+from atividade_2.provider_catalogs import FakeProviderCatalogClient, ProviderCatalogError
+from atividade_2.provider_validation_contracts import ProviderModelCatalogEntry
+from atividade_2.repositories import _default_candidate_model_assignments
 from atividade_2.run_candidates_rag_service import CandidateRunSummary, RunCandidatesRagResult
 
 
@@ -42,6 +49,14 @@ class FakeRunCandidatesRagService:
         return self.result
 
 
+class FakeAssignmentRepository:
+    def __init__(self, assignments: tuple[CandidateModelAssignment, ...]) -> None:
+        self._assignments = assignments
+
+    def list_candidate_model_assignments(self) -> tuple[CandidateModelAssignment, ...]:
+        return self._assignments
+
+
 def test_cli_help_exits_successfully() -> None:
     """The CLI help command should be available through argparse."""
     with pytest.raises(SystemExit) as exit_error:
@@ -68,6 +83,13 @@ def test_run_candidates_rag_help_exits_successfully() -> None:
 def test_save_default_prompt_help_exits_successfully() -> None:
     with pytest.raises(SystemExit) as exit_error:
         cli.main(["save-default-prompt", "--help"])
+
+    assert exit_error.value.code == 0
+
+
+def test_validate_provider_models_help_exits_successfully() -> None:
+    with pytest.raises(SystemExit) as exit_error:
+        cli.main(["validate-provider-models", "--help"])
 
     assert exit_error.value.code == 0
 
@@ -108,6 +130,33 @@ def test_build_parser_exposes_run_candidates_rag() -> None:
 
     assert args.command == "run-candidates-rag"
     assert args.handler is cli.run_candidates_rag_command
+
+
+def test_build_parser_exposes_validate_provider_models() -> None:
+    parser = cli.build_parser()
+
+    args = parser.parse_args(["validate-provider-models", "--provider", "openrouter", "--json"])
+
+    assert args.command == "validate-provider-models"
+    assert args.handler is cli.validate_provider_models_command
+    assert args.provider == ["openrouter"]
+    assert args.json is True
+
+
+def test_validate_provider_models_parser_supports_repeated_provider() -> None:
+    parser = cli.build_parser()
+
+    args = parser.parse_args(
+        [
+            "validate-provider-models",
+            "--provider",
+            "openrouter",
+            "--provider",
+            "featherless",
+        ]
+    )
+
+    assert args.provider == ["openrouter", "featherless"]
 
 
 def test_run_candidates_rag_parser_accepts_j1() -> None:
@@ -188,6 +237,86 @@ def test_run_candidates_rag_parser_validates_positive_batch_size() -> None:
         )
 
     assert exit_error.value.code == 2
+
+
+def test_validate_provider_models_returns_nonzero_when_checked_model_is_missing(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    from atividade_2 import repositories
+
+    assignments = tuple(
+        replace(assignment, av3_provider_model_id="openai/gpt-5-missing")
+        if assignment.id_modelo_av2 == 14
+        else assignment
+        for assignment in _default_candidate_model_assignments()
+    )
+    monkeypatch.setattr(repositories, "JudgeRepository", lambda connection: FakeAssignmentRepository(assignments))
+    monkeypatch.setattr(cli, "load_settings", lambda: SimpleNamespace(database_url="postgresql://example.invalid/app"))
+    monkeypatch.setattr(cli, "load_env", lambda: {})
+    monkeypatch.setattr(cli, "connect", lambda _database_url: SimpleNamespace(close=lambda: None))
+    monkeypatch.setattr(
+        cli,
+        "_build_provider_catalog_clients",
+        lambda _env: {
+            "openrouter": FakeProviderCatalogClient(
+                entries=(
+                    ProviderModelCatalogEntry(provider="openrouter", model_id="openai/gpt-4.1"),
+                    ProviderModelCatalogEntry(
+                        provider="openrouter",
+                        model_id="google/gemini-3.5-flash",
+                    ),
+                )
+            ),
+            "featherless": FakeProviderCatalogClient(entries=()),
+        },
+    )
+
+    exit_code = cli.main(
+        [
+            "validate-provider-models",
+            "--provider",
+            "openrouter",
+            "--include-pending-confirmation",
+            "--json",
+        ]
+    )
+
+    output = capsys.readouterr().out
+
+    assert exit_code == 1
+    assert '"missing": 1' in output
+
+
+def test_validate_provider_models_returns_two_when_provider_catalog_fails(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    from atividade_2 import repositories
+
+    monkeypatch.setattr(
+        repositories,
+        "JudgeRepository",
+        lambda connection: FakeAssignmentRepository(_default_candidate_model_assignments()),
+    )
+    monkeypatch.setattr(cli, "load_settings", lambda: SimpleNamespace(database_url="postgresql://example.invalid/app"))
+    monkeypatch.setattr(cli, "load_env", lambda: {})
+    monkeypatch.setattr(cli, "connect", lambda _database_url: SimpleNamespace(close=lambda: None))
+    monkeypatch.setattr(
+        cli,
+        "_build_provider_catalog_clients",
+        lambda _env: {
+            "openrouter": FakeProviderCatalogClient(error=ProviderCatalogError("OpenRouter down")),
+            "featherless": FakeProviderCatalogClient(entries=()),
+        },
+    )
+
+    exit_code = cli.main(["validate-provider-models", "--provider", "openrouter", "--json"])
+
+    output = capsys.readouterr().out
+
+    assert exit_code == 2
+    assert '"provider_errors": 1' in output
 
 
 def test_run_judge_dry_run_prints_single_summary(capsys: pytest.CaptureFixture[str], tmp_path) -> None:

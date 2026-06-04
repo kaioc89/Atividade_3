@@ -355,6 +355,42 @@ CREATE TABLE av3.prompt_candidatos (
     UNIQUE (dataset_code, versao)
 );
 
+CREATE TABLE av3.candidate_model_assignments (
+    id_assignment SERIAL PRIMARY KEY,
+    id_modelo_av2 INTEGER NOT NULL
+        REFERENCES public.modelos(id_modelo),
+    owner VARCHAR(120) NOT NULL,
+    original_provider_model_id VARCHAR(160) NOT NULL,
+    original_runtime VARCHAR(120) NOT NULL,
+    av3_provider VARCHAR(80) NOT NULL,
+    av3_provider_model_id VARCHAR(200),
+    hf_model_id VARCHAR(200),
+    artifact_format VARCHAR(40) NOT NULL,
+    original_quantization VARCHAR(80),
+    av3_quantization VARCHAR(80),
+    match_type VARCHAR(80) NOT NULL,
+    validation_status VARCHAR(80) NOT NULL,
+    notes TEXT,
+    active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (id_modelo_av2, owner, original_provider_model_id)
+);
+
+CREATE TABLE av3.candidate_model_assignment_ranges (
+    id_assignment_range SERIAL PRIMARY KEY,
+    id_assignment INTEGER NOT NULL
+        REFERENCES av3.candidate_model_assignments(id_assignment)
+        ON DELETE CASCADE,
+    dataset_code VARCHAR(10) NOT NULL
+        CHECK (dataset_code IN ('J1', 'J2')),
+    question_sequence_start INTEGER NOT NULL
+        CHECK (question_sequence_start >= 1),
+    question_sequence_end INTEGER NOT NULL
+        CHECK (question_sequence_end >= question_sequence_start),
+    UNIQUE (id_assignment, dataset_code, question_sequence_start, question_sequence_end)
+);
+
 CREATE TABLE av3.candidate_runs (
     id_candidate_run SERIAL PRIMARY KEY,
     dataset_code VARCHAR(10) NOT NULL,
@@ -500,6 +536,19 @@ ON av3.retrieval_runs(id_import_run, dataset_code, created_at DESC);
 CREATE UNIQUE INDEX idx_prompt_candidatos_active_dataset
 ON av3.prompt_candidatos(dataset_code)
 WHERE ativo;
+
+-- Candidate model assignments by owner and AV2 model id.
+CREATE INDEX idx_candidate_model_assignments_owner_model
+ON av3.candidate_model_assignments(owner, id_modelo_av2);
+
+-- Candidate model assignments by provider and validation status.
+CREATE INDEX idx_candidate_model_assignments_provider_status
+ON av3.candidate_model_assignments(av3_provider, validation_status)
+WHERE active;
+
+-- Candidate model assignment ranges by dataset and inclusive sequence bounds.
+CREATE INDEX idx_candidate_model_assignment_ranges_dataset_sequence
+ON av3.candidate_model_assignment_ranges(dataset_code, question_sequence_start, question_sequence_end);
 
 -- Candidate runs by dataset and recency.
 CREATE INDEX idx_candidate_runs_dataset_created
