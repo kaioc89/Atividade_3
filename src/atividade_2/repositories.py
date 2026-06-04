@@ -4310,8 +4310,31 @@ def _split_source_content(*, content: str, max_chunk_chars: int, overlap_chars: 
             chunks.append(chunk)
         if end >= len(normalized):
             break
-        start = max(end - overlap, start + 1)
+        start = _align_overlap_start_to_word(
+            normalized,
+            candidate_start=max(end - overlap, start + 1),
+            minimum_start=start + 1,
+        )
     return chunks
+
+
+def _align_overlap_start_to_word(
+    content: str,
+    *,
+    candidate_start: int,
+    minimum_start: int,
+    max_backtrack_chars: int = 80,
+) -> int:
+    if candidate_start <= 0 or candidate_start >= len(content):
+        return candidate_start
+    if content[candidate_start].isspace() or content[candidate_start - 1].isspace():
+        return candidate_start
+
+    search_start = max(minimum_start, candidate_start - max_backtrack_chars)
+    boundary = content.rfind(" ", search_start, candidate_start)
+    if boundary < minimum_start:
+        return candidate_start
+    return boundary + 1
 
 
 def _build_rag_chunk_text(
