@@ -14,6 +14,7 @@ from atividade_2.contracts import (
 from atividade_2.rag_embedding_client import EmbeddingBatchResult, EmbeddingProviderError, request_openai_compatible_embeddings
 from atividade_2.rag_embeddings import RagEmbeddingGenerationService
 from atividade_2.rag_source_fetch import SourceUrlContent, SourceUrlFailure, SourceUrlFetchReport
+from atividade_2.repositories import _split_source_content
 
 
 @dataclass(frozen=True)
@@ -359,6 +360,16 @@ def test_generate_embeddings_persists_incrementally_by_batch(monkeypatch) -> Non
     assert repository.calls.count("upsert_batch:J1:2") == 1
     assert len(repository.saved_embedding_batches) == 1
     assert [len(batch) for batch in repository.saved_embedding_batches] == [2]
+
+
+def test_split_source_content_aligns_overlap_to_word_start() -> None:
+    content = " ".join(f"palavra{index:03d}" for index in range(90))
+
+    chunks = _split_source_content(content=content, max_chunk_chars=500, overlap_chars=100)
+
+    assert len(chunks) > 1
+    assert chunks[1].startswith("palavra035 ")
+    assert not chunks[1].startswith("5 palavra")
 
 
 def test_embedding_client_retries_broken_pipe(monkeypatch) -> None:
