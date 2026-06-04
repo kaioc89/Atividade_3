@@ -24,7 +24,7 @@ set -a
 source ".env"
 set +a
 
-POSTGRES_IMAGE="${POSTGRES_IMAGE:-pgvector/pgvector:pg18}"
+POSTGRES_IMAGE="${POSTGRES_IMAGE:-pgvector/pgvector:0.8.2-pg18}"
 POSTGRES_CONTAINER_NAME="${POSTGRES_CONTAINER_NAME:-topicos-av2-postgres}"
 POSTGRES_USER="${POSTGRES_USER:-postgres}"
 POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-postgres}"

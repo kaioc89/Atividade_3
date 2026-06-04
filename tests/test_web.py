@@ -1263,6 +1263,36 @@ class FakeRagVectorQueryService:
             ],
         }
 
+    def search(self, *, dataset: str, query_text: str, top_k: int = 5) -> dict:
+        self.search_calls.append((dataset, query_text, top_k))
+        return {
+            "dataset": dataset,
+            "query": query_text,
+            "top_k": top_k,
+            "latency_ms": 654,
+            "returned_dimensions": 1536,
+            "results": [
+                {
+                    "rank": 1,
+                    "chunk_id": 11,
+                    "chunk_kind": "source_url_content",
+                    "artigo": None,
+                    "topico": None,
+                    "relevancia": None,
+                    "tipo": None,
+                    "chunk_text": "Texto recuperado da fonte oficial da Lei de Improbidade Administrativa...",
+                    "document_id": 1,
+                    "document_key": "J1:lei:8429-1992",
+                    "lei": "Lei 8.429/1992",
+                    "norma": "Lei de Improbidade Administrativa",
+                    "url": "https://www.planalto.gov.br",
+                    "urn": "urn:lex:br:federal:lei:1992-06-02;8429",
+                    "distance": 0.11,
+                    "similarity": 0.89,
+                }
+            ],
+        }
+
 
 class FakeRagVectorRunService:
     def __init__(self) -> None:
@@ -1355,37 +1385,6 @@ class FakeRagVectorRunService:
             ],
         }
 
-    def search(self, *, dataset: str, query_text: str, top_k: int = 5) -> dict:
-        self.search_calls.append((dataset, query_text, top_k))
-        return {
-            "dataset": dataset,
-            "query": query_text,
-            "top_k": top_k,
-            "latency_ms": 654,
-            "returned_dimensions": 1536,
-            "results": [
-                {
-                    "rank": 1,
-                    "chunk_id": 11,
-                    "chunk_kind": "source_url_content",
-                    "artigo": None,
-                    "topico": None,
-                    "relevancia": None,
-                    "tipo": None,
-                    "chunk_text": "Texto recuperado da fonte oficial da Lei de Improbidade Administrativa...",
-                    "document_id": 1,
-                    "document_key": "J1:lei:8429-1992",
-                    "lei": "Lei 8.429/1992",
-                    "norma": "Lei de Improbidade Administrativa",
-                    "url": "https://www.planalto.gov.br",
-                    "urn": "urn:lex:br:federal:lei:1992-06-02;8429",
-                    "distance": 0.11,
-                    "similarity": 0.89,
-                }
-            ],
-        }
-
-
 def test_web_index_contains_progress_element() -> None:
     client = TestClient(create_app(FakeRunJudgeService()))
 
@@ -1404,7 +1403,7 @@ def test_web_index_contains_progress_element() -> None:
     assert 'id="database-restore-file" type="file" accept=".sql,application/sql,text/plain" hidden>' in response.text
     assert 'id="database-dump" type="button" role="menuitem">Exportar Dump do Banco</button>' in response.text
     assert 'id="database-clean-dialog" class="confirm-dialog"' in response.text
-    assert "gera um backup automaticamente antes de limpar o schema public" in response.text
+    assert "gera um backup automaticamente antes de limpar os schemas public e av3" in response.text
     assert 'id="database-clean-confirm" class="danger-button" type="button">Continuar</button>' in response.text
     assert "database-clean-backup-confirm" not in response.text
     assert "Fazer backup e limpar" not in response.text
@@ -1807,7 +1806,7 @@ def test_rag_curation_endpoints_return_options_import_and_activate() -> None:
         json={"dataset": "J1", "batch_size": 16},
     )
     assert generated.status_code == 200
-    assert generated.json()["summary"]["generated_embeddings"] == 234
+    assert generated.json()["summary"]["generated_embeddings"] == 192
     assert generation_service.calls[-1] == ("J1", 16, None, None)
 
     preview = client.get("/api/rag-vector/preview", params={"dataset": "J1", "limit": 4})
@@ -1881,7 +1880,7 @@ def test_rag_embedding_generation_job_reports_progress_and_range() -> None:
     assert data is not None
     assert data.status == "completed"
     assert data.result is not None
-    assert data.result["summary"]["generated_embeddings"] == 234
+    assert data.result["summary"]["generated_embeddings"] == 192
     assert any(event["message"] == "fake progress" for event in data.events)
     assert generation_service.calls[-1] == ("J1", 8, 10, 20)
 

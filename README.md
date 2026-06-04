@@ -56,7 +56,7 @@ make db-up
 O comando:
 
 - copia `.env.example` para `.env` se necessário;
-- baixa `pgvector/pgvector:pg18` se a imagem não existir localmente;
+- baixa `pgvector/pgvector:0.8.2-pg18` se a imagem não existir localmente;
 - sobe o container `topicos-av2-postgres`;
 - valida conexão com `app_dev`;
 - cria `app_test` se ainda não existir.
@@ -83,7 +83,7 @@ make db-migrate-or-create
 
 Esse comando usa `backup_atividade_2_reset.sql`. Se o banco já tiver tabelas públicas, o restore é ignorado para evitar sobrescrever dados locais.
 
-Para forçar o restore sobre um banco já populado, limpando o schema `public` antes de restaurar:
+Para forçar o restore sobre um banco já populado, limpando os schemas `public` e `av3` antes de restaurar:
 
 ```bash
 make db-migrate-or-create FORCE=1
@@ -119,13 +119,25 @@ Gere um backup SQL auditável do banco local:
 make db-backup
 ```
 
+O dump é gerado como SQL puro com:
+
+```text
+pg_dump --no-owner --no-privileges
+```
+
 O arquivo gerado segue o formato:
 
 ```text
 outputs/backup/atividade_2_YYYYmmdd_HHMMSS.sql
 ```
 
-Cada execução grava um arquivo timestampado em `outputs/backup/`. Quando `APP_ENV=prod`, a execução também atualiza `backup_atividade_2.sql` na raiz com a última versão do backup. Em `dev` e `test`, a raiz não é atualizada. Os arquivos timestampados mantêm o histórico local e são ignorados pelo Git; o arquivo da raiz é único, compartilhável e permanece versionado. O baseline de reset fica separado em `backup_atividade_2_reset.sql` e não é sobrescrito por esse fluxo.
+Cada execução grava um arquivo timestampado em `outputs/backup/`. Para também publicar a última versão compartilhável na raiz, execute:
+
+```bash
+APP_ENV=prod make db-backup
+```
+
+Nesse comando, o `APP_ENV=prod` passado na linha de comando prevalece sobre o valor de `.env` apenas para essa execução. Em `dev` e `test`, a raiz não é atualizada. Os arquivos timestampados mantêm o histórico local e são ignorados pelo Git; o arquivo da raiz é único, compartilhável e permanece versionado. O baseline de reset fica separado em `backup_atividade_2_reset.sql` e não é sobrescrito por esse fluxo.
 
 ## Running the LLM-as-a-Judge pipeline with a remote model
 
@@ -248,7 +260,7 @@ O modo `single` usa `REMOTE_JUDGE_MODEL`, o mesmo modelo do juiz 1. Se só a URL
 
 | Variável | Padrão recomendado | Quando mudar |
 |---|---|---|
-| `APP_ENV` | `dev` | Use `prod` para publicar a última versão do backup em `backup_atividade_2.sql`; `dev` e `test` salvam apenas em `outputs/backup/`. |
+| `APP_ENV` | `dev` | Use `APP_ENV=prod make db-backup` para publicar a última versão do backup em `backup_atividade_2.sql`; `dev` e `test` salvam apenas em `outputs/backup/`. |
 | `BACKUP_ROOT_FILE` | `backup_atividade_2.sql` | Caminho do arquivo único de última versão. No container Web, é sobrescrito para `/workspace/backup_atividade_2.sql` para escrever na raiz do repositório host. |
 | `DATABASE_URL` | `postgresql://postgres:postgres@localhost:5432/app_dev` | Se seu banco usa outra porta, usuário ou database. |
 | `JUDGE_PROVIDER` | `remote_http` | Não mude por enquanto. |
@@ -476,6 +488,12 @@ Depois de uma execução relevante:
 
 ```bash
 make db-backup
+```
+
+Para atualizar também o artefato versionado da raiz:
+
+```bash
+APP_ENV=prod make db-backup
 ```
 
 Para restaurar do zero, use o fluxo recomendado do projeto:

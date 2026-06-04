@@ -2769,7 +2769,7 @@ _INDEX_HTML = """
     </div>
     <div class="dialog-body">
       <p>Resetar o banco para o estado inicial?</p>
-      <p>Ao continuar, o sistema gera um backup automaticamente antes de limpar o schema public, restaurar backup_atividade_2_reset.sql e validar o restore.</p>
+      <p>Ao continuar, o sistema gera um backup automaticamente antes de limpar os schemas public e av3, restaurar backup_atividade_2_reset.sql e validar o restore.</p>
     </div>
     <div class="confirm-actions">
       <button id="database-clean-cancel" class="secondary" type="button">Cancelar</button>

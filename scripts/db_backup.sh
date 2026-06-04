@@ -9,6 +9,9 @@ if [ ! -f ".env" ]; then
   exit 1
 fi
 
+app_env_override="${APP_ENV-}"
+backup_root_file_override="${BACKUP_ROOT_FILE-}"
+
 set -a
 # shellcheck disable=SC1091
 source ".env"
@@ -18,18 +21,22 @@ POSTGRES_CONTAINER_NAME="${POSTGRES_CONTAINER_NAME:-topicos-av2-postgres}"
 POSTGRES_USER="${POSTGRES_USER:-postgres}"
 POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-postgres}"
 POSTGRES_DB="${POSTGRES_DB:-app_dev}"
-APP_ENV="${APP_ENV:-dev}"
+APP_ENV="${app_env_override:-${APP_ENV:-dev}}"
 timestamp="$(date +%Y%m%d_%H%M%S)"
 backup_dir="outputs/backup"
 backup_file="${backup_dir}/atividade_2_${timestamp}.sql"
-root_backup_file="backup_atividade_2.sql"
+root_backup_file="${backup_root_file_override:-${BACKUP_ROOT_FILE:-backup_atividade_2.sql}}"
 
 mkdir -p "$backup_dir"
 
 docker exec \
   -e PGPASSWORD="$POSTGRES_PASSWORD" \
   "$POSTGRES_CONTAINER_NAME" \
-  pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" > "$backup_file"
+  pg_dump \
+    -U "$POSTGRES_USER" \
+    -d "$POSTGRES_DB" \
+    --no-owner \
+    --no-privileges > "$backup_file"
 
 echo "Backup written to $backup_file"
 if [ "$APP_ENV" = "prod" ]; then

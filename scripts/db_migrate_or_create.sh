@@ -64,7 +64,7 @@ if [ "$FORCE_RESTORE" = "1" ]; then
     -e PGPASSWORD="$POSTGRES_PASSWORD" \
     "$POSTGRES_CONTAINER_NAME" \
     psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" \
-      -c "DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public;"
+      -c "DROP SCHEMA IF EXISTS av3 CASCADE; DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public;"
 fi
 
 docker exec -i \

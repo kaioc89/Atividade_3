@@ -11,6 +11,8 @@ JudgeRole = Literal["single", "primary", "arbiter"]
 StoredJudgeRole = Literal["principal", "controle", "arbitro"]
 JudgeExecutionStrategy = Literal["sequential", "parallel", "adaptive"]
 AppEnvironment = Literal["dev", "test", "prod"]
+CandidateRunStatus = Literal["created", "running", "completed", "failed", "cancelled"]
+CandidateAnswerStatus = Literal["created", "running", "success", "failed", "skipped"]
 
 PROMPT_VERSION = "av2-judge-v3"
 RUBRIC_VERSION = "av2-legal-rubric-v2"
@@ -370,6 +372,77 @@ class RagEmbeddingGenerationSummary:
     total_chunks: int
     latency_ms: int
     created_at: str | None
+
+
+@dataclass(frozen=True)
+class CandidatePromptRecord:
+    """Persisted AV3 candidate prompt configuration."""
+
+    prompt_id: int | None
+    dataset: str
+    version: int
+    persona: str
+    context: str
+    rag_instruction: str
+    output: str
+    active: bool = False
+    created_by: str = "system"
+    created_at: str | None = None
+
+
+@dataclass(frozen=True)
+class CandidateRunRecord:
+    """Persisted AV3 candidate generation run metadata."""
+
+    candidate_run_id: int | None
+    dataset: str
+    retrieval_run_id: int
+    prompt_id: int
+    model_name: str
+    provider: str
+    batch_size: int
+    run_status: CandidateRunStatus = "created"
+    temperature: float | None = None
+    max_tokens: int | None = None
+    top_p: float | None = None
+    started_at: str | None = None
+    finished_at: str | None = None
+    created_by: str = "system"
+    metadata: dict[str, Any] = field(default_factory=dict)
+    created_at: str | None = None
+
+
+@dataclass(frozen=True)
+class CandidateAnswerRecord:
+    """Persisted AV3 candidate answer for one question inside a run."""
+
+    candidate_answer_id: int | None
+    candidate_run_id: int
+    question_id: int
+    model_name: str
+    rendered_prompt: str
+    status: CandidateAnswerStatus = "created"
+    answer_text: str | None = None
+    final_choice: str | None = None
+    error_message: str | None = None
+    latency_ms: int | None = None
+    raw_response: dict[str, Any] | None = None
+    created_at: str | None = None
+
+
+@dataclass(frozen=True)
+class CandidateAnswerContextChunkRecord:
+    """Persisted snapshot of one retrieved chunk used for a candidate answer."""
+
+    answer_context_chunk_id: int | None
+    candidate_answer_id: int
+    chunk_id: int
+    rank: int
+    chunk_text_snapshot: str
+    similarity_score: float | None = None
+    source_url: str | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
+    created_at: str | None = None
 
 
 @dataclass(frozen=True)
