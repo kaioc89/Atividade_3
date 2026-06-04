@@ -12,6 +12,8 @@ Create a plan when the task:
 
 - changes database schema;
 - changes import or persistence behavior;
+- changes retrieval or RAG context-selection behavior;
+- changes candidate execution behavior;
 - changes judge scoring semantics;
 - touches multiple files or directories;
 - affects reproducibility;
@@ -30,7 +32,7 @@ Classify work before implementation:
 |---|---|
 | `[MINOR]` | Small localized change, usually 1 file or mechanical update |
 | `[MODERATE]` | Multiple related files or behavior changes with limited blast radius |
-| `[MAJOR]` | Schema, architecture, pipeline, or reproducibility-impacting change |
+| `[MAJOR]` | Schema, architecture, pipeline, model execution, retrieval, or reproducibility-impacting change |
 
 ## Required planning sections
 
@@ -49,7 +51,7 @@ For non-trivial work, produce:
 
 ## Data flow expectations
 
-When changing data ingestion, persistence, evaluation, or analysis, map:
+When changing data ingestion, persistence, retrieval, evaluation, or analysis, map:
 
 - input source;
 - input shape;
@@ -59,6 +61,27 @@ When changing data ingestion, persistence, evaluation, or analysis, map:
 - database write path;
 - generated artifacts;
 - failure modes.
+
+## AV3 data flow expectations
+
+When changing AV3 candidate-RAG behavior, map the relevant subset of this flow:
+
+```text
+question id
+  -> question text
+  -> active retrieval run
+  -> embedding model
+  -> query embedding
+  -> top-k retrieved chunks
+  -> candidate-safe context
+  -> rendered candidate prompt
+  -> candidate model answer
+  -> context snapshot persistence
+  -> post-RAG judge evaluation
+  -> Sem_RAG vs Com_RAG analytics
+```
+
+Explicitly state which steps are in scope and which are deferred.
 
 ## Implementation slices
 
@@ -75,6 +98,21 @@ Example sequence:
 
 Each slice should be independently reviewable when possible.
 
+## AV3 candidate-RAG slice guidance
+
+Prefer this sequence for AV3 candidate-RAG work:
+
+1. Schema and contracts for candidate prompts, runs, answers, and context snapshots.
+2. Retrieval service for one question by `id_pergunta`.
+3. Snapshot persistence for retrieved chunks.
+4. Candidate prompt rendering.
+5. Candidate runner service/CLI.
+6. Web UI controls for centralized execution.
+7. Judge adaptation for Com_RAG answers.
+8. Analytics comparing Sem_RAG and Com_RAG.
+
+Do not combine candidate execution, judge adaptation, analytics, and UI in the same PR unless explicitly requested.
+
 ## Approval checkpoints
 
 Ask for explicit approval before implementation when:
@@ -85,6 +123,7 @@ Ask for explicit approval before implementation when:
 - task changes scoring semantics;
 - task changes dataset interpretation;
 - task introduces new external service behavior;
+- task changes candidate-facing retrieval context semantics;
 - narrower implementation options are not viable.
 
 For low-risk localized changes, proceed with explicit assumptions.
@@ -120,6 +159,8 @@ git diff --stat
 git diff -- AGENTS.md PRIMING.md PLANS.md .agents
 ```
 
+For AV3 candidate-RAG work, use focused tests first. Run broader tests only after the narrow tests pass.
+
 ## Risk categories
 
 Track risks using these categories:
@@ -134,7 +175,13 @@ Track risks using these categories:
 - model/provider nondeterminism;
 - slow or flaky tests;
 - overfitted rubric;
-- context pollution.
+- context pollution;
+- retrieval drift;
+- retrieval noise;
+- stale embeddings;
+- candidate access to answer material;
+- missing context snapshots;
+- Sem_RAG/Com_RAG comparison mismatch.
 
 ## Plan output format
 

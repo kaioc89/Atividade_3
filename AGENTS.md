@@ -72,6 +72,7 @@ Use these task-specific workflows:
 |---|---|
 | Python project setup/review | `.agents/skills/python-project-bootstrap/SKILL.md` |
 | AV2 judge pipeline | `.agents/skills/av2-judge-pipeline/SKILL.md` |
+| AV3 candidate RAG, retrieval, Com_RAG answers, or RAG snapshots | `.agents/skills/av3-candidate-rag/SKILL.md` |
 | Database import and validation | `.agents/skills/database-import-validation/SKILL.md` |
 | LLM judge rubric design | `.agents/skills/llm-judge-rubric-design/SKILL.md` |
 | SQL analysis and Spearman correlation | `.agents/skills/sql-analysis-and-spearman/SKILL.md` |
@@ -90,7 +91,8 @@ Read `PRIMING.md` when the task depends on:
 - dataset meaning;
 - database/pipeline invariants;
 - existing architectural decisions;
-- AV2/J1/J2/LLM-as-a-Judge context.
+- AV2/J1/J2/LLM-as-a-Judge context;
+- AV3/RAG/Com_RAG/Sem_RAG comparison context.
 
 Do not load `PRIMING.md` for generic formatting, small mechanical edits, or unrelated tooling tasks.
 

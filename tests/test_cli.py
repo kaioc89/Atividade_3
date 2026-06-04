@@ -6,6 +6,40 @@ import pytest
 
 from atividade_2 import cli
 from atividade_2.config import load_settings, resolve_runtime_config
+from atividade_2.run_candidates_rag_service import CandidateRunSummary, RunCandidatesRagResult
+
+
+class FakeRunCandidatesRagService:
+    def __init__(
+        self,
+        *,
+        result: RunCandidatesRagResult | None = None,
+        error: Exception | None = None,
+    ) -> None:
+        self.result = result or RunCandidatesRagResult(
+            dry_run=True,
+            audit_log="logs/candidate-rag-test.log",
+            execution_summary=(
+                "Dataset: J1\n"
+                "Candidate model: openai/gpt-5.4\n"
+                "Provider: remote_http\n"
+                "Batch size: 2\n"
+                "Question id: -\n"
+                "Question range: -"
+            ),
+            batch_size=2,
+            dataset="J1",
+            model_name="openai/gpt-5.4",
+            provider="remote_http",
+        )
+        self.error = error
+        self.requests = []
+
+    def run(self, request):
+        self.requests.append(request)
+        if self.error is not None:
+            raise self.error
+        return self.result
 
 
 def test_cli_help_exits_successfully() -> None:
@@ -20,6 +54,13 @@ def test_run_judge_help_exits_successfully() -> None:
     """The judge command should expose runtime options."""
     with pytest.raises(SystemExit) as exit_error:
         cli.main(["run-judge", "--help"])
+
+    assert exit_error.value.code == 0
+
+
+def test_run_candidates_rag_help_exits_successfully() -> None:
+    with pytest.raises(SystemExit) as exit_error:
+        cli.main(["run-candidates-rag", "--help"])
 
     assert exit_error.value.code == 0
 
@@ -46,6 +87,107 @@ def test_run_judge_help_exposes_batch_size(capsys: pytest.CaptureFixture[str]) -
     assert exit_error.value.code == 0
     assert "--batch-size" in output
     assert "--preflight-report" in output
+
+
+def test_build_parser_exposes_run_candidates_rag() -> None:
+    parser = cli.build_parser()
+
+    args = parser.parse_args(
+        [
+            "run-candidates-rag",
+            "--dataset",
+            "J1",
+            "--candidate-model",
+            "openai/gpt-5.4",
+            "--provider",
+            "remote_http",
+            "--batch-size",
+            "2",
+        ]
+    )
+
+    assert args.command == "run-candidates-rag"
+    assert args.handler is cli.run_candidates_rag_command
+
+
+def test_run_candidates_rag_parser_accepts_j1() -> None:
+    parser = cli.build_parser()
+
+    args = parser.parse_args(
+        [
+            "run-candidates-rag",
+            "--dataset",
+            "J1",
+            "--candidate-model",
+            "openai/gpt-5.4",
+            "--provider",
+            "remote_http",
+            "--batch-size",
+            "2",
+        ]
+    )
+
+    assert args.dataset == "J1"
+
+
+def test_run_candidates_rag_parser_accepts_j2() -> None:
+    parser = cli.build_parser()
+
+    args = parser.parse_args(
+        [
+            "run-candidates-rag",
+            "--dataset",
+            "J2",
+            "--candidate-model",
+            "openai/gpt-5.4",
+            "--provider",
+            "remote_http",
+            "--batch-size",
+            "2",
+        ]
+    )
+
+    assert args.dataset == "J2"
+
+
+def test_run_candidates_rag_parser_requires_candidate_model() -> None:
+    parser = cli.build_parser()
+
+    with pytest.raises(SystemExit) as exit_error:
+        parser.parse_args(
+            [
+                "run-candidates-rag",
+                "--dataset",
+                "J1",
+                "--provider",
+                "remote_http",
+                "--batch-size",
+                "2",
+            ]
+        )
+
+    assert exit_error.value.code == 2
+
+
+def test_run_candidates_rag_parser_validates_positive_batch_size() -> None:
+    parser = cli.build_parser()
+
+    with pytest.raises(SystemExit) as exit_error:
+        parser.parse_args(
+            [
+                "run-candidates-rag",
+                "--dataset",
+                "J1",
+                "--candidate-model",
+                "openai/gpt-5.4",
+                "--provider",
+                "remote_http",
+                "--batch-size",
+                "0",
+            ]
+        )
+
+    assert exit_error.value.code == 2
 
 
 def test_run_judge_dry_run_prints_single_summary(capsys: pytest.CaptureFixture[str], tmp_path) -> None:
@@ -82,6 +224,168 @@ def test_run_judge_dry_run_prints_single_summary(capsys: pytest.CaptureFixture[s
     assert "START Loading configuration" in audit_text
     assert "execution_summary" in audit_text
     assert "dry_run_finished" in audit_text
+
+
+def test_run_candidates_rag_dry_run_calls_service_with_dry_run_true(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    service = FakeRunCandidatesRagService()
+    monkeypatch.setattr(cli, "RunCandidatesRagService", lambda: service)
+
+    exit_code = cli.main(
+        [
+            "run-candidates-rag",
+            "--dataset",
+            "J1",
+            "--candidate-model",
+            "openai/gpt-5.4",
+            "--provider",
+            "remote_http",
+            "--batch-size",
+            "2",
+            "--dry-run",
+        ]
+    )
+
+    output = capsys.readouterr().out
+    assert exit_code == 0
+    assert service.requests[0].dry_run is True
+    assert "Dataset: J1" in output
+    assert "Batch size: 2" in output
+
+
+def test_run_candidates_rag_passes_audit_log_and_question_range(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    service = FakeRunCandidatesRagService()
+    audit_path = tmp_path / "candidate-audit.log"
+    monkeypatch.setattr(cli, "RunCandidatesRagService", lambda: service)
+
+    exit_code = cli.main(
+        [
+            "run-candidates-rag",
+            "--dataset",
+            "J2",
+            "--candidate-model",
+            "candidate-j2",
+            "--provider",
+            "remote_http",
+            "--batch-size",
+            "3",
+            "--audit-log",
+            str(audit_path),
+            "--question-id",
+            "202",
+            "--question-sequence-start",
+            "10",
+            "--question-sequence-end",
+            "20",
+            "--prompt-id",
+            "7",
+            "--retrieval-run-id",
+            "21",
+            "--no-skip-existing",
+            "--no-audit-animation",
+        ]
+    )
+
+    request = service.requests[0]
+    assert exit_code == 0
+    assert request.audit_log == str(audit_path)
+    assert request.question_id == 202
+    assert request.question_sequence_start == 10
+    assert request.question_sequence_end == 20
+    assert request.prompt_id == 7
+    assert request.retrieval_run_id == 21
+    assert request.skip_existing_successful is False
+    assert request.no_audit_animation is True
+
+
+def test_run_candidates_rag_command_prints_summary(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    service = FakeRunCandidatesRagService(
+        result=RunCandidatesRagResult(
+            dry_run=False,
+            audit_log="logs/candidate-rag-real.log",
+            execution_summary=(
+                "Dataset: J2\n"
+                "Candidate model: candidate-j2\n"
+                "Provider: remote_http\n"
+                "Batch size: 3\n"
+                "Question id: 202\n"
+                "Question range: 10-20"
+            ),
+            batch_size=3,
+            dataset="J2",
+            model_name="candidate-j2",
+            provider="remote_http",
+            candidate_run_id=501,
+            retrieval_run_id=21,
+            prompt_id=7,
+            summary=CandidateRunSummary(
+                selected_questions=3,
+                processed_questions=2,
+                successful_answers=1,
+                failed_answers=1,
+                skipped_questions=1,
+            ),
+        )
+    )
+    monkeypatch.setattr(cli, "RunCandidatesRagService", lambda: service)
+
+    exit_code = cli.main(
+        [
+            "run-candidates-rag",
+            "--dataset",
+            "J2",
+            "--candidate-model",
+            "candidate-j2",
+            "--provider",
+            "remote_http",
+            "--batch-size",
+            "3",
+        ]
+    )
+
+    output = capsys.readouterr().out
+    assert exit_code == 0
+    assert "Execution result:" in output
+    assert "Candidate run id: 501" in output
+    assert "Retrieval run id: 21" in output
+    assert "Prompt id: 7" in output
+    assert "Selected questions: 3" in output
+    assert "Processed questions: 2" in output
+    assert "Successful answers: 1" in output
+    assert "Failed answers: 1" in output
+    assert "Skipped questions: 1" in output
+
+
+def test_run_candidates_rag_returns_exit_code_2_on_validation_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = FakeRunCandidatesRagService(error=ValueError("invalid candidate configuration"))
+    monkeypatch.setattr(cli, "RunCandidatesRagService", lambda: service)
+
+    with pytest.raises(SystemExit) as exit_error:
+        cli.main(
+            [
+                "run-candidates-rag",
+                "--dataset",
+                "J1",
+                "--candidate-model",
+                "openai/gpt-5.4",
+                "--provider",
+                "remote_http",
+                "--batch-size",
+                "2",
+            ]
+        )
+
+    assert exit_error.value.code == 2
 
 
 def test_execution_summary_includes_endpoint_hosts_without_api_keys() -> None:
