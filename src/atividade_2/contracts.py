@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
@@ -10,6 +11,7 @@ JudgeProvider = Literal["remote_http"]
 JudgeRole = Literal["single", "primary", "arbiter"]
 StoredJudgeRole = Literal["principal", "controle", "arbitro"]
 JudgeExecutionStrategy = Literal["sequential", "parallel", "adaptive"]
+CandidateExecutionStrategy = Literal["sequential", "parallel", "adaptive"]
 AppEnvironment = Literal["dev", "test", "prod"]
 CandidateRunStatus = Literal["created", "running", "completed", "failed", "cancelled"]
 CandidateAnswerStatus = Literal["created", "running", "success", "failed", "skipped"]
@@ -143,6 +145,14 @@ class JudgeSettings:
     remote_candidate_context_safety_margin_tokens: int
     remote_candidate_context_window_tokens: int | None
     remote_candidate_retry_on_context_window: bool
+    candidate_execution_strategy: CandidateExecutionStrategy
+    candidate_parallel_max_workers: int
+    candidate_adaptive_initial_concurrency: int
+    candidate_adaptive_max_concurrency: int
+    candidate_adaptive_success_threshold: int
+    candidate_adaptive_max_retries: int
+    candidate_adaptive_base_backoff_seconds: float
+    candidate_adaptive_max_backoff_seconds: float
     judge_save_raw_response: bool
     judge_execution_strategy: JudgeExecutionStrategy
     judge_batch_size: int
@@ -182,6 +192,25 @@ class CandidateAnswerContext:
     candidate_answer: str
     candidate_model: str
     metadata: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class CandidateProgressEvent:
+    """Secret-safe progress event emitted by the AV3 candidate runner."""
+
+    event_type: str
+    candidate_run_id: int | None
+    dataset: str
+    model_name: str
+    provider: str
+    question_id: int | None = None
+    question_sequence: int | None = None
+    status: str | None = None
+    message: str | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+
+CandidateProgressCallback = Callable[[CandidateProgressEvent], None]
 
 
 @dataclass(frozen=True)
@@ -486,6 +515,26 @@ class CandidateQuestionRecord:
     question_sequence: int
     question_text: str
     alternatives: Any = None
+
+
+@dataclass(frozen=True)
+class CandidateQuestionSelectionSummary:
+    """Audit summary for one candidate question selection policy."""
+
+    policy: str
+    skip_existing_successful: bool
+    selected: int
+    failed_retry_candidates: int | None = None
+    unanswered_candidates: int | None = None
+    successful_excluded: int | None = None
+
+
+@dataclass(frozen=True)
+class CandidateQuestionSelectionResult:
+    """Selected candidate-safe questions plus policy-level audit metadata."""
+
+    questions: list[CandidateQuestionRecord]
+    summary: CandidateQuestionSelectionSummary
 
 
 @dataclass(frozen=True)

@@ -8,6 +8,8 @@ from atividade_2.contracts import (
     CandidateAnswerRecord,
     CandidateModelRuntimeProfileRecord,
     CandidateQuestionRecord,
+    CandidateQuestionSelectionResult,
+    CandidateQuestionSelectionSummary,
     CandidateRunRecord,
     EvaluationRecord,
     ModelSpec,
@@ -925,6 +927,284 @@ def test_select_candidate_questions_uses_active_vector_base_scope_and_filters() 
             alternatives={"A": "Opcao A", "B": "Opcao B"},
         )
     ]
+
+
+def test_select_pending_candidate_questions_excludes_successes_before_limit() -> None:
+    cursor = MultiRecordingCursor(
+        fetchone_rows=[(3,)],
+        fetchall_rows=[
+            [
+                (104, "J1", 4, "Q4", None, True),
+                (105, "J1", 5, "Q5", None, False),
+            ]
+        ],
+    )
+    repository = JudgeRepository(TransactionConnection(cursor))
+    repository.get_rag_vector_base_summary = lambda dataset: RagVectorBaseSummary(  # type: ignore[method-assign]
+        dataset=dataset,
+        dataset_name="OAB_Bench",
+        import_run_id=31,
+        active_curation_run_id=31,
+        matches_active_curation=True,
+        retrieval_run_id=21,
+        retrieval_name="j1_source_urls_v1",
+        retrieval_strategy="source_url_only_v1",
+        embedding_model="text-embedding-3-small",
+        top_k=5,
+        vector_enabled=True,
+        lexical_enabled=False,
+        rerank_enabled=False,
+        document_count=10,
+        chunk_count=50,
+        embedding_count=50,
+        status="pronta_com_embeddings",
+        created_at="2026-06-04T12:00:00",
+    )
+
+    result = repository.select_pending_candidate_questions(
+        dataset="J1",
+        model_name="model-a",
+        batch_size=2,
+        question_sequence_start=1,
+        question_sequence_end=5,
+        question_id=None,
+        skip_existing_successful=True,
+    )
+
+    selection_sql = cursor.queries[0]
+    count_sql = cursor.queries[1]
+    assert "FROM av3.candidate_answers a" in selection_sql
+    assert "JOIN av3.candidate_runs r ON r.id_candidate_run = a.id_candidate_run" in selection_sql
+    assert "a.status = 'success'" in selection_sql
+    assert "a.status = 'failed'" in selection_sql
+    assert "WHERE NOT has_success" in selection_sql
+    assert "ORDER BY has_failed DESC, question_sequence, id_pergunta" in selection_sql
+    assert "LIMIT %s" in selection_sql
+    assert "COUNT(*) FILTER (WHERE has_success)" in count_sql
+    assert cursor.params[0] == ["J1", 31, 1, 5, "J1", "model-a", "J1", "model-a", 2]
+    assert cursor.params[1] == ["J1", 31, 1, 5, "J1", "model-a", "J1", "model-a"]
+    assert [question.question_id for question in result.questions] == [104, 105]
+    assert result.summary == CandidateQuestionSelectionSummary(
+        policy="failed_first_pending_aware",
+        skip_existing_successful=True,
+        selected=2,
+        failed_retry_candidates=1,
+        unanswered_candidates=1,
+        successful_excluded=3,
+    )
+
+
+def test_select_pending_candidate_questions_prioritizes_failed_before_unanswered() -> None:
+    cursor = MultiRecordingCursor(
+        fetchone_rows=[(0,)],
+        fetchall_rows=[
+            [
+                (102, "J1", 2, "Q2", None, True),
+                (101, "J1", 1, "Q1", None, False),
+                (103, "J1", 3, "Q3", None, False),
+            ]
+        ],
+    )
+    repository = JudgeRepository(TransactionConnection(cursor))
+    repository.get_rag_vector_base_summary = lambda dataset: RagVectorBaseSummary(  # type: ignore[method-assign]
+        dataset=dataset,
+        dataset_name="OAB_Bench",
+        import_run_id=31,
+        active_curation_run_id=31,
+        matches_active_curation=True,
+        retrieval_run_id=21,
+        retrieval_name="j1_source_urls_v1",
+        retrieval_strategy="source_url_only_v1",
+        embedding_model="text-embedding-3-small",
+        top_k=5,
+        vector_enabled=True,
+        lexical_enabled=False,
+        rerank_enabled=False,
+        document_count=10,
+        chunk_count=50,
+        embedding_count=50,
+        status="pronta_com_embeddings",
+        created_at="2026-06-04T12:00:00",
+    )
+
+    result = repository.select_pending_candidate_questions(
+        dataset="J1",
+        model_name="model-a",
+        batch_size=3,
+        question_sequence_start=None,
+        question_sequence_end=None,
+        question_id=None,
+        skip_existing_successful=True,
+    )
+
+    assert [question.question_id for question in result.questions] == [102, 101, 103]
+    assert result.summary.failed_retry_candidates == 1
+    assert result.summary.unanswered_candidates == 2
+
+
+def test_select_pending_candidate_questions_success_wins_over_failed() -> None:
+    cursor = MultiRecordingCursor(fetchone_rows=[(1,)], fetchall_rows=[[]])
+    repository = JudgeRepository(TransactionConnection(cursor))
+    repository.get_rag_vector_base_summary = lambda dataset: RagVectorBaseSummary(  # type: ignore[method-assign]
+        dataset=dataset,
+        dataset_name="OAB_Bench",
+        import_run_id=31,
+        active_curation_run_id=31,
+        matches_active_curation=True,
+        retrieval_run_id=21,
+        retrieval_name="j1_source_urls_v1",
+        retrieval_strategy="source_url_only_v1",
+        embedding_model="text-embedding-3-small",
+        top_k=5,
+        vector_enabled=True,
+        lexical_enabled=False,
+        rerank_enabled=False,
+        document_count=10,
+        chunk_count=50,
+        embedding_count=50,
+        status="pronta_com_embeddings",
+        created_at="2026-06-04T12:00:00",
+    )
+
+    result = repository.select_pending_candidate_questions(
+        dataset="J1",
+        model_name="model-a",
+        batch_size=1,
+        question_sequence_start=None,
+        question_sequence_end=None,
+        question_id=101,
+        skip_existing_successful=True,
+    )
+
+    assert "WHERE NOT has_success" in cursor.queries[0]
+    assert result.questions == []
+    assert result.summary.successful_excluded == 1
+
+
+def test_select_pending_candidate_questions_filters_state_by_current_dataset_and_model() -> None:
+    cursor = MultiRecordingCursor(fetchone_rows=[(0,)], fetchall_rows=[[(101, "J1", 1, "Q1", None, False)]])
+    repository = JudgeRepository(TransactionConnection(cursor))
+    repository.get_rag_vector_base_summary = lambda dataset: RagVectorBaseSummary(  # type: ignore[method-assign]
+        dataset=dataset,
+        dataset_name="OAB_Bench",
+        import_run_id=31,
+        active_curation_run_id=31,
+        matches_active_curation=True,
+        retrieval_run_id=21,
+        retrieval_name="j1_source_urls_v1",
+        retrieval_strategy="source_url_only_v1",
+        embedding_model="text-embedding-3-small",
+        top_k=5,
+        vector_enabled=True,
+        lexical_enabled=False,
+        rerank_enabled=False,
+        document_count=10,
+        chunk_count=50,
+        embedding_count=50,
+        status="pronta_com_embeddings",
+        created_at="2026-06-04T12:00:00",
+    )
+
+    result = repository.select_pending_candidate_questions(
+        dataset="J1",
+        model_name="model-a",
+        batch_size=1,
+        question_sequence_start=None,
+        question_sequence_end=None,
+        question_id=None,
+        skip_existing_successful=True,
+    )
+
+    assert "r.dataset_code = %s" in cursor.queries[0]
+    assert "a.model_name = %s" in cursor.queries[0]
+    assert cursor.params[0] == ["J1", 31, "J1", "model-a", "J1", "model-a", 1]
+    assert result.questions[0].question_id == 101
+
+
+def test_select_pending_candidate_questions_skip_false_preserves_sequence_policy() -> None:
+    cursor = MultiRecordingCursor(fetchall_rows=[[(101, "J1", 1, "Q1", None)]])
+    repository = JudgeRepository(TransactionConnection(cursor))
+    repository.get_rag_vector_base_summary = lambda dataset: RagVectorBaseSummary(  # type: ignore[method-assign]
+        dataset=dataset,
+        dataset_name="OAB_Bench",
+        import_run_id=31,
+        active_curation_run_id=31,
+        matches_active_curation=True,
+        retrieval_run_id=21,
+        retrieval_name="j1_source_urls_v1",
+        retrieval_strategy="source_url_only_v1",
+        embedding_model="text-embedding-3-small",
+        top_k=5,
+        vector_enabled=True,
+        lexical_enabled=False,
+        rerank_enabled=False,
+        document_count=10,
+        chunk_count=50,
+        embedding_count=50,
+        status="pronta_com_embeddings",
+        created_at="2026-06-04T12:00:00",
+    )
+
+    result = repository.select_pending_candidate_questions(
+        dataset="J1",
+        model_name="model-a",
+        batch_size=1,
+        question_sequence_start=None,
+        question_sequence_end=None,
+        question_id=None,
+        skip_existing_successful=False,
+    )
+
+    assert "FROM av3.candidate_answers a" not in cursor.queries[0]
+    assert "ORDER BY q.question_sequence, q.id_pergunta" in cursor.queries[0]
+    assert result == CandidateQuestionSelectionResult(
+        questions=[CandidateQuestionRecord(101, "J1", "OAB_Bench", 1, "Q1", None)],
+        summary=CandidateQuestionSelectionSummary(
+            policy="sequence_order_no_success_filter",
+            skip_existing_successful=False,
+            selected=1,
+        ),
+    )
+
+
+def test_select_pending_candidate_questions_applies_question_id_and_sequence_filters() -> None:
+    cursor = MultiRecordingCursor(fetchone_rows=[(0,)], fetchall_rows=[[(101, "J1", 7, "Q7", None, False)]])
+    repository = JudgeRepository(TransactionConnection(cursor))
+    repository.get_rag_vector_base_summary = lambda dataset: RagVectorBaseSummary(  # type: ignore[method-assign]
+        dataset=dataset,
+        dataset_name="OAB_Bench",
+        import_run_id=31,
+        active_curation_run_id=31,
+        matches_active_curation=True,
+        retrieval_run_id=21,
+        retrieval_name="j1_source_urls_v1",
+        retrieval_strategy="source_url_only_v1",
+        embedding_model="text-embedding-3-small",
+        top_k=5,
+        vector_enabled=True,
+        lexical_enabled=False,
+        rerank_enabled=False,
+        document_count=10,
+        chunk_count=50,
+        embedding_count=50,
+        status="pronta_com_embeddings",
+        created_at="2026-06-04T12:00:00",
+    )
+
+    repository.select_pending_candidate_questions(
+        dataset="J1",
+        model_name="model-a",
+        batch_size=1,
+        question_sequence_start=7,
+        question_sequence_end=9,
+        question_id=101,
+        skip_existing_successful=True,
+    )
+
+    assert "q.id_pergunta = %s" in cursor.queries[0]
+    assert "q.question_sequence >= %s" in cursor.queries[0]
+    assert "q.question_sequence <= %s" in cursor.queries[0]
+    assert cursor.params[0] == ["J1", 31, 101, 7, 9, "J1", "model-a", "J1", "model-a", 1]
 
 
 def test_successful_candidate_answer_exists_filters_by_dataset_model_question_and_status() -> None:

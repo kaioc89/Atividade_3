@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import hashlib
+import threading
+import time
 from dataclasses import dataclass, field
 
 import pytest
@@ -8,9 +11,12 @@ from atividade_2.contracts import (
     CandidateAnswerRecord,
     CandidateModelAssignment,
     CandidateModelAssignmentRange,
+    CandidateProgressEvent,
     CandidateModelRuntimeProfileRecord,
     CandidatePromptRecord,
     CandidateQuestionRecord,
+    CandidateQuestionSelectionResult,
+    CandidateQuestionSelectionSummary,
     CandidateRawResponse,
     CandidateRunRecord,
     RagRetrievalResult,
@@ -18,9 +24,11 @@ from atividade_2.contracts import (
     RetrievedRagChunk,
 )
 from atividade_2.candidate_runtime_learning import parse_candidate_runtime_observation
+from atividade_2.candidate_clients.remote_http import RemoteCandidateError
 from atividade_2.run_candidates_rag_service import (
     RunCandidatesRagRequest,
     RunCandidatesRagService,
+    classify_candidate_error,
     _default_client_factory,
     _format_candidate_runtime_config,
     _resolve_candidate_provider_config,
@@ -45,10 +53,19 @@ class FakeSettings:
     remote_candidate_context_safety_margin_tokens: int = 512
     remote_candidate_context_window_tokens: int | None = None
     remote_candidate_retry_on_context_window: bool = False
+    candidate_execution_strategy: str = "sequential"
+    candidate_parallel_max_workers: int = 2
+    candidate_adaptive_initial_concurrency: int = 1
+    candidate_adaptive_max_concurrency: int = 2
+    candidate_adaptive_success_threshold: int = 2
+    candidate_adaptive_max_retries: int = 1
+    candidate_adaptive_base_backoff_seconds: float = 0.0
+    candidate_adaptive_max_backoff_seconds: float = 0.0
 
 
 class FakeConnection:
-    def __init__(self) -> None:
+    def __init__(self, label: str | None = None) -> None:
+        self.label = label
         self.closed = False
 
     def close(self) -> None:
@@ -65,6 +82,7 @@ class FakeRepository:
         self.persisted_answers: list[CandidateAnswerRecord] = []
         self.runtime_profiles: dict[tuple[str, str], CandidateModelRuntimeProfileRecord] = {}
         self.runtime_observations: list[dict[str, object]] = []
+        self.pending_selection_result: CandidateQuestionSelectionResult | None = None
         self.next_candidate_run_id = 501
         self.next_candidate_answer_id = 801
         self.next_runtime_profile_id = 901
@@ -121,6 +139,8 @@ class FakeRepository:
             ],
         }
         self.existing_successes: set[tuple[str, str, int]] = set()
+        self.existing_failures: set[tuple[str, str, int]] = set()
+        self._lock = threading.Lock()
         self.assignments = _default_candidate_model_assignments()
         self.assignments += (
             CandidateModelAssignment(
@@ -322,6 +342,83 @@ class FakeRepository:
             questions = [question for question in questions if question.question_id == question_id]
         return questions[:batch_size]
 
+    def select_pending_candidate_questions(
+        self,
+        *,
+        dataset: str,
+        model_name: str,
+        batch_size: int,
+        question_sequence_start: int | None,
+        question_sequence_end: int | None,
+        question_id: int | None,
+        skip_existing_successful: bool,
+    ) -> CandidateQuestionSelectionResult:
+        self.select_calls.append(
+            {
+                "dataset": dataset,
+                "model_name": model_name,
+                "batch_size": batch_size,
+                "question_sequence_start": question_sequence_start,
+                "question_sequence_end": question_sequence_end,
+                "question_id": question_id,
+                "skip_existing_successful": skip_existing_successful,
+            }
+        )
+        if self.pending_selection_result is not None:
+            return self.pending_selection_result
+
+        questions = list(self.questions_by_dataset.get(dataset, []))
+        if question_id is not None:
+            questions = [question for question in questions if question.question_id == question_id]
+        if question_sequence_start is not None:
+            questions = [question for question in questions if question.question_sequence >= question_sequence_start]
+        if question_sequence_end is not None:
+            questions = [question for question in questions if question.question_sequence <= question_sequence_end]
+
+        if not skip_existing_successful:
+            selected = sorted(questions, key=lambda question: (question.question_sequence, question.question_id))[
+                :batch_size
+            ]
+            return CandidateQuestionSelectionResult(
+                questions=selected,
+                summary=CandidateQuestionSelectionSummary(
+                    policy="sequence_order_no_success_filter",
+                    skip_existing_successful=False,
+                    selected=len(selected),
+                ),
+            )
+
+        successful_excluded = 0
+        retry_candidates: list[CandidateQuestionRecord] = []
+        unanswered_candidates: list[CandidateQuestionRecord] = []
+        for question in questions:
+            key = (dataset, model_name, question.question_id)
+            if key in self.existing_successes:
+                successful_excluded += 1
+                continue
+            if key in self.existing_failures:
+                retry_candidates.append(question)
+            else:
+                unanswered_candidates.append(question)
+
+        retry_candidates.sort(key=lambda question: (question.question_sequence, question.question_id))
+        unanswered_candidates.sort(key=lambda question: (question.question_sequence, question.question_id))
+        selected = [*retry_candidates, *unanswered_candidates][:batch_size]
+        failed_selected = sum(
+            1 for question in selected if (dataset, model_name, question.question_id) in self.existing_failures
+        )
+        return CandidateQuestionSelectionResult(
+            questions=selected,
+            summary=CandidateQuestionSelectionSummary(
+                policy="failed_first_pending_aware",
+                skip_existing_successful=True,
+                selected=len(selected),
+                failed_retry_candidates=failed_selected,
+                unanswered_candidates=len(selected) - failed_selected,
+                successful_excluded=successful_excluded,
+            ),
+        )
+
     def successful_candidate_answer_exists(
         self,
         *,
@@ -334,22 +431,23 @@ class FakeRepository:
         return (dataset, model_name, question_id) in self.existing_successes
 
     def persist_candidate_answer(self, *, answer: CandidateAnswerRecord) -> CandidateAnswerRecord:
-        stored = CandidateAnswerRecord(
-            candidate_answer_id=self.next_candidate_answer_id,
-            candidate_run_id=answer.candidate_run_id,
-            question_id=answer.question_id,
-            model_name=answer.model_name,
-            rendered_prompt=answer.rendered_prompt,
-            status=answer.status,
-            answer_text=answer.answer_text,
-            final_choice=answer.final_choice,
-            error_message=answer.error_message,
-            latency_ms=answer.latency_ms,
-            raw_response=answer.raw_response,
-            created_at="2026-06-04T13:05:00",
-        )
-        self.persisted_answers.append(stored)
-        self.next_candidate_answer_id += 1
+        with self._lock:
+            stored = CandidateAnswerRecord(
+                candidate_answer_id=self.next_candidate_answer_id,
+                candidate_run_id=answer.candidate_run_id,
+                question_id=answer.question_id,
+                model_name=answer.model_name,
+                rendered_prompt=answer.rendered_prompt,
+                status=answer.status,
+                answer_text=answer.answer_text,
+                final_choice=answer.final_choice,
+                error_message=answer.error_message,
+                latency_ms=answer.latency_ms,
+                raw_response=answer.raw_response,
+                created_at="2026-06-04T13:05:00",
+            )
+            self.persisted_answers.append(stored)
+            self.next_candidate_answer_id += 1
         return stored
 
     def get_candidate_model_runtime_profile(
@@ -479,6 +577,34 @@ class FakeClient:
         )
 
 
+class ThreadCountingClient:
+    def __init__(self, *, fail_on_question_text: str | None = None) -> None:
+        self.fail_on_question_text = fail_on_question_text
+        self.calls: list[tuple[str, str]] = []
+        self.active = 0
+        self.max_active = 0
+        self._lock = threading.Lock()
+
+    def generate(self, prompt: str, *, model: str) -> CandidateRawResponse:
+        with self._lock:
+            self.calls.append((prompt, model))
+            self.active += 1
+            self.max_active = max(self.max_active, self.active)
+        try:
+            time.sleep(0.02)
+            if self.fail_on_question_text and self.fail_on_question_text in prompt:
+                raise RuntimeError("candidate timeout for selected question")
+            return CandidateRawResponse(
+                text=f"Resposta para {model}.",
+                provider="fake",
+                model=model,
+                latency_ms=23,
+            )
+        finally:
+            with self._lock:
+                self.active -= 1
+
+
 class FakeSnapshotService:
     def __init__(self) -> None:
         self.calls: list[tuple[int, RagRetrievalResult]] = []
@@ -501,6 +627,7 @@ def _service(
     client_factory=None,
     snapshot_service: FakeSnapshotService | None = None,
     connect_func=None,
+    settings_loader=FakeSettings,
 ) -> RunCandidatesRagService:
     repository = repository or FakeRepository()
     retriever = retriever or FakeRetriever()
@@ -513,13 +640,66 @@ def _service(
             return connection
 
     return RunCandidatesRagService(
-        settings_loader=FakeSettings,
+        settings_loader=settings_loader,
         connect_func=connect_func,
         repository_factory=lambda _: repository,
         retriever_factory=lambda _repository, _settings, _dataset: retriever,
         client_factory=client_factory or (lambda _request, _settings: client),
         snapshot_service_factory=lambda _repository: snapshot_service,
     )
+
+
+def _clone_worker_repository(shared: FakeRepository) -> FakeRepository:
+    repository = FakeRepository()
+    repository.questions_by_dataset = shared.questions_by_dataset
+    repository.vector_base = shared.vector_base
+    repository.prompt = shared.prompt
+    repository.assignments = shared.assignments
+    repository.existing_successes = shared.existing_successes
+    repository.existing_failures = shared.existing_failures
+    repository.persisted_answers = shared.persisted_answers
+    repository.runtime_profiles = shared.runtime_profiles
+    repository.runtime_observations = shared.runtime_observations
+    repository.success_exists_calls = shared.success_exists_calls
+    repository.next_candidate_answer_id = shared.next_candidate_answer_id
+    repository._lock = shared._lock
+    return repository
+
+
+def _parallel_service(
+    *,
+    repository: FakeRepository,
+    retriever: FakeRetriever,
+    client,
+    snapshot_service: FakeSnapshotService | None = None,
+    settings_loader=FakeSettings,
+) -> tuple[RunCandidatesRagService, list[FakeConnection], list[FakeRepository]]:
+    connections: list[FakeConnection] = []
+    repositories: list[FakeRepository] = []
+    snapshot_service = snapshot_service or FakeSnapshotService()
+
+    def connect_func(_: str) -> FakeConnection:
+        connection = FakeConnection(label=f"connection-{len(connections)}")
+        connections.append(connection)
+        return connection
+
+    def repository_factory(connection: FakeConnection) -> FakeRepository:
+        if len(repositories) == 0:
+            created_repository = repository
+        else:
+            created_repository = _clone_worker_repository(repository)
+        repositories.append(created_repository)
+        return created_repository
+
+    service = RunCandidatesRagService(
+        settings_loader=settings_loader,
+        connect_func=connect_func,
+        repository_factory=repository_factory,
+        retriever_factory=lambda _repository, _settings, _dataset: retriever,
+        client_factory=lambda _request, _settings: client,
+        snapshot_service_factory=lambda _repository: snapshot_service,
+    )
+    return service, connections, repositories
 
 
 def _success_result(*, dataset: str, question_id: int, chunk_text: str = "Trecho seguro.") -> RagRetrievalResult:
@@ -559,6 +739,10 @@ def _success_result(*, dataset: str, question_id: int, chunk_text: str = "Trecho
     )
 
 
+def _event_types(events: list[CandidateProgressEvent]) -> list[str]:
+    return [event.event_type for event in events]
+
+
 def test_dry_run_resolves_configuration_without_db_writes_or_client_calls(tmp_path) -> None:
     repository = FakeRepository()
     retriever = FakeRetriever()
@@ -591,10 +775,41 @@ def test_dry_run_resolves_configuration_without_db_writes_or_client_calls(tmp_pa
     assert "api_key: <not required in dry-run>" in result.runtime_config_summary
     assert "final_max_tokens: 1024" in result.runtime_config_summary
     assert "context_window_tokens: 8192" in result.runtime_config_summary
+    assert "Candidate execution strategy: sequential" in result.runtime_config_summary
+    assert "Candidate execution strategy: sequential" in result.execution_summary
     assert repository.ensure_schema_calls == 1
     assert repository.created_runs == []
     assert retriever.calls == [(101, "J1", None)]
     assert client.calls == []
+
+
+def test_adaptive_dry_run_reports_strategy_without_creating_candidate_run(tmp_path) -> None:
+    repository = FakeRepository()
+    retriever = FakeRetriever()
+    client = FakeClient()
+    retriever.results[("J1", 101)] = _success_result(dataset="J1", question_id=101)
+    service = _service(repository=repository, retriever=retriever, client=client)
+
+    result = service.run(
+        RunCandidatesRagRequest(
+            dataset="J1",
+            model_name="candidate-j1",
+            provider="remote_http",
+            batch_size=1,
+            dry_run=True,
+            candidate_execution_strategy="adaptive",
+            audit_log=str(tmp_path / "adaptive-dry-run.log"),
+            no_audit_animation=True,
+        )
+    )
+
+    assert result.candidate_run_id is None
+    assert result.summary is None
+    assert repository.created_runs == []
+    assert repository.persisted_answers == []
+    assert client.calls == []
+    assert "Candidate execution strategy: adaptive" in result.execution_summary
+    assert "Candidate adaptive initial/max concurrency: 1/2" in result.execution_summary
 
 
 def test_dry_run_does_not_require_openrouter_or_featherless_keys(tmp_path) -> None:
@@ -1353,8 +1568,85 @@ def test_respects_question_range(tmp_path) -> None:
     assert repository.select_calls[0]["question_sequence_end"] == 5
 
 
+def test_passes_model_and_skip_flag_to_pending_question_selection(tmp_path) -> None:
+    repository = FakeRepository()
+    retriever = FakeRetriever()
+    retriever.results[("J1", 101)] = _success_result(dataset="J1", question_id=101)
+    service = _service(repository=repository, retriever=retriever)
+
+    service.run(
+        RunCandidatesRagRequest(
+            dataset="J1",
+            model_name="candidate-j1",
+            provider="remote_http",
+            batch_size=1,
+            skip_existing_successful=False,
+            audit_log=str(tmp_path / "selection-args.log"),
+            no_audit_animation=True,
+        )
+    )
+
+    assert repository.select_calls[0]["model_name"] == "candidate-j1"
+    assert repository.select_calls[0]["skip_existing_successful"] is False
+
+
+def test_rerun_selection_processes_later_failed_and_pending_questions(tmp_path) -> None:
+    repository = FakeRepository()
+    repository.questions_by_dataset["J1"] = [
+        CandidateQuestionRecord(101, "J1", "OAB_Bench", 1, "Q1", None),
+        CandidateQuestionRecord(102, "J1", "OAB_Bench", 2, "Q2", None),
+        CandidateQuestionRecord(103, "J1", "OAB_Bench", 3, "Q3", None),
+        CandidateQuestionRecord(104, "J1", "OAB_Bench", 4, "Q4", None),
+        CandidateQuestionRecord(105, "J1", "OAB_Bench", 5, "Q5", None),
+    ]
+    repository.existing_successes.update(
+        {
+            ("J1", "candidate-j1", 101),
+            ("J1", "candidate-j1", 102),
+            ("J1", "candidate-j1", 103),
+        }
+    )
+    repository.existing_failures.add(("J1", "candidate-j1", 104))
+    retriever = FakeRetriever()
+    retriever.results[("J1", 104)] = _success_result(dataset="J1", question_id=104)
+    retriever.results[("J1", 105)] = _success_result(dataset="J1", question_id=105)
+    service = _service(repository=repository, retriever=retriever)
+
+    result = service.run(
+        RunCandidatesRagRequest(
+            dataset="J1",
+            model_name="candidate-j1",
+            provider="remote_http",
+            batch_size=2,
+            question_sequence_start=1,
+            question_sequence_end=5,
+            audit_log=str(tmp_path / "rerun-range.log"),
+            no_audit_animation=True,
+        )
+    )
+
+    assert retriever.calls == [(104, "J1", None), (105, "J1", None)]
+    assert result.summary is not None
+    assert result.summary.selected_questions == 2
+    assert result.summary.processed_questions == 2
+    assert result.summary.successful_answers == 2
+    assert result.summary.failed_answers == 0
+    assert result.summary.skipped_questions == 0
+
+
 def test_skips_existing_successful_answers(tmp_path) -> None:
     repository = FakeRepository()
+    repository.pending_selection_result = CandidateQuestionSelectionResult(
+        questions=[CandidateQuestionRecord(101, "J1", "OAB_Bench", 1, "Q1", None)],
+        summary=CandidateQuestionSelectionSummary(
+            policy="failed_first_pending_aware",
+            skip_existing_successful=True,
+            selected=1,
+            failed_retry_candidates=0,
+            unanswered_candidates=1,
+            successful_excluded=0,
+        ),
+    )
     repository.existing_successes.add(("J1", "candidate-j1", 101))
     retriever = FakeRetriever()
     service = _service(repository=repository, retriever=retriever)
@@ -1374,6 +1666,39 @@ def test_skips_existing_successful_answers(tmp_path) -> None:
     assert result.summary.skipped_questions == 1
     assert retriever.calls == []
     assert repository.persisted_answers == []
+
+
+def test_candidate_question_selection_audit_contains_policy_and_counts(tmp_path) -> None:
+    repository = FakeRepository()
+    repository.questions_by_dataset["J1"] = [
+        CandidateQuestionRecord(101, "J1", "OAB_Bench", 1, "Q1", None),
+        CandidateQuestionRecord(102, "J1", "OAB_Bench", 2, "Q2", None),
+    ]
+    repository.existing_failures.add(("J1", "candidate-j1", 101))
+    retriever = FakeRetriever()
+    retriever.results[("J1", 101)] = _success_result(dataset="J1", question_id=101)
+    retriever.results[("J1", 102)] = _success_result(dataset="J1", question_id=102)
+    audit_path = tmp_path / "selection-audit.log"
+    service = _service(repository=repository, retriever=retriever)
+
+    service.run(
+        RunCandidatesRagRequest(
+            dataset="J1",
+            model_name="candidate-j1",
+            provider="remote_http",
+            batch_size=2,
+            audit_log=str(audit_path),
+            no_audit_animation=True,
+        )
+    )
+
+    audit_text = audit_path.read_text(encoding="utf-8")
+    assert "Candidate question selection:" in audit_text
+    assert "policy: failed_first_pending_aware" in audit_text
+    assert "skip_existing_successful: true" in audit_text
+    assert "selected: 2" in audit_text
+    assert "failed_retry_candidates: 1" in audit_text
+    assert "unanswered_candidates: 1" in audit_text
 
 
 def test_retrieves_context_per_question(tmp_path) -> None:
@@ -1706,6 +2031,522 @@ def test_records_failure_status_when_candidate_client_fails(tmp_path) -> None:
     assert "candidate timeout" in str(repository.persisted_answers[0].error_message)
 
 
+def test_parallel_path_uses_bounded_workers_and_worker_owned_connections(tmp_path) -> None:
+    repository = FakeRepository()
+    repository.questions_by_dataset["J1"] = [
+        CandidateQuestionRecord(101, "J1", "OAB_Bench", 1, "Q1", None),
+        CandidateQuestionRecord(102, "J1", "OAB_Bench", 2, "Q2", None),
+        CandidateQuestionRecord(103, "J1", "OAB_Bench", 3, "Q3", None),
+    ]
+    retriever = FakeRetriever()
+    for question in repository.questions_by_dataset["J1"]:
+        retriever.results[("J1", question.question_id)] = _success_result(
+            dataset="J1",
+            question_id=question.question_id,
+        )
+    client = ThreadCountingClient()
+    snapshot_service = FakeSnapshotService()
+    service, connections, repositories = _parallel_service(
+        repository=repository,
+        retriever=retriever,
+        client=client,
+        snapshot_service=snapshot_service,
+    )
+
+    result = service.run(
+        RunCandidatesRagRequest(
+            dataset="J1",
+            model_name="candidate-j1",
+            provider="remote_http",
+            batch_size=3,
+            candidate_execution_strategy="parallel",
+            candidate_parallel_max_workers=2,
+            audit_log=str(tmp_path / "parallel.log"),
+            no_audit_animation=True,
+        )
+    )
+
+    assert result.summary is not None
+    assert result.summary.selected_questions == 3
+    assert result.summary.processed_questions == 3
+    assert result.summary.successful_answers == 3
+    assert result.summary.failed_answers == 0
+    assert result.summary.skipped_questions == 0
+    assert client.max_active <= 2
+    assert client.max_active > 1
+    assert len(connections) == 4
+    assert len(repositories) == 4
+    assert all(connection.closed for connection in connections)
+    assert len(repository.persisted_answers) == 3
+    assert len(snapshot_service.calls) == 3
+
+
+def test_parallel_path_persists_failed_answer_and_continues_other_questions(tmp_path) -> None:
+    repository = FakeRepository()
+    repository.questions_by_dataset["J1"] = [
+        CandidateQuestionRecord(101, "J1", "OAB_Bench", 1, "Q1", None),
+        CandidateQuestionRecord(102, "J1", "OAB_Bench", 2, "Q2", None),
+        CandidateQuestionRecord(103, "J1", "OAB_Bench", 3, "Q3", None),
+    ]
+    retriever = FakeRetriever()
+    for question in repository.questions_by_dataset["J1"]:
+        retriever.results[("J1", question.question_id)] = _success_result(
+            dataset="J1",
+            question_id=question.question_id,
+        )
+    client = ThreadCountingClient(fail_on_question_text="Q2")
+    snapshot_service = FakeSnapshotService()
+    service, _connections, _repositories = _parallel_service(
+        repository=repository,
+        retriever=retriever,
+        client=client,
+        snapshot_service=snapshot_service,
+    )
+
+    result = service.run(
+        RunCandidatesRagRequest(
+            dataset="J1",
+            model_name="candidate-j1",
+            provider="remote_http",
+            batch_size=3,
+            candidate_execution_strategy="parallel",
+            candidate_parallel_max_workers=2,
+            audit_log=str(tmp_path / "parallel-failure.log"),
+            no_audit_animation=True,
+        )
+    )
+
+    assert result.summary is not None
+    assert result.summary.processed_questions == 3
+    assert result.summary.successful_answers == 2
+    assert result.summary.failed_answers == 1
+    assert result.summary.skipped_questions == 0
+    assert repository.updated_runs[-1]["run_status"] == "completed"
+    assert repository.updated_runs[-1]["metadata"]["failed_answers"] == 1
+    assert [answer.status for answer in repository.persisted_answers].count("success") == 2
+    assert [answer.status for answer in repository.persisted_answers].count("failed") == 1
+    assert len(snapshot_service.calls) == 3
+
+
+def test_parallel_defensive_skip_existing_still_works_after_selection(tmp_path) -> None:
+    repository = FakeRepository()
+    repository.pending_selection_result = CandidateQuestionSelectionResult(
+        questions=[
+            CandidateQuestionRecord(101, "J1", "OAB_Bench", 1, "Q1", None),
+            CandidateQuestionRecord(102, "J1", "OAB_Bench", 2, "Q2", None),
+        ],
+        summary=CandidateQuestionSelectionSummary(
+            policy="failed_first_pending_aware",
+            skip_existing_successful=True,
+            selected=2,
+            failed_retry_candidates=0,
+            unanswered_candidates=2,
+            successful_excluded=0,
+        ),
+    )
+    repository.existing_successes.add(("J1", "candidate-j1", 102))
+    retriever = FakeRetriever()
+    retriever.results[("J1", 101)] = _success_result(dataset="J1", question_id=101)
+    client = ThreadCountingClient()
+    service, _connections, _repositories = _parallel_service(
+        repository=repository,
+        retriever=retriever,
+        client=client,
+    )
+
+    result = service.run(
+        RunCandidatesRagRequest(
+            dataset="J1",
+            model_name="candidate-j1",
+            provider="remote_http",
+            batch_size=2,
+            candidate_execution_strategy="parallel",
+            candidate_parallel_max_workers=2,
+            audit_log=str(tmp_path / "parallel-skip.log"),
+            no_audit_animation=True,
+        )
+    )
+
+    assert result.summary is not None
+    assert result.summary.successful_answers == 1
+    assert result.summary.skipped_questions == 1
+    assert retriever.calls == [(101, "J1", None)]
+    assert len(repository.persisted_answers) == 1
+
+
+def test_parallel_audit_events_do_not_leak_secrets(tmp_path) -> None:
+    repository = FakeRepository()
+    repository.questions_by_dataset["J1"] = [
+        CandidateQuestionRecord(101, "J1", "OAB_Bench", 1, "Q1", None),
+    ]
+    retriever = FakeRetriever()
+    retriever.results[("J1", 101)] = _success_result(dataset="J1", question_id=101)
+    client = ThreadCountingClient()
+    service, _connections, _repositories = _parallel_service(
+        repository=repository,
+        retriever=retriever,
+        client=client,
+    )
+    audit_path = tmp_path / "parallel-audit.log"
+
+    service.run(
+        RunCandidatesRagRequest(
+            dataset="J1",
+            model_name="candidate-j1",
+            provider="remote_http",
+            batch_size=1,
+            candidate_execution_strategy="parallel",
+            audit_log=str(audit_path),
+            no_audit_animation=True,
+        )
+    )
+
+    audit_text = audit_path.read_text(encoding="utf-8")
+    assert "candidate_parallel_started" in audit_text
+    assert "candidate_parallel_task_started" in audit_text
+    assert "candidate_parallel_task_finished" in audit_text
+    assert "candidate_parallel_finished" in audit_text
+    assert "featherless-test-key" not in audit_text
+    assert "openrouter-test-key" not in audit_text
+
+
+def test_candidate_error_classifier_marks_transient_provider_errors_retryable() -> None:
+    assert classify_candidate_error(RemoteCandidateError("Remote candidate returned HTTP 429", status_code=429)).retryable
+    assert classify_candidate_error(RemoteCandidateError("Remote candidate returned HTTP 502", status_code=502)).retryable
+    assert classify_candidate_error(RemoteCandidateError("Remote candidate returned HTTP 503", status_code=503)).retryable
+    assert classify_candidate_error(RemoteCandidateError("Remote candidate returned HTTP 504", status_code=504)).retryable
+    assert classify_candidate_error(TimeoutError("socket timeout")).timeout is True
+
+
+def test_candidate_error_classifier_marks_config_and_context_window_non_retryable() -> None:
+    assert classify_candidate_error(RuntimeError("Candidate api_key is required.")).fatal_group is True
+    assert classify_candidate_error(RuntimeError("model not found")).fatal_group is True
+    assert classify_candidate_error(RuntimeError("Provider model is gated for this API key.")).fatal_group is True
+    context_error = RuntimeError("Requested prompt exceeds context size of 4096 tokens.")
+    assert classify_candidate_error(context_error).retryable is False
+
+
+def test_adaptive_path_starts_with_initial_concurrency_and_increases_after_threshold(tmp_path) -> None:
+    repository = FakeRepository()
+    repository.questions_by_dataset["J1"] = [
+        CandidateQuestionRecord(101, "J1", "OAB_Bench", 1, "Q1", None),
+        CandidateQuestionRecord(102, "J1", "OAB_Bench", 2, "Q2", None),
+        CandidateQuestionRecord(103, "J1", "OAB_Bench", 3, "Q3", None),
+        CandidateQuestionRecord(104, "J1", "OAB_Bench", 4, "Q4", None),
+    ]
+    retriever = FakeRetriever()
+    for question in repository.questions_by_dataset["J1"]:
+        retriever.results[("J1", question.question_id)] = _success_result(
+            dataset="J1",
+            question_id=question.question_id,
+        )
+    client = ThreadCountingClient()
+    service, _connections, _repositories = _parallel_service(
+        repository=repository,
+        retriever=retriever,
+        client=client,
+    )
+    audit_path = tmp_path / "adaptive-increase.log"
+
+    result = service.run(
+        RunCandidatesRagRequest(
+            dataset="J1",
+            model_name="candidate-j1",
+            provider="remote_http",
+            batch_size=4,
+            candidate_execution_strategy="adaptive",
+            audit_log=str(audit_path),
+            no_audit_animation=True,
+        )
+    )
+
+    assert result.summary is not None
+    assert result.summary.successful_answers == 4
+    assert client.max_active <= 2
+    audit_text = audit_path.read_text(encoding="utf-8")
+    assert "candidate_adaptive_initial" in audit_text
+    assert "initial" in audit_text
+    assert "current_concurrency=1" in audit_text
+    assert "candidate_adaptive_increased" in audit_text
+    assert repository.updated_runs[-1]["metadata"]["candidate_adaptive"]["successes"] == 4
+    assert repository.updated_runs[-1]["metadata"]["candidate_adaptive"]["final_concurrency"] == 2
+
+
+def test_adaptive_retries_429_then_persists_one_successful_answer(tmp_path) -> None:
+    repository = FakeRepository()
+    retriever = FakeRetriever()
+    retriever.results[("J1", 101)] = _success_result(dataset="J1", question_id=101)
+    client = FakeClient(
+        failures={
+            0: RemoteCandidateError("Remote candidate returned HTTP 429: rate limited", status_code=429),
+        }
+    )
+    service, _connections, _repositories = _parallel_service(
+        repository=repository,
+        retriever=retriever,
+        client=client,
+    )
+
+    result = service.run(
+        RunCandidatesRagRequest(
+            dataset="J1",
+            model_name="candidate-j1",
+            provider="remote_http",
+            batch_size=1,
+            candidate_execution_strategy="adaptive",
+            audit_log=str(tmp_path / "adaptive-429.log"),
+            no_audit_animation=True,
+        )
+    )
+
+    assert result.summary is not None
+    assert result.summary.successful_answers == 1
+    assert [answer.status for answer in repository.persisted_answers] == ["success"]
+    metadata = repository.updated_runs[-1]["metadata"]["candidate_adaptive"]
+    assert metadata["rate_limits"] == 1
+    assert metadata["retries"] == 1
+    assert metadata["requeued"] == 1
+
+
+def test_adaptive_reduces_after_timeout_and_exhausted_retry_persists_failed_answer(tmp_path) -> None:
+    repository = FakeRepository()
+    retriever = FakeRetriever()
+    retriever.results[("J1", 101)] = _success_result(dataset="J1", question_id=101)
+    client = FakeClient(
+        failures={
+            0: TimeoutError("socket timeout"),
+            1: TimeoutError("socket timeout"),
+        }
+    )
+    service, _connections, _repositories = _parallel_service(
+        repository=repository,
+        retriever=retriever,
+        client=client,
+    )
+    audit_path = tmp_path / "adaptive-timeout.log"
+
+    result = service.run(
+        RunCandidatesRagRequest(
+            dataset="J1",
+            model_name="candidate-j1",
+            provider="remote_http",
+            batch_size=1,
+            candidate_execution_strategy="adaptive",
+            audit_log=str(audit_path),
+            no_audit_animation=True,
+        )
+    )
+
+    assert result.summary is not None
+    assert result.summary.failed_answers == 1
+    assert [answer.status for answer in repository.persisted_answers] == ["failed"]
+    metadata = repository.updated_runs[-1]["metadata"]["candidate_adaptive"]
+    assert metadata["timeouts"] == 2
+    assert metadata["retries"] == 1
+    assert metadata["final_concurrency"] == 1
+    assert "candidate_adaptive_reduced" in audit_path.read_text(encoding="utf-8")
+
+
+def test_adaptive_retries_502_503_504_classified_as_transient() -> None:
+    for status_code in (502, 503, 504):
+        classification = classify_candidate_error(
+            RemoteCandidateError(f"Remote candidate returned HTTP {status_code}", status_code=status_code)
+        )
+        assert classification.retryable is True
+        assert classification.reason == f"http_{status_code}"
+
+
+def test_adaptive_non_retryable_failure_persists_failed_answer_and_continues(tmp_path) -> None:
+    repository = FakeRepository()
+    repository.questions_by_dataset["J1"] = [
+        CandidateQuestionRecord(101, "J1", "OAB_Bench", 1, "Q1", None),
+        CandidateQuestionRecord(102, "J1", "OAB_Bench", 2, "Q2", None),
+        CandidateQuestionRecord(103, "J1", "OAB_Bench", 3, "Q3", None),
+    ]
+    retriever = FakeRetriever()
+    for question in repository.questions_by_dataset["J1"]:
+        retriever.results[("J1", question.question_id)] = _success_result(
+            dataset="J1",
+            question_id=question.question_id,
+        )
+    client = ThreadCountingClient(fail_on_question_text="Q2")
+    service, _connections, _repositories = _parallel_service(
+        repository=repository,
+        retriever=retriever,
+        client=client,
+    )
+
+    result = service.run(
+        RunCandidatesRagRequest(
+            dataset="J1",
+            model_name="candidate-j1",
+            provider="remote_http",
+            batch_size=3,
+            candidate_execution_strategy="adaptive",
+            audit_log=str(tmp_path / "adaptive-nonretry.log"),
+            no_audit_animation=True,
+        )
+    )
+
+    assert result.summary is not None
+    assert result.summary.successful_answers == 2
+    assert result.summary.failed_answers == 1
+    assert [answer.status for answer in repository.persisted_answers].count("failed") == 1
+    assert repository.updated_runs[-1]["run_status"] == "completed"
+
+
+def test_adaptive_group_level_config_error_disables_group_and_finalizes_run(tmp_path) -> None:
+    repository = FakeRepository()
+    repository.questions_by_dataset["J1"] = [
+        CandidateQuestionRecord(101, "J1", "OAB_Bench", 1, "Q1", None),
+        CandidateQuestionRecord(102, "J1", "OAB_Bench", 2, "Q2", None),
+    ]
+    retriever = FakeRetriever()
+    for question in repository.questions_by_dataset["J1"]:
+        retriever.results[("J1", question.question_id)] = _success_result(
+            dataset="J1",
+            question_id=question.question_id,
+        )
+    client = FakeClient(failures={0: RuntimeError("Candidate api_key is required.")})
+    service, _connections, _repositories = _parallel_service(
+        repository=repository,
+        retriever=retriever,
+        client=client,
+    )
+    audit_path = tmp_path / "adaptive-group-disabled.log"
+
+    result = service.run(
+        RunCandidatesRagRequest(
+            dataset="J1",
+            model_name="candidate-j1",
+            provider="remote_http",
+            batch_size=2,
+            candidate_execution_strategy="adaptive",
+            audit_log=str(audit_path),
+            no_audit_animation=True,
+        )
+    )
+
+    assert result.summary is not None
+    assert result.summary.failed_answers == 2
+    assert repository.updated_runs[-1]["run_status"] == "completed"
+    assert repository.updated_runs[-1]["metadata"]["candidate_adaptive"]["non_retryable_failures"] == 2
+    assert "candidate_adaptive_group_disabled" in audit_path.read_text(encoding="utf-8")
+
+
+def test_adaptive_context_window_retry_uses_existing_runtime_learning_not_transient_retry(tmp_path) -> None:
+    repository = FakeRepository()
+    retriever = FakeRetriever()
+    retriever.results[("J1", 101)] = _success_result(dataset="J1", question_id=101)
+    client = FakeClient(
+        failures={
+            0: RuntimeError("Platform records context_length as 4096; context size of 4096.")
+        },
+        responses={
+            1: CandidateRawResponse(
+                text="Resposta final apos retry.",
+                provider="fake",
+                model="candidate-j1",
+                latency_ms=25,
+            )
+        },
+    )
+    service, _connections, _repositories = _parallel_service(
+        repository=repository,
+        retriever=retriever,
+        client=client,
+    )
+
+    result = service.run(
+        RunCandidatesRagRequest(
+            dataset="J1",
+            model_name="candidate-j1",
+            provider="remote_http",
+            batch_size=1,
+            remote_candidate_retry_on_context_window=True,
+            candidate_execution_strategy="adaptive",
+            audit_log=str(tmp_path / "adaptive-context.log"),
+            no_audit_animation=True,
+        )
+    )
+
+    assert result.summary is not None
+    assert result.summary.successful_answers == 1
+    assert repository.runtime_observations[0]["observed_context_window_tokens"] == 4096
+    assert repository.persisted_answers[0].raw_response["context_window_retry"]["attempted"] is True
+    metadata = repository.updated_runs[-1]["metadata"]["candidate_adaptive"]
+    assert metadata["retries"] == 0
+    assert metadata["transient_failures"] == 0
+
+
+def test_adaptive_audit_events_do_not_leak_api_keys_and_include_fingerprint(tmp_path) -> None:
+    repository = FakeRepository()
+    retriever = FakeRetriever()
+    retriever.results[("J1", 101)] = _success_result(dataset="J1", question_id=101)
+    client = FakeClient()
+    service, _connections, _repositories = _parallel_service(
+        repository=repository,
+        retriever=retriever,
+        client=client,
+    )
+    audit_path = tmp_path / "adaptive-audit.log"
+
+    service.run(
+        RunCandidatesRagRequest(
+            dataset="J1",
+            model_name="candidate-j1",
+            provider="remote_http",
+            batch_size=1,
+            candidate_execution_strategy="adaptive",
+            audit_log=str(audit_path),
+            no_audit_animation=True,
+        )
+    )
+
+    audit_text = audit_path.read_text(encoding="utf-8")
+    fingerprint = hashlib.sha256("featherless-test-key".encode("utf-8")).hexdigest()[:12]
+    assert "candidate_adaptive_initial" in audit_text
+    assert "candidate_adaptive_final" in audit_text
+    assert f"<set:{fingerprint}>" in audit_text
+    assert "featherless-test-key" not in audit_text
+    assert "openrouter-test-key" not in audit_text
+
+
+def test_unexpected_service_exception_after_run_creation_marks_run_failed(tmp_path) -> None:
+    class FailingSnapshotService(FakeSnapshotService):
+        def persist_retrieval_snapshot(
+            self,
+            *,
+            candidate_answer_id: int,
+            retrieval_result: RagRetrievalResult,
+        ) -> list[object]:
+            raise RuntimeError("snapshot persistence unavailable")
+
+    repository = FakeRepository()
+    retriever = FakeRetriever()
+    retriever.results[("J1", 101)] = _success_result(dataset="J1", question_id=101)
+    service = _service(
+        repository=repository,
+        retriever=retriever,
+        snapshot_service=FailingSnapshotService(),
+    )
+
+    with pytest.raises(RuntimeError, match="snapshot persistence unavailable"):
+        service.run(
+            RunCandidatesRagRequest(
+                dataset="J1",
+                model_name="candidate-j1",
+                provider="remote_http",
+                batch_size=1,
+                audit_log=str(tmp_path / "service-level-failure.log"),
+                no_audit_animation=True,
+            )
+        )
+
+    assert repository.updated_runs[-1]["run_status"] == "failed"
+    assert repository.updated_runs[-1]["finished_at"] is not None
+
+
 def test_fails_before_creating_run_when_model_has_no_runnable_assignment(tmp_path) -> None:
     repository = FakeRepository()
     repository.questions_by_dataset["J1"] = [
@@ -1753,6 +2594,20 @@ def test_emits_audit_events_for_run_question_retrieval_generation_persistence_sk
         CandidateQuestionRecord(101, "J1", "OAB_Bench", 1, "Q1", None),
         CandidateQuestionRecord(102, "J1", "OAB_Bench", 2, "Q2", None),
     ]
+    repository.pending_selection_result = CandidateQuestionSelectionResult(
+        questions=[
+            CandidateQuestionRecord(101, "J1", "OAB_Bench", 1, "Q1", None),
+            CandidateQuestionRecord(102, "J1", "OAB_Bench", 2, "Q2", None),
+        ],
+        summary=CandidateQuestionSelectionSummary(
+            policy="failed_first_pending_aware",
+            skip_existing_successful=True,
+            selected=2,
+            failed_retry_candidates=0,
+            unanswered_candidates=2,
+            successful_excluded=0,
+        ),
+    )
     repository.existing_successes.add(("J1", "candidate-j1", 102))
     retriever = FakeRetriever()
     retriever.results[("J1", 101)] = _success_result(dataset="J1", question_id=101)
@@ -1778,6 +2633,534 @@ def test_emits_audit_events_for_run_question_retrieval_generation_persistence_sk
     assert "answer_persisted" in audit_text
     assert "question_skipped" in audit_text
     assert "run_finished" in audit_text
+
+
+def test_progress_callback_is_optional_and_does_not_change_sequential_behavior(tmp_path) -> None:
+    repository = FakeRepository()
+    retriever = FakeRetriever()
+    retriever.results[("J1", 101)] = _success_result(dataset="J1", question_id=101)
+    service = _service(repository=repository, retriever=retriever)
+
+    result = service.run(
+        RunCandidatesRagRequest(
+            dataset="J1",
+            model_name="candidate-j1",
+            provider="remote_http",
+            batch_size=1,
+            audit_log=str(tmp_path / "optional-progress.log"),
+            no_audit_animation=True,
+        )
+    )
+
+    assert result.summary is not None
+    assert result.summary.selected_questions == 1
+    assert result.summary.processed_questions == 1
+    assert result.summary.successful_answers == 1
+    assert result.summary.failed_answers == 0
+    assert result.summary.skipped_questions == 0
+
+
+def test_sequential_progress_events_emit_expected_order_for_one_successful_question(tmp_path) -> None:
+    repository = FakeRepository()
+    retriever = FakeRetriever()
+    retriever.results[("J1", 101)] = _success_result(dataset="J1", question_id=101)
+    service = _service(repository=repository, retriever=retriever)
+    events: list[CandidateProgressEvent] = []
+
+    result = service.run(
+        RunCandidatesRagRequest(
+            dataset="J1",
+            model_name="candidate-j1",
+            provider="remote_http",
+            batch_size=1,
+            audit_log=str(tmp_path / "progress-success.log"),
+            no_audit_animation=True,
+            progress_callback=events.append,
+        )
+    )
+
+    assert result.summary is not None
+    assert _event_types(events) == [
+        "candidate_question_selected",
+        "candidate_run_started",
+        "candidate_question_started",
+        "candidate_retrieval_finished",
+        "candidate_budget_applied",
+        "candidate_generation_started",
+        "candidate_generation_finished",
+        "candidate_answer_persisted",
+        "candidate_batch_progress",
+        "candidate_run_finished",
+    ]
+    assert events[1].candidate_run_id == 501
+    assert events[2].question_id == 101
+    assert events[3].metadata["retrieved_chunk_count"] == 1
+    assert events[4].metadata["final_max_tokens"] == 1024
+    assert events[7].metadata["candidate_answer_id"] == 801
+    assert events[8].metadata == {
+        "selected_questions": 1,
+        "processed_questions": 1,
+        "successful_answers": 1,
+        "failed_answers": 0,
+        "skipped_questions": 0,
+    }
+    assert events[9].metadata["run_status"] == "completed"
+
+
+def test_failed_question_emits_candidate_question_failed_progress_event(tmp_path) -> None:
+    repository = FakeRepository()
+    retriever = FakeRetriever()
+    retriever.results[("J1", 101)] = RagRetrievalResult(
+        question_id=101,
+        dataset="J1",
+        retrieval_run_id=21,
+        retrieval_name="j1_source_urls_v1",
+        embedding_model="text-embedding-3-small",
+        top_k=5,
+        status="no_chunks_found",
+        chunks=[],
+    )
+    service = _service(repository=repository, retriever=retriever)
+    events: list[CandidateProgressEvent] = []
+
+    result = service.run(
+        RunCandidatesRagRequest(
+            dataset="J1",
+            model_name="candidate-j1",
+            provider="remote_http",
+            batch_size=1,
+            audit_log=str(tmp_path / "progress-failed.log"),
+            no_audit_animation=True,
+            progress_callback=events.append,
+        )
+    )
+
+    assert result.summary is not None
+    failed = [event for event in events if event.event_type == "candidate_question_failed"]
+    assert len(failed) == 1
+    assert failed[0].question_id == 101
+    assert failed[0].metadata["error_class"] == "RetrievalError"
+    assert any(event.event_type == "candidate_batch_progress" for event in events)
+    assert events[-1].event_type == "candidate_run_finished"
+
+
+def test_skipped_existing_success_emits_candidate_question_skipped_progress_event(tmp_path) -> None:
+    repository = FakeRepository()
+    repository.pending_selection_result = CandidateQuestionSelectionResult(
+        questions=[CandidateQuestionRecord(101, "J1", "OAB_Bench", 1, "Q1", None)],
+        summary=CandidateQuestionSelectionSummary(
+            policy="failed_first_pending_aware",
+            skip_existing_successful=True,
+            selected=1,
+            failed_retry_candidates=0,
+            unanswered_candidates=1,
+            successful_excluded=0,
+        ),
+    )
+    repository.existing_successes.add(("J1", "candidate-j1", 101))
+    service = _service(repository=repository, retriever=FakeRetriever())
+    events: list[CandidateProgressEvent] = []
+
+    result = service.run(
+        RunCandidatesRagRequest(
+            dataset="J1",
+            model_name="candidate-j1",
+            provider="remote_http",
+            batch_size=1,
+            audit_log=str(tmp_path / "progress-skipped.log"),
+            no_audit_animation=True,
+            progress_callback=events.append,
+        )
+    )
+
+    assert result.summary is not None
+    skipped = [event for event in events if event.event_type == "candidate_question_skipped"]
+    assert len(skipped) == 1
+    assert skipped[0].metadata["reason"] == "existing_successful_answer"
+    assert [event for event in events if event.event_type == "candidate_batch_progress"][-1].metadata == {
+        "selected_questions": 1,
+        "processed_questions": 0,
+        "successful_answers": 0,
+        "failed_answers": 0,
+        "skipped_questions": 1,
+    }
+
+
+def test_progress_event_payloads_do_not_include_api_keys_or_raw_secret_values(tmp_path) -> None:
+    repository = FakeRepository()
+    retriever = FakeRetriever()
+    retriever.results[("J1", 101)] = _success_result(dataset="J1", question_id=101)
+    service = _service(repository=repository, retriever=retriever)
+    events: list[CandidateProgressEvent] = []
+
+    service.run(
+        RunCandidatesRagRequest(
+            dataset="J1",
+            model_name="openai/gpt-5.4",
+            provider="remote_http",
+            batch_size=1,
+            audit_log=str(tmp_path / "progress-secrets.log"),
+            no_audit_animation=True,
+            progress_callback=events.append,
+        )
+    )
+
+    serialized = "\n".join(
+        f"{event.event_type}|{event.message}|{event.metadata}" for event in events
+    )
+    assert "openrouter-test-key" not in serialized
+    assert "featherless-test-key" not in serialized
+    assert "Resposta final" not in serialized
+
+
+def test_progress_callback_exception_does_not_fail_candidate_run(tmp_path) -> None:
+    repository = FakeRepository()
+    retriever = FakeRetriever()
+    retriever.results[("J1", 101)] = _success_result(dataset="J1", question_id=101)
+    audit_path = tmp_path / "progress-callback-failure.log"
+    service = _service(repository=repository, retriever=retriever)
+
+    def fail_callback(_event: CandidateProgressEvent) -> None:
+        raise RuntimeError("ui sink offline")
+
+    result = service.run(
+        RunCandidatesRagRequest(
+            dataset="J1",
+            model_name="candidate-j1",
+            provider="remote_http",
+            batch_size=1,
+            audit_log=str(audit_path),
+            no_audit_animation=True,
+            progress_callback=fail_callback,
+        )
+    )
+
+    assert result.summary is not None
+    assert result.summary.successful_answers == 1
+    audit_text = audit_path.read_text(encoding="utf-8")
+    assert "candidate_progress_callback_failed" in audit_text
+
+
+def _set_j1_questions(repository: FakeRepository, count: int) -> None:
+    repository.questions_by_dataset["J1"] = [
+        CandidateQuestionRecord(
+            100 + index,
+            "J1",
+            "OAB_Bench",
+            index,
+            f"Q{index}",
+            None,
+        )
+        for index in range(1, count + 1)
+    ]
+
+
+def _stub_successful_retrievals(repository: FakeRepository, retriever: FakeRetriever) -> None:
+    for question in repository.questions_by_dataset["J1"]:
+        retriever.results[("J1", question.question_id)] = _success_result(
+            dataset="J1",
+            question_id=question.question_id,
+        )
+
+
+def test_sequential_stop_before_first_question_finalizes_cancelled_without_question_work(tmp_path) -> None:
+    repository = FakeRepository()
+    _set_j1_questions(repository, 2)
+    retriever = FakeRetriever()
+    _stub_successful_retrievals(repository, retriever)
+    client = FakeClient()
+    service = _service(repository=repository, retriever=retriever, client=client)
+    events: list[CandidateProgressEvent] = []
+
+    result = service.run(
+        RunCandidatesRagRequest(
+            dataset="J1",
+            model_name="candidate-j1",
+            provider="remote_http",
+            batch_size=2,
+            audit_log=str(tmp_path / "sequential-stop-before-first.log"),
+            no_audit_animation=True,
+            progress_callback=events.append,
+            should_stop=lambda: True,
+        )
+    )
+
+    assert result.summary is not None
+    assert result.summary.selected_questions == 2
+    assert result.summary.processed_questions == 0
+    assert result.summary.question_results == []
+    assert client.calls == []
+    assert retriever.calls == []
+    assert repository.persisted_answers == []
+    assert repository.updated_runs[-1]["run_status"] == "cancelled"
+    metadata = repository.updated_runs[-1]["metadata"]
+    assert metadata["stop_requested"] is True
+    assert metadata["stop_reason"] == "cooperative_stop"
+    assert metadata["not_started_due_to_stop"] == 2
+    assert any(event.event_type == "candidate_stop_requested" for event in events)
+    assert len([event for event in events if event.event_type == "candidate_task_not_started_due_to_stop"]) == 2
+    assert events[-1].event_type == "candidate_run_finished"
+    assert events[-1].metadata["run_status"] == "cancelled"
+
+
+def test_sequential_stop_after_first_question_does_not_start_remaining_questions(tmp_path) -> None:
+    repository = FakeRepository()
+    _set_j1_questions(repository, 3)
+    retriever = FakeRetriever()
+    _stub_successful_retrievals(repository, retriever)
+    client = FakeClient()
+    service = _service(repository=repository, retriever=retriever, client=client)
+    events: list[CandidateProgressEvent] = []
+    stop_requested = False
+
+    def progress_callback(event: CandidateProgressEvent) -> None:
+        nonlocal stop_requested
+        events.append(event)
+        if event.event_type == "candidate_batch_progress":
+            stop_requested = True
+
+    result = service.run(
+        RunCandidatesRagRequest(
+            dataset="J1",
+            model_name="candidate-j1",
+            provider="remote_http",
+            batch_size=3,
+            audit_log=str(tmp_path / "sequential-stop-after-first.log"),
+            no_audit_animation=True,
+            progress_callback=progress_callback,
+            should_stop=lambda: stop_requested,
+        )
+    )
+
+    assert result.summary is not None
+    assert result.summary.processed_questions == 1
+    assert result.summary.successful_answers == 1
+    assert [answer.question_id for answer in repository.persisted_answers] == [101]
+    assert [call[0] for call in retriever.calls] == [101]
+    assert repository.updated_runs[-1]["run_status"] == "cancelled"
+    assert repository.updated_runs[-1]["metadata"]["not_started_due_to_stop"] == 2
+    assert [event.event_type for event in events].count("candidate_stop_requested") == 1
+
+
+def test_parallel_stop_prevents_new_submission_and_waits_for_in_flight_tasks(tmp_path) -> None:
+    repository = FakeRepository()
+    _set_j1_questions(repository, 3)
+    retriever = FakeRetriever()
+    _stub_successful_retrievals(repository, retriever)
+    client = ThreadCountingClient()
+    service, _connections, _repositories = _parallel_service(repository=repository, retriever=retriever, client=client)
+    events: list[CandidateProgressEvent] = []
+    stop_requested = False
+
+    def progress_callback(event: CandidateProgressEvent) -> None:
+        nonlocal stop_requested
+        events.append(event)
+        if event.event_type == "candidate_batch_progress":
+            stop_requested = True
+
+    result = service.run(
+        RunCandidatesRagRequest(
+            dataset="J1",
+            model_name="candidate-j1",
+            provider="remote_http",
+            batch_size=3,
+            candidate_execution_strategy="parallel",
+            candidate_parallel_max_workers=2,
+            audit_log=str(tmp_path / "parallel-stop.log"),
+            no_audit_animation=True,
+            progress_callback=progress_callback,
+            should_stop=lambda: stop_requested,
+        )
+    )
+
+    assert result.summary is not None
+    assert result.summary.processed_questions == 2
+    assert result.summary.successful_answers == 2
+    assert len(client.calls) == 2
+    assert len(repository.persisted_answers) == 2
+    assert repository.updated_runs[-1]["run_status"] == "cancelled"
+    assert repository.updated_runs[-1]["metadata"]["not_started_due_to_stop"] == 1
+    assert len([event for event in events if event.event_type == "candidate_task_not_started_due_to_stop"]) == 1
+    assert events[-1].metadata["stop_requested"] is True
+
+
+def test_adaptive_stop_prevents_new_tasks_and_waits_for_in_flight_task(tmp_path) -> None:
+    repository = FakeRepository()
+    _set_j1_questions(repository, 3)
+    retriever = FakeRetriever()
+    _stub_successful_retrievals(repository, retriever)
+    client = ThreadCountingClient()
+    service, _connections, _repositories = _parallel_service(repository=repository, retriever=retriever, client=client)
+    events: list[CandidateProgressEvent] = []
+    stop_requested = False
+
+    def progress_callback(event: CandidateProgressEvent) -> None:
+        nonlocal stop_requested
+        events.append(event)
+        if event.event_type == "candidate_batch_progress":
+            stop_requested = True
+
+    result = service.run(
+        RunCandidatesRagRequest(
+            dataset="J1",
+            model_name="candidate-j1",
+            provider="remote_http",
+            batch_size=3,
+            candidate_execution_strategy="adaptive",
+            audit_log=str(tmp_path / "adaptive-stop.log"),
+            no_audit_animation=True,
+            progress_callback=progress_callback,
+            should_stop=lambda: stop_requested,
+        )
+    )
+
+    assert result.summary is not None
+    assert result.summary.processed_questions == 1
+    assert result.summary.successful_answers == 1
+    assert len(client.calls) == 1
+    assert len(repository.persisted_answers) == 1
+    assert repository.updated_runs[-1]["run_status"] == "cancelled"
+    assert repository.updated_runs[-1]["metadata"]["not_started_due_to_stop"] == 2
+    assert any(event.event_type == "candidate_stop_requested" for event in events)
+
+
+def test_stop_progress_events_do_not_include_api_keys_or_raw_secret_values(tmp_path) -> None:
+    repository = FakeRepository()
+    _set_j1_questions(repository, 2)
+    retriever = FakeRetriever()
+    _stub_successful_retrievals(repository, retriever)
+    service = _service(repository=repository, retriever=retriever)
+    events: list[CandidateProgressEvent] = []
+
+    service.run(
+        RunCandidatesRagRequest(
+            dataset="J1",
+            model_name="openai/gpt-5.4",
+            provider="remote_http",
+            batch_size=2,
+            audit_log=str(tmp_path / "stop-secrets.log"),
+            no_audit_animation=True,
+            progress_callback=events.append,
+            should_stop=lambda: True,
+        )
+    )
+
+    stop_events = [
+        event
+        for event in events
+        if event.event_type in {
+            "candidate_stop_requested",
+            "candidate_task_not_started_due_to_stop",
+            "candidate_run_finished",
+        }
+    ]
+    serialized = "\n".join(f"{event.event_type}|{event.message}|{event.metadata}" for event in stop_events)
+    assert "openrouter-test-key" not in serialized
+    assert "featherless-test-key" not in serialized
+    assert "Resposta final" not in serialized
+
+
+def test_should_stop_exception_is_logged_and_does_not_leave_run_running(tmp_path) -> None:
+    repository = FakeRepository()
+    retriever = FakeRetriever()
+    retriever.results[("J1", 101)] = _success_result(dataset="J1", question_id=101)
+    audit_path = tmp_path / "stop-exception.log"
+    service = _service(repository=repository, retriever=retriever)
+    calls = 0
+
+    def should_stop() -> bool:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise RuntimeError("stop backend unavailable")
+        return False
+
+    result = service.run(
+        RunCandidatesRagRequest(
+            dataset="J1",
+            model_name="candidate-j1",
+            provider="remote_http",
+            batch_size=1,
+            audit_log=str(audit_path),
+            no_audit_animation=True,
+            should_stop=should_stop,
+        )
+    )
+
+    assert result.summary is not None
+    assert result.summary.successful_answers == 1
+    assert repository.updated_runs[-1]["run_status"] == "completed"
+    assert repository.updated_runs[-1]["run_status"] != "running"
+    assert "candidate_should_stop_failed" in audit_path.read_text(encoding="utf-8")
+
+
+def test_parallel_progress_events_emit_for_all_selected_questions(tmp_path) -> None:
+    repository = FakeRepository()
+    repository.questions_by_dataset["J1"] = [
+        CandidateQuestionRecord(101, "J1", "OAB_Bench", 1, "Q1", None),
+        CandidateQuestionRecord(102, "J1", "OAB_Bench", 2, "Q2", None),
+        CandidateQuestionRecord(103, "J1", "OAB_Bench", 3, "Q3", None),
+    ]
+    retriever = FakeRetriever()
+    for question in repository.questions_by_dataset["J1"]:
+        retriever.results[("J1", question.question_id)] = _success_result(dataset="J1", question_id=question.question_id)
+    client = ThreadCountingClient()
+    service, _connections, _repositories = _parallel_service(repository=repository, retriever=retriever, client=client)
+    events: list[CandidateProgressEvent] = []
+
+    result = service.run(
+        RunCandidatesRagRequest(
+            dataset="J1",
+            model_name="candidate-j1",
+            provider="remote_http",
+            batch_size=3,
+            candidate_execution_strategy="parallel",
+            candidate_parallel_max_workers=2,
+            audit_log=str(tmp_path / "parallel-progress.log"),
+            no_audit_animation=True,
+            progress_callback=events.append,
+        )
+    )
+
+    assert result.summary is not None
+    assert len([event for event in events if event.event_type == "candidate_question_started"]) == 3
+    assert len([event for event in events if event.event_type == "candidate_answer_persisted"]) == 3
+    assert len([event for event in events if event.event_type == "candidate_batch_progress"]) == 3
+    assert events[-1].event_type == "candidate_run_finished"
+
+
+def test_adaptive_progress_events_emit_for_all_selected_questions(tmp_path) -> None:
+    repository = FakeRepository()
+    repository.questions_by_dataset["J1"] = [
+        CandidateQuestionRecord(101, "J1", "OAB_Bench", 1, "Q1", None),
+        CandidateQuestionRecord(102, "J1", "OAB_Bench", 2, "Q2", None),
+        CandidateQuestionRecord(103, "J1", "OAB_Bench", 3, "Q3", None),
+    ]
+    retriever = FakeRetriever()
+    for question in repository.questions_by_dataset["J1"]:
+        retriever.results[("J1", question.question_id)] = _success_result(dataset="J1", question_id=question.question_id)
+    client = ThreadCountingClient()
+    service, _connections, _repositories = _parallel_service(repository=repository, retriever=retriever, client=client)
+    events: list[CandidateProgressEvent] = []
+
+    result = service.run(
+        RunCandidatesRagRequest(
+            dataset="J1",
+            model_name="candidate-j1",
+            provider="remote_http",
+            batch_size=3,
+            candidate_execution_strategy="adaptive",
+            audit_log=str(tmp_path / "adaptive-progress.log"),
+            no_audit_animation=True,
+            progress_callback=events.append,
+        )
+    )
+
+    assert result.summary is not None
+    assert len([event for event in events if event.event_type == "candidate_question_started"]) == 3
+    assert len([event for event in events if event.event_type == "candidate_answer_persisted"]) == 3
+    assert len([event for event in events if event.event_type == "candidate_batch_progress"]) == 3
+    assert events[-1].event_type == "candidate_run_finished"
 
 
 def test_does_not_leak_answer_key_rubric_or_guideline_into_rendered_prompt(tmp_path) -> None:

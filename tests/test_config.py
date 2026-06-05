@@ -42,6 +42,14 @@ def test_settings_load_default_models_from_env() -> None:
     assert settings.judge_adaptive_base_backoff_seconds == 2.0
     assert settings.judge_adaptive_max_backoff_seconds == 60.0
     assert settings.remote_candidate_retry_on_context_window is False
+    assert settings.candidate_execution_strategy == "sequential"
+    assert settings.candidate_parallel_max_workers == 2
+    assert settings.candidate_adaptive_initial_concurrency == 1
+    assert settings.candidate_adaptive_max_concurrency == 2
+    assert settings.candidate_adaptive_success_threshold == 3
+    assert settings.candidate_adaptive_max_retries == 2
+    assert settings.candidate_adaptive_base_backoff_seconds == 2.0
+    assert settings.candidate_adaptive_max_backoff_seconds == 60.0
 
 
 def test_app_env_can_be_loaded_from_env() -> None:
@@ -150,6 +158,116 @@ def test_candidate_provider_env_values_can_be_loaded_from_env() -> None:
     assert settings.remote_candidate_temperature == 0.2
     assert settings.remote_candidate_top_p == 0.9
     assert settings.embedding_api_key == "embedding-secret"
+
+
+def test_candidate_execution_strategy_parses_sequential() -> None:
+    env = dict(BASE_ENV)
+    env["CANDIDATE_EXECUTION_STRATEGY"] = "sequential"
+
+    settings = load_settings(dotenv_path=None, env=env)
+
+    assert settings.candidate_execution_strategy == "sequential"
+
+
+def test_candidate_execution_strategy_parses_parallel() -> None:
+    env = dict(BASE_ENV)
+    env["CANDIDATE_EXECUTION_STRATEGY"] = "parallel"
+
+    settings = load_settings(dotenv_path=None, env=env)
+
+    assert settings.candidate_execution_strategy == "parallel"
+
+
+def test_candidate_execution_strategy_parses_adaptive() -> None:
+    env = dict(BASE_ENV)
+    env["CANDIDATE_EXECUTION_STRATEGY"] = "adaptive"
+
+    settings = load_settings(dotenv_path=None, env=env)
+
+    assert settings.candidate_execution_strategy == "adaptive"
+
+
+def test_invalid_candidate_execution_strategy_fails() -> None:
+    env = dict(BASE_ENV)
+    env["CANDIDATE_EXECUTION_STRATEGY"] = "unsupported"
+
+    with pytest.raises(ConfigurationError, match="CANDIDATE_EXECUTION_STRATEGY"):
+        load_settings(dotenv_path=None, env=env)
+
+
+def test_candidate_parallel_max_workers_parses_positive_integer() -> None:
+    env = dict(BASE_ENV)
+    env["CANDIDATE_PARALLEL_MAX_WORKERS"] = "4"
+
+    settings = load_settings(dotenv_path=None, env=env)
+
+    assert settings.candidate_parallel_max_workers == 4
+
+
+def test_invalid_candidate_parallel_max_workers_fails() -> None:
+    env = dict(BASE_ENV)
+    env["CANDIDATE_PARALLEL_MAX_WORKERS"] = "0"
+
+    with pytest.raises(ConfigurationError, match="CANDIDATE_PARALLEL_MAX_WORKERS"):
+        load_settings(dotenv_path=None, env=env)
+
+
+def test_candidate_adaptive_numeric_env_vars_parse() -> None:
+    env = dict(BASE_ENV)
+    env.update(
+        {
+            "CANDIDATE_ADAPTIVE_INITIAL_CONCURRENCY": "2",
+            "CANDIDATE_ADAPTIVE_MAX_CONCURRENCY": "3",
+            "CANDIDATE_ADAPTIVE_SUCCESS_THRESHOLD": "4",
+            "CANDIDATE_ADAPTIVE_MAX_RETRIES": "5",
+            "CANDIDATE_ADAPTIVE_BASE_BACKOFF_SECONDS": "1.5",
+            "CANDIDATE_ADAPTIVE_MAX_BACKOFF_SECONDS": "30",
+        }
+    )
+
+    settings = load_settings(dotenv_path=None, env=env)
+
+    assert settings.candidate_adaptive_initial_concurrency == 2
+    assert settings.candidate_adaptive_max_concurrency == 3
+    assert settings.candidate_adaptive_success_threshold == 4
+    assert settings.candidate_adaptive_max_retries == 5
+    assert settings.candidate_adaptive_base_backoff_seconds == 1.5
+    assert settings.candidate_adaptive_max_backoff_seconds == 30.0
+
+
+@pytest.mark.parametrize(
+    ("key", "value"),
+    [
+        ("CANDIDATE_ADAPTIVE_INITIAL_CONCURRENCY", "0"),
+        ("CANDIDATE_ADAPTIVE_MAX_CONCURRENCY", "0"),
+        ("CANDIDATE_ADAPTIVE_SUCCESS_THRESHOLD", "0"),
+        ("CANDIDATE_ADAPTIVE_MAX_RETRIES", "-1"),
+    ],
+)
+def test_invalid_candidate_adaptive_integer_env_vars_fail(key: str, value: str) -> None:
+    env = dict(BASE_ENV)
+    env[key] = value
+
+    with pytest.raises(ConfigurationError, match=key):
+        load_settings(dotenv_path=None, env=env)
+
+
+def test_candidate_adaptive_initial_cannot_exceed_max() -> None:
+    env = dict(BASE_ENV)
+    env["CANDIDATE_ADAPTIVE_INITIAL_CONCURRENCY"] = "3"
+    env["CANDIDATE_ADAPTIVE_MAX_CONCURRENCY"] = "2"
+
+    with pytest.raises(ConfigurationError, match="CANDIDATE_ADAPTIVE_INITIAL_CONCURRENCY"):
+        load_settings(dotenv_path=None, env=env)
+
+
+def test_candidate_adaptive_max_backoff_cannot_be_less_than_base() -> None:
+    env = dict(BASE_ENV)
+    env["CANDIDATE_ADAPTIVE_BASE_BACKOFF_SECONDS"] = "3"
+    env["CANDIDATE_ADAPTIVE_MAX_BACKOFF_SECONDS"] = "2"
+
+    with pytest.raises(ConfigurationError, match="CANDIDATE_ADAPTIVE_MAX_BACKOFF_SECONDS"):
+        load_settings(dotenv_path=None, env=env)
 
 
 def test_judge_model_cli_override_forces_single_mode() -> None:

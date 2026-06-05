@@ -95,6 +95,11 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--dry-run", action="store_true", help="Resolve and print commands without remote calls.")
     parser.add_argument(
+        "--candidate-execution-strategy",
+        choices=["sequential", "parallel", "adaptive"],
+        help="Pass through candidate execution strategy to run-candidates-rag.",
+    )
+    parser.add_argument(
         "--unique-models",
         action="store_true",
         help="Run only once per provider model id, using the first runnable assignment/range.",
@@ -240,6 +245,9 @@ def build_command(args: argparse.Namespace, target: SmokeTarget) -> list[str]:
 
     if args.no_audit_animation:
         command.append("--no-audit-animation")
+
+    if args.candidate_execution_strategy:
+        command.extend(["--candidate-execution-strategy", args.candidate_execution_strategy])
 
     return command
 

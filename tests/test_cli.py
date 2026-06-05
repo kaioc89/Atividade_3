@@ -87,6 +87,18 @@ def test_run_candidates_rag_help_exits_successfully() -> None:
     assert exit_error.value.code == 0
 
 
+def test_run_candidates_rag_help_exposes_candidate_execution_strategy(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    with pytest.raises(SystemExit) as exit_error:
+        cli.main(["run-candidates-rag", "--help"])
+
+    output = capsys.readouterr().out
+    assert exit_error.value.code == 0
+    assert "--candidate-execution-strategy" in output
+    assert "--candidate-parallel-max-workers" in output
+
+
 def test_save_default_prompt_help_exits_successfully() -> None:
     with pytest.raises(SystemExit) as exit_error:
         cli.main(["save-default-prompt", "--help"])
@@ -233,6 +245,31 @@ def test_run_candidates_rag_parser_accepts_j2() -> None:
     )
 
     assert args.dataset == "J2"
+
+
+def test_run_candidates_rag_parser_accepts_candidate_execution_strategy() -> None:
+    parser = cli.build_parser()
+
+    args = parser.parse_args(
+        [
+            "run-candidates-rag",
+            "--dataset",
+            "J1",
+            "--candidate-model",
+            "openai/gpt-5.4",
+            "--provider",
+            "remote_http",
+            "--batch-size",
+            "2",
+            "--candidate-execution-strategy",
+            "adaptive",
+            "--candidate-parallel-max-workers",
+            "3",
+        ]
+    )
+
+    assert args.candidate_execution_strategy == "adaptive"
+    assert args.candidate_parallel_max_workers == 3
 
 
 def test_run_candidates_rag_parser_requires_candidate_model() -> None:
@@ -602,6 +639,49 @@ def test_run_candidates_rag_passes_retry_on_context_window_flag(
 
     assert exit_code == 0
     assert service.requests[0].remote_candidate_retry_on_context_window is True
+
+
+def test_run_candidates_rag_cli_strategy_overrides_env(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = FakeRunCandidatesRagService()
+    monkeypatch.setattr(
+        cli,
+        "load_settings",
+        lambda: SimpleNamespace(
+            remote_candidate_temperature=0.2,
+            remote_candidate_max_tokens=1024,
+            remote_candidate_top_p=0.9,
+            remote_candidate_context_safety_margin_tokens=512,
+            remote_candidate_context_window_tokens=None,
+            remote_candidate_retry_on_context_window=False,
+            candidate_execution_strategy="sequential",
+            candidate_parallel_max_workers=2,
+        ),
+    )
+    monkeypatch.setattr(cli, "RunCandidatesRagService", lambda: service)
+
+    exit_code = cli.main(
+        [
+            "run-candidates-rag",
+            "--dataset",
+            "J1",
+            "--candidate-model",
+            "candidate-j1",
+            "--provider",
+            "remote_http",
+            "--batch-size",
+            "1",
+            "--candidate-execution-strategy",
+            "parallel",
+            "--candidate-parallel-max-workers",
+            "4",
+        ]
+    )
+
+    assert exit_code == 0
+    assert service.requests[0].candidate_execution_strategy == "parallel"
+    assert service.requests[0].candidate_parallel_max_workers == 4
 
 
 def test_run_candidates_rag_command_prints_summary(

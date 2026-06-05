@@ -17,6 +17,8 @@ from .contracts import (
     CandidateModelRuntimeProfileRecord,
     CandidatePromptRecord,
     CandidateQuestionRecord,
+    CandidateQuestionSelectionResult,
+    CandidateQuestionSelectionSummary,
     CandidateRunRecord,
     EligibilitySummary,
     EvaluationRecord,
@@ -4119,6 +4121,165 @@ class JudgeRepository:
             )
             for row in rows
         ]
+
+    def select_pending_candidate_questions(
+        self,
+        *,
+        dataset: str,
+        model_name: str,
+        batch_size: int,
+        question_sequence_start: int | None,
+        question_sequence_end: int | None,
+        question_id: int | None,
+        skip_existing_successful: bool,
+    ) -> CandidateQuestionSelectionResult:
+        """Select model-aware pending/retry candidate questions before applying the batch limit."""
+        dataset_code = dataset.upper()
+        vector_summary = self.get_rag_vector_base_summary(dataset=dataset_code)
+        if vector_summary is None:
+            raise ValueError(f"No active RAG vector base found for {dataset_code}.")
+
+        conditions = ["q.dataset_code = %s", "q.id_import_run = %s"]
+        params: list[Any] = [dataset_code, vector_summary.import_run_id]
+        if question_id is not None:
+            conditions.append("q.id_pergunta = %s")
+            params.append(int(question_id))
+        if question_sequence_start is not None:
+            conditions.append("q.question_sequence >= %s")
+            params.append(int(question_sequence_start))
+        if question_sequence_end is not None:
+            conditions.append("q.question_sequence <= %s")
+            params.append(int(question_sequence_end))
+
+        limit = max(1, int(batch_size))
+        dataset_name = DATASET_ALIASES.get(dataset_code, dataset_code)
+        if not skip_existing_successful:
+            with self.connection.cursor() as cursor:
+                cursor.execute(
+                    f"""
+                    SELECT
+                        q.id_pergunta,
+                        q.dataset_code,
+                        q.question_sequence,
+                        q.questao,
+                        q.alternativas_jsonb
+                    FROM av3.curadoria_questoes q
+                    WHERE {' AND '.join(conditions)}
+                    ORDER BY q.question_sequence, q.id_pergunta
+                    LIMIT %s;
+                    """,
+                    [*params, limit],
+                )
+                rows = cursor.fetchall()
+            questions = [
+                CandidateQuestionRecord(
+                    question_id=int(row[0]),
+                    dataset=row[1],
+                    dataset_name=dataset_name,
+                    question_sequence=int(row[2]),
+                    question_text=row[3],
+                    alternatives=_parse_jsonb(row[4]),
+                )
+                for row in rows
+            ]
+            return CandidateQuestionSelectionResult(
+                questions=questions,
+                summary=CandidateQuestionSelectionSummary(
+                    policy="sequence_order_no_success_filter",
+                    skip_existing_successful=False,
+                    selected=len(questions),
+                ),
+            )
+
+        scoped_questions_cte = f"""
+            WITH scoped_questions AS (
+                SELECT
+                    q.id_pergunta,
+                    q.dataset_code,
+                    q.question_sequence,
+                    q.questao,
+                    q.alternativas_jsonb
+                FROM av3.curadoria_questoes q
+                WHERE {' AND '.join(conditions)}
+            ),
+            candidate_state AS (
+                SELECT
+                    scoped.*,
+                    EXISTS (
+                        SELECT 1
+                        FROM av3.candidate_answers a
+                        JOIN av3.candidate_runs r ON r.id_candidate_run = a.id_candidate_run
+                        WHERE r.dataset_code = %s
+                          AND a.model_name = %s
+                          AND a.id_pergunta = scoped.id_pergunta
+                          AND a.status = 'success'
+                    ) AS has_success,
+                    EXISTS (
+                        SELECT 1
+                        FROM av3.candidate_answers a
+                        JOIN av3.candidate_runs r ON r.id_candidate_run = a.id_candidate_run
+                        WHERE r.dataset_code = %s
+                          AND a.model_name = %s
+                          AND a.id_pergunta = scoped.id_pergunta
+                          AND a.status = 'failed'
+                    ) AS has_failed
+                FROM scoped_questions scoped
+            )
+        """
+        state_params = [*params, dataset_code, model_name, dataset_code, model_name]
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                f"""
+                {scoped_questions_cte}
+                SELECT
+                    id_pergunta,
+                    dataset_code,
+                    question_sequence,
+                    questao,
+                    alternativas_jsonb,
+                    has_failed
+                FROM candidate_state
+                WHERE NOT has_success
+                ORDER BY has_failed DESC, question_sequence, id_pergunta
+                LIMIT %s;
+                """,
+                [*state_params, limit],
+            )
+            rows = cursor.fetchall()
+            cursor.execute(
+                f"""
+                {scoped_questions_cte}
+                SELECT
+                    COUNT(*) FILTER (WHERE has_success) AS successful_excluded
+                FROM candidate_state;
+                """,
+                state_params,
+            )
+            count_row = cursor.fetchone()
+
+        questions = [
+            CandidateQuestionRecord(
+                question_id=int(row[0]),
+                dataset=row[1],
+                dataset_name=dataset_name,
+                question_sequence=int(row[2]),
+                question_text=row[3],
+                alternatives=_parse_jsonb(row[4]),
+            )
+            for row in rows
+        ]
+        failed_retry_candidates = sum(1 for row in rows if bool(row[5]))
+        return CandidateQuestionSelectionResult(
+            questions=questions,
+            summary=CandidateQuestionSelectionSummary(
+                policy="failed_first_pending_aware",
+                skip_existing_successful=True,
+                selected=len(questions),
+                failed_retry_candidates=failed_retry_candidates,
+                unanswered_candidates=len(questions) - failed_retry_candidates,
+                successful_excluded=int(count_row[0]) if count_row is not None and count_row[0] is not None else None,
+            ),
+        )
 
     def successful_candidate_answer_exists(
         self,
