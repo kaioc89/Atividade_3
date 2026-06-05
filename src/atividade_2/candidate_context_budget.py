@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
-from math import ceil
+from math import ceil, floor
 from typing import Any
 
 from .candidate_prompts import build_candidate_prompt
 from .contracts import (
+    CandidateModelRuntimeProfileRecord,
     CandidatePromptContext,
     CandidatePromptRecord,
     CandidateQuestionRecord,
@@ -24,8 +25,12 @@ class CandidateModelRuntimeProfile:
     model_name: str
     context_window_tokens: int | None
     default_max_output_tokens: int
+    max_output_tokens_cap: int | None
     safety_margin_tokens: int
+    chars_per_token_estimate: float
+    prompt_budget_utilization: float
     source: str
+    confidence: str
 
 
 @dataclass(frozen=True)
@@ -38,6 +43,10 @@ class CandidatePromptBudget:
     estimated_context_tokens_after_budget: int
     max_output_tokens: int
     safety_margin_tokens: int
+    chars_per_token_estimate: float
+    prompt_budget_utilization: float
+    safe_prompt_budget: int | None
+    target_prompt_budget: int | None
     available_context_tokens: int | None
     retrieved_chunks: int
     included_chunks: int
@@ -71,19 +80,81 @@ class BudgetedCandidateRetrievalContext:
     budgeted_chunks: list[BudgetedRetrievedChunk]
 
 
-_MODEL_DEFAULTS: dict[str, tuple[int | None, int]] = {
-    "google/gemma-2-2b-it": (8192, 1024),
-    "qwen/qwen2.5-3b-instruct": (None, 1024),
-    "qwen/qwen2.5-7b-instruct": (None, 1500),
-    "x-ai/grok-4.3": (None, 3000),
-    "openai/gpt-5": (None, 3000),
-    "google/gemini-3.5-flash": (None, 2000),
+_MODEL_DEFAULTS: dict[str, dict[str, int | float | None]] = {
+    "google/gemma-2-2b-it": {
+        "context_window_tokens": 8192,
+        "default_max_output_tokens": 768,
+        "max_output_tokens_cap": 1024,
+        "safety_margin_tokens": 512,
+        "chars_per_token_estimate": 3.0,
+        "prompt_budget_utilization": 0.85,
+    },
+    "microsoft/phi-3-mini-4k-instruct": {
+        "context_window_tokens": 4096,
+        "default_max_output_tokens": 512,
+        "max_output_tokens_cap": 512,
+        "safety_margin_tokens": 512,
+        "chars_per_token_estimate": 3.0,
+        "prompt_budget_utilization": 0.80,
+    },
+    "tinyllama/tinyllama-1.1b-chat-v1.0": {
+        "context_window_tokens": 2048,
+        "default_max_output_tokens": 512,
+        "max_output_tokens_cap": 512,
+        "safety_margin_tokens": 512,
+        "chars_per_token_estimate": 3.0,
+        "prompt_budget_utilization": 0.75,
+    },
+    "qwen/qwen2.5-3b-instruct": {
+        "context_window_tokens": None,
+        "default_max_output_tokens": 1024,
+        "max_output_tokens_cap": None,
+        "safety_margin_tokens": 512,
+        "chars_per_token_estimate": 4.0,
+        "prompt_budget_utilization": 1.0,
+    },
+    "qwen/qwen2.5-7b-instruct": {
+        "context_window_tokens": None,
+        "default_max_output_tokens": 1500,
+        "max_output_tokens_cap": None,
+        "safety_margin_tokens": 512,
+        "chars_per_token_estimate": 4.0,
+        "prompt_budget_utilization": 1.0,
+    },
+    "x-ai/grok-4.3": {
+        "context_window_tokens": None,
+        "default_max_output_tokens": 3000,
+        "max_output_tokens_cap": None,
+        "safety_margin_tokens": 512,
+        "chars_per_token_estimate": 4.0,
+        "prompt_budget_utilization": 1.0,
+    },
+    "openai/gpt-5": {
+        "context_window_tokens": None,
+        "default_max_output_tokens": 3000,
+        "max_output_tokens_cap": None,
+        "safety_margin_tokens": 512,
+        "chars_per_token_estimate": 4.0,
+        "prompt_budget_utilization": 1.0,
+    },
+    "google/gemini-3.5-flash": {
+        "context_window_tokens": None,
+        "default_max_output_tokens": 2000,
+        "max_output_tokens_cap": None,
+        "safety_margin_tokens": 512,
+        "chars_per_token_estimate": 4.0,
+        "prompt_budget_utilization": 1.0,
+    },
 }
 
+_MIN_PLAUSIBLE_CONTEXT_WINDOW_TOKENS = 1024
 
-def estimate_tokens(text: str) -> int:
+
+def estimate_tokens(text: str, *, chars_per_token_estimate: float = 4.0) -> int:
     """Estimate tokens conservatively without adding tokenizer dependencies."""
-    return ceil(len(text) / 4)
+    if chars_per_token_estimate <= 0:
+        raise ValueError("chars_per_token_estimate must be greater than zero.")
+    return ceil(len(text) / chars_per_token_estimate)
 
 
 def resolve_candidate_model_runtime_profile(
@@ -92,24 +163,85 @@ def resolve_candidate_model_runtime_profile(
     model_name: str,
     safety_margin_tokens: int,
     context_window_tokens_override: int | None = None,
+    persisted_profile: CandidateModelRuntimeProfileRecord | None = None,
+    catalog_context_window_tokens: int | None = None,
 ) -> CandidateModelRuntimeProfile:
-    """Resolve known model runtime defaults without inventing unknown windows."""
+    """Resolve runtime limits with env override, DB profile, and static fallback."""
     normalized = model_name.strip().casefold()
-    context_window, default_max_output = _MODEL_DEFAULTS.get(
-        normalized,
-        (None, _default_output_tokens_for_unknown_model(provider=provider, model_name=model_name)),
+    static_profile = _MODEL_DEFAULTS.get(normalized)
+    default_max_output = (
+        int(static_profile["default_max_output_tokens"])
+        if static_profile is not None
+        else _default_output_tokens_for_unknown_model(provider=provider, model_name=model_name)
     )
-    source = "static_profile" if normalized in _MODEL_DEFAULTS else "fallback_default"
+    max_output_tokens_cap = (
+        int(static_profile["max_output_tokens_cap"])
+        if static_profile is not None and static_profile["max_output_tokens_cap"] is not None
+        else None
+    )
+    context_window = (
+        int(static_profile["context_window_tokens"])
+        if static_profile is not None and static_profile["context_window_tokens"] is not None
+        else None
+    )
+    resolved_safety_margin = (
+        int(static_profile["safety_margin_tokens"])
+        if static_profile is not None
+        else int(safety_margin_tokens)
+    )
+    chars_per_token_estimate = (
+        float(static_profile["chars_per_token_estimate"]) if static_profile is not None else 4.0
+    )
+    prompt_budget_utilization = (
+        float(static_profile["prompt_budget_utilization"]) if static_profile is not None else 1.0
+    )
+    source = "static_seed" if static_profile is not None else "fallback_default"
+    confidence = "seeded" if static_profile is not None else "heuristic"
+    if persisted_profile is not None:
+        if (
+            persisted_profile.context_window_tokens is not None
+            and int(persisted_profile.context_window_tokens) >= _MIN_PLAUSIBLE_CONTEXT_WINDOW_TOKENS
+        ):
+            context_window = int(persisted_profile.context_window_tokens)
+        if persisted_profile.default_max_output_tokens is not None:
+            default_max_output = int(persisted_profile.default_max_output_tokens)
+        resolved_safety_margin = int(persisted_profile.safety_margin_tokens)
+        max_output_tokens_cap = _metadata_optional_int(
+            persisted_profile.metadata,
+            "max_output_tokens_cap",
+            default=max_output_tokens_cap,
+        )
+        chars_per_token_estimate = _metadata_float(
+            persisted_profile.metadata,
+            "chars_per_token_estimate",
+            default=chars_per_token_estimate,
+        )
+        prompt_budget_utilization = _metadata_float(
+            persisted_profile.metadata,
+            "prompt_budget_utilization",
+            default=prompt_budget_utilization,
+        )
+        source = persisted_profile.source
+        confidence = persisted_profile.confidence
+    elif catalog_context_window_tokens is not None:
+        context_window = int(catalog_context_window_tokens)
+        source = "provider_catalog"
+        confidence = "catalog"
     if context_window_tokens_override is not None:
         context_window = int(context_window_tokens_override)
         source = "env_override"
+        confidence = "explicit"
     return CandidateModelRuntimeProfile(
         provider=provider,
         model_name=model_name,
         context_window_tokens=context_window,
         default_max_output_tokens=default_max_output,
-        safety_margin_tokens=safety_margin_tokens,
+        max_output_tokens_cap=max_output_tokens_cap,
+        safety_margin_tokens=max(1, resolved_safety_margin),
+        chars_per_token_estimate=max(0.01, chars_per_token_estimate),
+        prompt_budget_utilization=min(1.0, max(0.01, prompt_budget_utilization)),
         source=source,
+        confidence=confidence,
     )
 
 
@@ -119,9 +251,14 @@ def resolve_candidate_max_output_tokens(
     requested_max_tokens: int | None,
 ) -> int:
     """Resolve requested/default max output before prompt-specific clamping."""
-    if requested_max_tokens is not None:
-        return int(requested_max_tokens)
-    return int(profile.default_max_output_tokens)
+    requested_or_default = (
+        int(requested_max_tokens)
+        if requested_max_tokens is not None
+        else int(profile.default_max_output_tokens)
+    )
+    if profile.max_output_tokens_cap is not None:
+        requested_or_default = min(requested_or_default, int(profile.max_output_tokens_cap))
+    return max(1, requested_or_default)
 
 
 def clamp_max_output_tokens_to_fixed_prompt(
@@ -156,8 +293,17 @@ def budget_candidate_retrieval_context(
     max_tokens: int,
     safety_margin_tokens: int,
     context_window_tokens: int | None,
+    chars_per_token_estimate: float | None = None,
+    prompt_budget_utilization: float | None = None,
 ) -> BudgetedCandidateRetrievalContext:
     """Apply the known context budget after retrieval and before prompt rendering."""
+    resolved_chars_per_token_estimate, resolved_prompt_budget_utilization = _resolve_budgeting_parameters(
+        model_name=model_name,
+        av3_provider=av3_provider,
+        safety_margin_tokens=safety_margin_tokens,
+        chars_per_token_estimate=chars_per_token_estimate,
+        prompt_budget_utilization=prompt_budget_utilization,
+    )
     fixed_prompt = _render_prompt(question=question, retrieval_result=retrieval_result, prompt=prompt, chunks=[])
     prompt_before_budget = _render_prompt(
         question=question,
@@ -165,11 +311,22 @@ def budget_candidate_retrieval_context(
         prompt=prompt,
         chunks=list(retrieval_result.chunks),
     )
-    estimated_fixed_prompt_tokens = estimate_tokens(fixed_prompt)
-    estimated_prompt_tokens_before_budget = estimate_tokens(prompt_before_budget)
-    estimated_context_tokens_before_budget = sum(estimate_tokens(chunk.chunk_text) for chunk in retrieval_result.chunks)
+    estimated_fixed_prompt_tokens = estimate_tokens(
+        fixed_prompt,
+        chars_per_token_estimate=resolved_chars_per_token_estimate,
+    )
+    estimated_prompt_tokens_before_budget = estimate_tokens(
+        prompt_before_budget,
+        chars_per_token_estimate=resolved_chars_per_token_estimate,
+    )
+    estimated_context_tokens_before_budget = sum(
+        estimate_tokens(chunk.chunk_text, chars_per_token_estimate=resolved_chars_per_token_estimate)
+        for chunk in retrieval_result.chunks
+    )
 
     available_context_tokens: int | None = None
+    safe_prompt_budget: int | None = None
+    target_prompt_budget: int | None = None
     budgeted_chunks: list[BudgetedRetrievedChunk]
     if context_window_tokens is None:
         budgeted_chunks = [
@@ -178,25 +335,46 @@ def budget_candidate_retrieval_context(
                 included_chunk_text=chunk.chunk_text,
                 included_in_prompt=True,
                 was_truncated=False,
-                original_estimated_tokens=estimate_tokens(chunk.chunk_text),
-                included_estimated_tokens=estimate_tokens(chunk.chunk_text),
+                original_estimated_tokens=estimate_tokens(
+                    chunk.chunk_text,
+                    chars_per_token_estimate=resolved_chars_per_token_estimate,
+                ),
+                included_estimated_tokens=estimate_tokens(
+                    chunk.chunk_text,
+                    chars_per_token_estimate=resolved_chars_per_token_estimate,
+                ),
                 truncation_reason=None,
             )
             for chunk in retrieval_result.chunks
         ]
     else:
-        available_context_tokens = (
-            context_window_tokens - estimated_fixed_prompt_tokens - int(max_tokens) - int(safety_margin_tokens)
-        )
+        safe_prompt_budget = int(context_window_tokens) - int(max_tokens) - int(safety_margin_tokens)
+        if safe_prompt_budget <= 0:
+            raise ValueError(
+                f"Candidate max output plus safety margin exceeds the known context window for {model_name}. "
+                f"max_tokens={max_tokens} "
+                f"safety_margin_tokens={safety_margin_tokens} context_window_tokens={context_window_tokens}."
+            )
+        target_prompt_budget = floor(safe_prompt_budget * resolved_prompt_budget_utilization)
+        if target_prompt_budget <= 0:
+            raise ValueError(
+                f"Candidate target prompt budget is not positive for {model_name}. "
+                f"safe_prompt_budget={safe_prompt_budget} "
+                f"prompt_budget_utilization={resolved_prompt_budget_utilization}."
+            )
+        available_context_tokens = target_prompt_budget - estimated_fixed_prompt_tokens
         if available_context_tokens < 0:
             raise ValueError(
-                f"Fixed candidate prompt plus max output exceeds the known context window for {model_name}. "
-                f"estimated_fixed_prompt_tokens={estimated_fixed_prompt_tokens} max_tokens={max_tokens} "
-                f"safety_margin_tokens={safety_margin_tokens} context_window_tokens={context_window_tokens}."
+                f"Fixed candidate prompt without retrieved context exceeds the target prompt budget for {model_name}. "
+                f"estimated_fixed_prompt_tokens={estimated_fixed_prompt_tokens} "
+                f"target_prompt_budget={target_prompt_budget} safe_prompt_budget={safe_prompt_budget} "
+                f"max_tokens={max_tokens} safety_margin_tokens={safety_margin_tokens} "
+                f"context_window_tokens={context_window_tokens}."
             )
         budgeted_chunks = _budget_chunks(
             chunks=retrieval_result.chunks,
             available_context_tokens=available_context_tokens,
+            chars_per_token_estimate=resolved_chars_per_token_estimate,
         )
 
     retrieval_result_for_prompt, estimated_prompt_tokens_after_budget = _build_result_and_estimate(
@@ -204,24 +382,25 @@ def budget_candidate_retrieval_context(
         retrieval_result=retrieval_result,
         prompt=prompt,
         budgeted_chunks=budgeted_chunks,
+        chars_per_token_estimate=resolved_chars_per_token_estimate,
     )
     if context_window_tokens is not None:
-        total_estimated_tokens = estimated_prompt_tokens_after_budget + int(max_tokens) + int(safety_margin_tokens)
-        if total_estimated_tokens > context_window_tokens:
+        assert target_prompt_budget is not None
+        if estimated_prompt_tokens_after_budget > target_prompt_budget:
             budgeted_chunks, retrieval_result_for_prompt, estimated_prompt_tokens_after_budget = (
                 _shrink_budgeted_chunks_to_fit_rendered_prompt(
                     question=question,
                     retrieval_result=retrieval_result,
                     prompt=prompt,
                     budgeted_chunks=budgeted_chunks,
-                    context_window_tokens=context_window_tokens,
-                    max_tokens=int(max_tokens),
-                    safety_margin_tokens=int(safety_margin_tokens),
+                    target_prompt_budget=target_prompt_budget,
+                    chars_per_token_estimate=resolved_chars_per_token_estimate,
                 )
             )
 
     truncated_chunks = sum(1 for chunk in budgeted_chunks if chunk.was_truncated)
     dropped_chunks = sum(1 for chunk in budgeted_chunks if not chunk.included_in_prompt)
+    included_chunks = sum(1 for chunk in budgeted_chunks if chunk.included_in_prompt)
     estimated_context_tokens_after_budget = sum(
         chunk.included_estimated_tokens for chunk in budgeted_chunks if chunk.included_in_prompt
     )
@@ -233,9 +412,13 @@ def budget_candidate_retrieval_context(
         estimated_context_tokens_after_budget=estimated_context_tokens_after_budget,
         max_output_tokens=int(max_tokens),
         safety_margin_tokens=int(safety_margin_tokens),
+        chars_per_token_estimate=resolved_chars_per_token_estimate,
+        prompt_budget_utilization=resolved_prompt_budget_utilization,
+        safe_prompt_budget=safe_prompt_budget,
+        target_prompt_budget=target_prompt_budget,
         available_context_tokens=available_context_tokens,
         retrieved_chunks=len(retrieval_result.chunks),
-        included_chunks=sum(1 for chunk in budgeted_chunks if chunk.included_in_prompt),
+        included_chunks=included_chunks,
         truncated_chunks=truncated_chunks,
         dropped_chunks=dropped_chunks,
         was_truncated=was_truncated,
@@ -265,6 +448,10 @@ def budget_to_metadata(
     return {
         "context_window_tokens": budget.context_window_tokens,
         "safety_margin_tokens": budget.safety_margin_tokens,
+        "prompt_budget_utilization": budget.prompt_budget_utilization,
+        "chars_per_token_estimate": budget.chars_per_token_estimate,
+        "safe_prompt_budget": budget.safe_prompt_budget,
+        "target_prompt_budget": budget.target_prompt_budget,
         "requested_max_tokens": int(requested_max_tokens),
         "final_max_tokens": budget.max_output_tokens,
         "estimated_prompt_tokens_before_budget": budget.estimated_prompt_tokens_before_budget,
@@ -287,6 +474,10 @@ def aggregate_budget_metadata(
     return {
         "context_window_tokens": budgets[0].context_window_tokens,
         "safety_margin_tokens": budgets[0].safety_margin_tokens,
+        "prompt_budget_utilization": budgets[0].prompt_budget_utilization,
+        "chars_per_token_estimate": budgets[0].chars_per_token_estimate,
+        "safe_prompt_budget": budgets[0].safe_prompt_budget,
+        "target_prompt_budget": budgets[0].target_prompt_budget,
         "requested_max_tokens": int(requested_max_tokens),
         "final_max_tokens": budgets[0].max_output_tokens,
         "estimated_prompt_tokens_before_budget": max(
@@ -306,11 +497,15 @@ def _budget_chunks(
     *,
     chunks: list[RetrievedRagChunk],
     available_context_tokens: int,
+    chars_per_token_estimate: float,
 ) -> list[BudgetedRetrievedChunk]:
     remaining_tokens = available_context_tokens
     budgeted: list[BudgetedRetrievedChunk] = []
     for chunk in chunks:
-        original_estimated_tokens = estimate_tokens(chunk.chunk_text)
+        original_estimated_tokens = estimate_tokens(
+            chunk.chunk_text,
+            chars_per_token_estimate=chars_per_token_estimate,
+        )
         if remaining_tokens <= 0:
             budgeted.append(
                 BudgetedRetrievedChunk(
@@ -339,8 +534,12 @@ def _budget_chunks(
             remaining_tokens -= original_estimated_tokens
             continue
 
-        included_text = chunk.chunk_text[: remaining_tokens * 4].rstrip()
-        included_estimated_tokens = estimate_tokens(included_text)
+        included_char_budget = max(1, int(remaining_tokens * chars_per_token_estimate))
+        included_text = chunk.chunk_text[:included_char_budget].rstrip()
+        included_estimated_tokens = estimate_tokens(
+            included_text,
+            chars_per_token_estimate=chars_per_token_estimate,
+        )
         budgeted.append(
             BudgetedRetrievedChunk(
                 chunk=chunk,
@@ -391,6 +590,7 @@ def _build_result_and_estimate(
     retrieval_result: RagRetrievalResult,
     prompt: CandidatePromptRecord,
     budgeted_chunks: list[BudgetedRetrievedChunk],
+    chars_per_token_estimate: float,
 ) -> tuple[RagRetrievalResult, int]:
     included_chunks = [_copy_chunk_for_prompt(chunk) for chunk in budgeted_chunks if chunk.included_in_prompt]
     retrieval_result_for_prompt = RagRetrievalResult(
@@ -409,7 +609,10 @@ def _build_result_and_estimate(
         prompt=prompt,
         chunks=included_chunks,
     )
-    return retrieval_result_for_prompt, estimate_tokens(prompt_after_budget)
+    return retrieval_result_for_prompt, estimate_tokens(
+        prompt_after_budget,
+        chars_per_token_estimate=chars_per_token_estimate,
+    )
 
 
 def _shrink_budgeted_chunks_to_fit_rendered_prompt(
@@ -418,9 +621,8 @@ def _shrink_budgeted_chunks_to_fit_rendered_prompt(
     retrieval_result: RagRetrievalResult,
     prompt: CandidatePromptRecord,
     budgeted_chunks: list[BudgetedRetrievedChunk],
-    context_window_tokens: int,
-    max_tokens: int,
-    safety_margin_tokens: int,
+    target_prompt_budget: int,
+    chars_per_token_estimate: float,
 ) -> tuple[list[BudgetedRetrievedChunk], RagRetrievalResult, int]:
     adjusted_chunks = list(budgeted_chunks)
     while True:
@@ -429,23 +631,24 @@ def _shrink_budgeted_chunks_to_fit_rendered_prompt(
             retrieval_result=retrieval_result,
             prompt=prompt,
             budgeted_chunks=adjusted_chunks,
+            chars_per_token_estimate=chars_per_token_estimate,
         )
-        total_estimated_tokens = estimated_prompt_tokens + max_tokens + safety_margin_tokens
-        if total_estimated_tokens <= context_window_tokens:
+        if estimated_prompt_tokens <= target_prompt_budget:
             return adjusted_chunks, retrieval_result_for_prompt, estimated_prompt_tokens
 
         last_included_index = _last_included_chunk_index(adjusted_chunks)
         if last_included_index is None:
             raise ValueError(
-                "Budgeted candidate prompt still exceeds the known context window after dropping all retrieved context. "
-                f"estimated_prompt_tokens={estimated_prompt_tokens} max_tokens={max_tokens} "
-                f"safety_margin_tokens={safety_margin_tokens} context_window_tokens={context_window_tokens}."
+                "Fixed candidate prompt without retrieved context exceeds the target prompt budget. "
+                f"estimated_prompt_tokens={estimated_prompt_tokens} "
+                f"target_prompt_budget={target_prompt_budget}."
             )
 
-        excess_tokens = total_estimated_tokens - context_window_tokens
+        excess_tokens = estimated_prompt_tokens - target_prompt_budget
         adjusted_chunks[last_included_index] = _shrink_or_drop_chunk(
             adjusted_chunks[last_included_index],
             excess_tokens=excess_tokens,
+            chars_per_token_estimate=chars_per_token_estimate,
         )
 
 
@@ -456,8 +659,13 @@ def _last_included_chunk_index(chunks: list[BudgetedRetrievedChunk]) -> int | No
     return None
 
 
-def _shrink_or_drop_chunk(chunk: BudgetedRetrievedChunk, *, excess_tokens: int) -> BudgetedRetrievedChunk:
-    excess_chars = max(4, excess_tokens * 4)
+def _shrink_or_drop_chunk(
+    chunk: BudgetedRetrievedChunk,
+    *,
+    excess_tokens: int,
+    chars_per_token_estimate: float,
+) -> BudgetedRetrievedChunk:
+    excess_chars = max(1, int(ceil(excess_tokens * chars_per_token_estimate)))
     if len(chunk.included_chunk_text) <= excess_chars:
         return replace(
             chunk,
@@ -482,9 +690,38 @@ def _shrink_or_drop_chunk(chunk: BudgetedRetrievedChunk, *, excess_tokens: int) 
         included_chunk_text=included_text,
         included_in_prompt=True,
         was_truncated=True,
-        included_estimated_tokens=estimate_tokens(included_text),
+        included_estimated_tokens=estimate_tokens(
+            included_text,
+            chars_per_token_estimate=chars_per_token_estimate,
+        ),
         truncation_reason="context_budget",
     )
+
+
+def _resolve_budgeting_parameters(
+    *,
+    model_name: str,
+    av3_provider: str,
+    safety_margin_tokens: int,
+    chars_per_token_estimate: float | None,
+    prompt_budget_utilization: float | None,
+) -> tuple[float, float]:
+    profile = resolve_candidate_model_runtime_profile(
+        provider=av3_provider,
+        model_name=model_name,
+        safety_margin_tokens=safety_margin_tokens,
+    )
+    resolved_chars = (
+        float(chars_per_token_estimate)
+        if chars_per_token_estimate is not None
+        else float(profile.chars_per_token_estimate)
+    )
+    resolved_utilization = (
+        float(prompt_budget_utilization)
+        if prompt_budget_utilization is not None
+        else float(profile.prompt_budget_utilization)
+    )
+    return max(0.01, resolved_chars), min(1.0, max(0.01, resolved_utilization))
 
 
 def _render_prompt(
@@ -518,3 +755,23 @@ def _default_output_tokens_for_unknown_model(*, provider: str, model_name: str) 
     if provider.casefold() == "openrouter":
         return 3000
     return 1024
+
+
+def _metadata_optional_int(metadata: dict[str, Any], key: str, *, default: int | None) -> int | None:
+    value = metadata.get(key)
+    if value is None:
+        return default
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _metadata_float(metadata: dict[str, Any], key: str, *, default: float) -> float:
+    value = metadata.get(key)
+    if value is None:
+        return default
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default

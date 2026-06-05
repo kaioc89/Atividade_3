@@ -6,6 +6,7 @@ from pathlib import Path
 from atividade_2.contracts import (
     CandidateAnswerContextChunkRecord,
     CandidateAnswerRecord,
+    CandidateModelRuntimeProfileRecord,
     CandidateQuestionRecord,
     CandidateRunRecord,
     EvaluationRecord,
@@ -409,6 +410,11 @@ def test_candidate_rag_schema_creates_run_answer_and_chunk_constraints() -> None
     assert "UNIQUE (id_candidate_answer, rank)" in sql_statements
     assert "UNIQUE (id_candidate_answer, id_chunk)" in sql_statements
     assert "rank INTEGER NOT NULL CHECK (rank >= 1)" in sql_statements
+    assert "CREATE TABLE IF NOT EXISTS av3.candidate_model_runtime_profiles" in sql_statements
+    assert "UNIQUE (av3_provider, provider_model_key)" in sql_statements
+    assert "CHECK (observation_count >= 0)" in sql_statements
+    assert "CREATE TABLE IF NOT EXISTS av3.candidate_model_runtime_observations" in sql_statements
+    assert "CHECK (observed_context_window_tokens IS NULL OR observed_context_window_tokens > 0)" in sql_statements
 
 
 def test_candidate_rag_schema_is_idempotent_on_repeated_calls() -> None:
@@ -418,7 +424,7 @@ def test_candidate_rag_schema_is_idempotent_on_repeated_calls() -> None:
     repository._ensure_candidate_rag_schema(cursor)
     repository._ensure_candidate_rag_schema(cursor)
 
-    assert len(cursor.queries) == 28
+    assert len(cursor.queries) == 36
     assert all("IF NOT EXISTS" in query for query in cursor.queries)
     assert all("DROP TABLE" not in query for query in cursor.queries)
     assert all("ALTER TABLE" not in query for query in cursor.queries)
@@ -459,9 +465,12 @@ def test_candidate_schema_is_present_in_project_ddl() -> None:
     assert "CREATE TABLE av3.candidate_runs (" in ddl
     assert "CREATE TABLE av3.candidate_answers (" in ddl
     assert "CREATE TABLE av3.candidate_answer_context_chunks (" in ddl
+    assert "CREATE TABLE av3.candidate_model_runtime_profiles (" in ddl
+    assert "CREATE TABLE av3.candidate_model_runtime_observations (" in ddl
     assert "CREATE UNIQUE INDEX idx_prompt_candidatos_active_dataset" in ddl
     assert "CREATE INDEX idx_candidate_model_assignments_provider_status" in ddl
     assert "CREATE INDEX idx_candidate_answers_run_status" in ddl
+    assert "CREATE INDEX idx_candidate_model_runtime_profiles_provider_model" in ddl
 
 
 def test_create_candidate_run_persists_metadata_json_and_returns_record() -> None:
@@ -929,3 +938,163 @@ def test_successful_candidate_answer_exists_filters_by_dataset_model_question_an
     assert "a.status = 'success'" in cursor.queries[0]
     assert "r.id_candidate_run <> %s" in cursor.queries[0]
     assert cursor.params[0] == ["J1", "candidate-model", 77, 17]
+
+
+def test_upsert_candidate_model_runtime_profile_inserts_new_profile() -> None:
+    created_at = datetime(2026, 6, 5, 10, 0, 0)
+    cursor = MultiRecordingCursor(
+        fetchone_rows=[
+            (
+                1,
+                "featherless",
+                "microsoft/Phi-3-mini-4k-instruct",
+                "microsoft/phi-3-mini-4k-instruct",
+                4096,
+                768,
+                512,
+                "db_observed",
+                "observed_error",
+                True,
+                created_at,
+                created_at,
+                1,
+                '{"question_id": 101}',
+                created_at,
+                created_at,
+            )
+        ]
+    )
+    repository = JudgeRepository(TransactionConnection(cursor))
+
+    record = repository.upsert_candidate_model_runtime_profile(
+        av3_provider="featherless",
+        provider_model_id="microsoft/Phi-3-mini-4k-instruct",
+        context_window_tokens=4096,
+        default_max_output_tokens=768,
+        safety_margin_tokens=512,
+        source="db_observed",
+        confidence="observed_error",
+        metadata={"question_id": 101},
+    )
+
+    assert "INSERT INTO av3.candidate_model_runtime_profiles" in cursor.queries[0]
+    assert record.context_window_tokens == 4096
+    assert record.default_max_output_tokens == 768
+    assert record.provider_model_key == "microsoft/phi-3-mini-4k-instruct"
+
+
+def test_get_candidate_model_runtime_profile_uses_normalized_model_key() -> None:
+    created_at = datetime(2026, 6, 5, 10, 0, 0)
+    cursor = MultiRecordingCursor(
+        fetchone_rows=[
+            (
+                1,
+                "featherless",
+                "Microsoft/Phi-3-mini-4k-instruct",
+                "microsoft/phi-3-mini-4k-instruct",
+                4096,
+                768,
+                512,
+                "db_observed",
+                "observed_error",
+                True,
+                created_at,
+                created_at,
+                1,
+                "{}",
+                created_at,
+                created_at,
+            )
+        ]
+    )
+    repository = JudgeRepository(TransactionConnection(cursor))
+
+    record = repository.get_candidate_model_runtime_profile(
+        av3_provider="Featherless",
+        provider_model_id="  MICROSOFT/Phi-3-mini-4k-instruct  ",
+    )
+
+    assert record is not None
+    assert cursor.params[0] == ["featherless", "microsoft/phi-3-mini-4k-instruct"]
+
+
+def test_upsert_candidate_model_runtime_profile_keeps_smaller_observed_window() -> None:
+    created_at = datetime(2026, 6, 5, 10, 0, 0)
+    cursor = MultiRecordingCursor(
+        fetchone_rows=[
+            (
+                1,
+                "featherless",
+                "microsoft/Phi-3-mini-4k-instruct",
+                "microsoft/phi-3-mini-4k-instruct",
+                2048,
+                768,
+                512,
+                "db_observed",
+                "observed_error",
+                True,
+                created_at,
+                created_at,
+                2,
+                "{}",
+                created_at,
+                created_at,
+            )
+        ]
+    )
+    repository = JudgeRepository(TransactionConnection(cursor))
+
+    record = repository.upsert_candidate_model_runtime_profile(
+        av3_provider="featherless",
+        provider_model_id="microsoft/Phi-3-mini-4k-instruct",
+        context_window_tokens=4096,
+        default_max_output_tokens=768,
+        safety_margin_tokens=512,
+        source="db_observed",
+        confidence="observed_error",
+    )
+
+    assert "LEAST(" in cursor.queries[0]
+    assert record.context_window_tokens == 2048
+
+
+def test_record_candidate_model_runtime_observation_persists_error_details() -> None:
+    observed_at = datetime(2026, 6, 5, 10, 0, 0)
+    cursor = MultiRecordingCursor(
+        fetchone_rows=[
+            (
+                5,
+                "featherless",
+                "microsoft/Phi-3-mini-4k-instruct",
+                "microsoft/phi-3-mini-4k-instruct",
+                4096,
+                3500,
+                768,
+                4268,
+                "context_window_exceeded",
+                "Platform records context_length as 4096",
+                501,
+                None,
+                '{"question_id": 101}',
+                observed_at,
+            )
+        ]
+    )
+    repository = JudgeRepository(TransactionConnection(cursor))
+
+    record = repository.record_candidate_model_runtime_observation(
+        av3_provider="featherless",
+        provider_model_id="microsoft/Phi-3-mini-4k-instruct",
+        observed_context_window_tokens=4096,
+        observed_prompt_tokens=3500,
+        observed_requested_max_tokens=768,
+        observed_total_tokens=4268,
+        error_class="context_window_exceeded",
+        error_message="Platform records context_length as 4096",
+        candidate_run_id=501,
+        metadata={"question_id": 101},
+    )
+
+    assert "INSERT INTO av3.candidate_model_runtime_observations" in cursor.queries[0]
+    assert record.error_class == "context_window_exceeded"
+    assert record.observed_total_tokens == 4268

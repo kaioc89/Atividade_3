@@ -1,0 +1,51 @@
+{
+  "total": 2,
+  "ok": 2,
+  "failed": 0,
+  "results": [
+    {
+      "target": {
+        "owner": "Diego",
+        "model": "meta-llama/llama-3.2-3b-instruct",
+        "av3_provider": "openrouter",
+        "dataset": "J1",
+        "range_start": 71,
+        "range_end": 82,
+        "selected_start": 74,
+        "selected_end": 74,
+        "calls": 1
+      },
+      "return_code": 0,
+      "selected_questions": 1,
+      "processed_questions": 1,
+      "successful_answers": 1,
+      "failed_answers": 0,
+      "skipped_questions": 0,
+      "stdout_tail": "  top_p: 0.9\n  default_max_output_tokens: 1024\n  max_output_tokens_cap: none\n  requested_max_tokens: 768\n  final_max_tokens: 768\n  context_window_tokens: unknown\n  safety_margin_tokens: 512\n  chars_per_token_estimate: 4\n  prompt_budget_utilization: 1\n  model_profile_source: fallback_default\n  save_raw_response: false\n\nDataset: J1\nCandidate model: meta-llama/llama-3.2-3b-instruct\nProvider: remote_http\nBatch size: 1\nQuestion id: -\nQuestion range: 74-74\nBatch size: 1\nAudit log: logs/candidate-rag-20260605-132214.log\n\nExecution result:\nCandidate run id: 59\nRetrieval run id: 1\nPrompt id: 1\nSelected questions: 1\nProcessed questions: 1\nSuccessful answers: 1\nFailed answers: 0\nSkipped questions: 0",
+      "stderr_tail": "",
+      "ok": true
+    },
+    {
+      "target": {
+        "owner": "Kaio",
+        "model": "meta-llama/llama-3.2-3b-instruct",
+        "av3_provider": "openrouter",
+        "dataset": "J1",
+        "range_start": 83,
+        "range_end": 94,
+        "selected_start": 86,
+        "selected_end": 86,
+        "calls": 1
+      },
+      "return_code": 0,
+      "selected_questions": 1,
+      "processed_questions": 1,
+      "successful_answers": 1,
+      "failed_answers": 0,
+      "skipped_questions": 0,
+      "stdout_tail": "  top_p: 0.9\n  default_max_output_tokens: 1024\n  max_output_tokens_cap: none\n  requested_max_tokens: 768\n  final_max_tokens: 768\n  context_window_tokens: unknown\n  safety_margin_tokens: 512\n  chars_per_token_estimate: 4\n  prompt_budget_utilization: 1\n  model_profile_source: fallback_default\n  save_raw_response: false\n\nDataset: J1\nCandidate model: meta-llama/llama-3.2-3b-instruct\nProvider: remote_http\nBatch size: 1\nQuestion id: -\nQuestion range: 86-86\nBatch size: 1\nAudit log: logs/candidate-rag-20260605-132218.log\n\nExecution result:\nCandidate run id: 60\nRetrieval run id: 1\nPrompt id: 1\nSelected questions: 1\nProcessed questions: 1\nSuccessful answers: 1\nFailed answers: 0\nSkipped questions: 0",
+      "stderr_tail": "",
+      "ok": true
+    }
+  ]
+}

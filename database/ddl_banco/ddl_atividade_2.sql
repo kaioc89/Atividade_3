@@ -453,6 +453,51 @@ CREATE TABLE av3.candidate_answer_context_chunks (
     UNIQUE (id_candidate_answer, id_chunk)
 );
 
+CREATE TABLE av3.candidate_model_runtime_profiles (
+    id_runtime_profile SERIAL PRIMARY KEY,
+    av3_provider VARCHAR NOT NULL,
+    provider_model_id VARCHAR NOT NULL,
+    provider_model_key VARCHAR NOT NULL,
+    context_window_tokens INTEGER NULL
+        CHECK (context_window_tokens IS NULL OR context_window_tokens > 0),
+    default_max_output_tokens INTEGER NULL
+        CHECK (default_max_output_tokens IS NULL OR default_max_output_tokens > 0),
+    safety_margin_tokens INTEGER NOT NULL DEFAULT 512
+        CHECK (safety_margin_tokens > 0),
+    source VARCHAR NOT NULL,
+    confidence VARCHAR NOT NULL,
+    active BOOLEAN NOT NULL DEFAULT TRUE,
+    first_observed_at TIMESTAMP NULL,
+    last_observed_at TIMESTAMP NULL,
+    observation_count INTEGER NOT NULL DEFAULT 0
+        CHECK (observation_count >= 0),
+    metadata_jsonb JSONB,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (av3_provider, provider_model_key)
+);
+
+CREATE TABLE av3.candidate_model_runtime_observations (
+    id_runtime_observation SERIAL PRIMARY KEY,
+    av3_provider VARCHAR NOT NULL,
+    provider_model_id VARCHAR NOT NULL,
+    provider_model_key VARCHAR NOT NULL,
+    observed_context_window_tokens INTEGER NULL
+        CHECK (observed_context_window_tokens IS NULL OR observed_context_window_tokens > 0),
+    observed_prompt_tokens INTEGER NULL
+        CHECK (observed_prompt_tokens IS NULL OR observed_prompt_tokens > 0),
+    observed_requested_max_tokens INTEGER NULL
+        CHECK (observed_requested_max_tokens IS NULL OR observed_requested_max_tokens > 0),
+    observed_total_tokens INTEGER NULL
+        CHECK (observed_total_tokens IS NULL OR observed_total_tokens > 0),
+    error_class VARCHAR NOT NULL,
+    error_message TEXT NOT NULL,
+    id_candidate_run INTEGER NULL,
+    id_candidate_answer INTEGER NULL,
+    metadata_jsonb JSONB,
+    observed_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 -- =========================
 -- Indexes
 -- =========================
@@ -561,3 +606,11 @@ ON av3.candidate_answers(id_candidate_run, status);
 -- Context chunk snapshots by answer and rank.
 CREATE INDEX idx_candidate_answer_context_chunks_answer_rank
 ON av3.candidate_answer_context_chunks(id_candidate_answer, rank);
+
+-- Candidate runtime profiles by provider/model.
+CREATE INDEX idx_candidate_model_runtime_profiles_provider_model
+ON av3.candidate_model_runtime_profiles(av3_provider, provider_model_key);
+
+-- Candidate runtime observations by provider/model and recency.
+CREATE INDEX idx_candidate_model_runtime_observations_provider_model
+ON av3.candidate_model_runtime_observations(av3_provider, provider_model_key, observed_at DESC);

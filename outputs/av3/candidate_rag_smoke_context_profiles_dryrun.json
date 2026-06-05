@@ -1,0 +1,51 @@
+{
+  "total": 2,
+  "ok": 2,
+  "failed": 0,
+  "results": [
+    {
+      "target": {
+        "owner": "Victor",
+        "model": "microsoft/Phi-3-mini-4k-instruct",
+        "av3_provider": "featherless",
+        "dataset": "J1",
+        "range_start": 107,
+        "range_end": 118,
+        "selected_start": 108,
+        "selected_end": 108,
+        "calls": 1
+      },
+      "return_code": 0,
+      "selected_questions": null,
+      "processed_questions": null,
+      "successful_answers": null,
+      "failed_answers": null,
+      "skipped_questions": null,
+      "stdout_tail": "  included_chunks: 4\n  truncated_chunks: 1\n  dropped_chunks: 1\nDry run: no candidate_run rows created and no remote candidate calls made.\nClosing PostgreSQL connection...\nClosing PostgreSQL connection... done (0 ms)\nCandidate runtime preflight:\n  model: microsoft/Phi-3-mini-4k-instruct\n  technical provider: remote_http\n  av3 provider: featherless\n  base_url: https://api.featherless.ai/v1\n  api_key: <not required in dry-run>\n  temperature: 0.2\n  top_p: 0.9\n  default_max_output_tokens: 768\n  requested_max_tokens: 768\n  final_max_tokens: 768\n  context_window_tokens: 4096\n  safety_margin_tokens: 512\n  model_profile_source: static_seed\n  save_raw_response: false\n\nDataset: J1\nCandidate model: microsoft/Phi-3-mini-4k-instruct\nProvider: remote_http\nBatch size: 1\nQuestion id: -\nQuestion range: 108-108\nBatch size: 1\nAudit log: logs/candidate-rag-20260605-121705.log",
+      "stderr_tail": "",
+      "ok": true
+    },
+    {
+      "target": {
+        "owner": "Victor",
+        "model": "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
+        "av3_provider": "featherless",
+        "dataset": "J1",
+        "range_start": 107,
+        "range_end": 118,
+        "selected_start": 108,
+        "selected_end": 108,
+        "calls": 1
+      },
+      "return_code": 0,
+      "selected_questions": null,
+      "processed_questions": null,
+      "successful_answers": null,
+      "failed_answers": null,
+      "skipped_questions": null,
+      "stdout_tail": "  included_chunks: 1\n  truncated_chunks: 1\n  dropped_chunks: 4\nDry run: no candidate_run rows created and no remote candidate calls made.\nClosing PostgreSQL connection...\nClosing PostgreSQL connection... done (0 ms)\nCandidate runtime preflight:\n  model: TinyLlama/TinyLlama-1.1B-Chat-v1.0\n  technical provider: remote_http\n  av3 provider: featherless\n  base_url: https://api.featherless.ai/v1\n  api_key: <not required in dry-run>\n  temperature: 0.2\n  top_p: 0.9\n  default_max_output_tokens: 512\n  requested_max_tokens: 768\n  final_max_tokens: 768\n  context_window_tokens: 2048\n  safety_margin_tokens: 512\n  model_profile_source: static_seed\n  save_raw_response: false\n\nDataset: J1\nCandidate model: TinyLlama/TinyLlama-1.1B-Chat-v1.0\nProvider: remote_http\nBatch size: 1\nQuestion id: -\nQuestion range: 108-108\nBatch size: 1\nAudit log: logs/candidate-rag-20260605-121706.log",
+      "stderr_tail": "",
+      "ok": true
+    }
+  ]
+}

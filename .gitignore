@@ -9,6 +9,7 @@ __pycache__/
 outputs/backup/*.sql
 outputs/audit/*.log
 backup_atividade_2.sql
+logs/candidate-rag*
 !outputs/audit/judge_run_20260502_011939.log
 !outputs/audit/judge_run_20260502_012032.log
 !outputs/audit/judge_run_20260502_012849.log

@@ -465,6 +465,7 @@ def test_run_candidates_rag_dry_run_calls_service_with_dry_run_true(
             remote_candidate_top_p=0.9,
             remote_candidate_context_safety_margin_tokens=512,
             remote_candidate_context_window_tokens=None,
+            remote_candidate_retry_on_context_window=False,
         ),
     )
     monkeypatch.setattr(cli, "RunCandidatesRagService", lambda: service)
@@ -511,6 +512,7 @@ def test_run_candidates_rag_passes_audit_log_and_question_range(
             remote_candidate_top_p=0.9,
             remote_candidate_context_safety_margin_tokens=512,
             remote_candidate_context_window_tokens=None,
+            remote_candidate_retry_on_context_window=False,
         ),
     )
     monkeypatch.setattr(cli, "RunCandidatesRagService", lambda: service)
@@ -553,6 +555,43 @@ def test_run_candidates_rag_passes_audit_log_and_question_range(
     assert request.retrieval_run_id == 21
     assert request.skip_existing_successful is False
     assert request.no_audit_animation is True
+
+
+def test_run_candidates_rag_passes_retry_on_context_window_flag(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = FakeRunCandidatesRagService()
+    monkeypatch.setattr(
+        cli,
+        "load_settings",
+        lambda: SimpleNamespace(
+            remote_candidate_temperature=0.2,
+            remote_candidate_max_tokens=1024,
+            remote_candidate_top_p=0.9,
+            remote_candidate_context_safety_margin_tokens=512,
+            remote_candidate_context_window_tokens=None,
+            remote_candidate_retry_on_context_window=False,
+        ),
+    )
+    monkeypatch.setattr(cli, "RunCandidatesRagService", lambda: service)
+
+    exit_code = cli.main(
+        [
+            "run-candidates-rag",
+            "--dataset",
+            "J1",
+            "--candidate-model",
+            "candidate-j1",
+            "--provider",
+            "remote_http",
+            "--batch-size",
+            "1",
+            "--retry-on-context-window",
+        ]
+    )
+
+    assert exit_code == 0
+    assert service.requests[0].remote_candidate_retry_on_context_window is True
 
 
 def test_run_candidates_rag_command_prints_summary(
@@ -611,6 +650,7 @@ def test_run_candidates_rag_command_prints_summary(
             remote_candidate_top_p=0.9,
             remote_candidate_context_safety_margin_tokens=512,
             remote_candidate_context_window_tokens=None,
+            remote_candidate_retry_on_context_window=False,
         ),
     )
     monkeypatch.setattr(cli, "RunCandidatesRagService", lambda: service)
@@ -657,6 +697,7 @@ def test_run_candidates_rag_returns_exit_code_2_on_validation_error(
             remote_candidate_top_p=0.9,
             remote_candidate_context_safety_margin_tokens=512,
             remote_candidate_context_window_tokens=None,
+            remote_candidate_retry_on_context_window=False,
         ),
     )
     monkeypatch.setattr(cli, "RunCandidatesRagService", lambda: service)

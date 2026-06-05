@@ -254,6 +254,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Disable animated terminal dots for long-running audit steps.",
     )
+    run_candidates_rag.add_argument(
+        "--retry-on-context-window",
+        action="store_true",
+        help="Retry one candidate call after learning an observed provider context window.",
+    )
     run_candidates_rag.set_defaults(handler=run_candidates_rag_command)
 
     validate_provider_models = subparsers.add_parser(
@@ -483,6 +488,9 @@ def run_candidates_rag_command(args: argparse.Namespace) -> int:
         remote_candidate_top_p=settings.remote_candidate_top_p,
         remote_candidate_context_safety_margin_tokens=settings.remote_candidate_context_safety_margin_tokens,
         remote_candidate_context_window_tokens=settings.remote_candidate_context_window_tokens,
+        remote_candidate_retry_on_context_window=(
+            True if args.retry_on_context_window else settings.remote_candidate_retry_on_context_window
+        ),
     )
     result = RunCandidatesRagService().run(request)
     if result.runtime_config_summary is not None:

@@ -126,6 +126,11 @@ def load_settings(dotenv_path: str | Path | None = ".env", env: Mapping[str, str
             "REMOTE_CANDIDATE_CONTEXT_WINDOW_TOKENS",
             minimum=1,
         ),
+        remote_candidate_retry_on_context_window=_parse_bool(
+            values,
+            "REMOTE_CANDIDATE_RETRY_ON_CONTEXT_WINDOW",
+            False,
+        ),
         judge_save_raw_response=_parse_bool(values, "JUDGE_SAVE_RAW_RESPONSE", True),
         judge_execution_strategy=execution_strategy,  # type: ignore[arg-type]
         judge_batch_size=_parse_int(values, "JUDGE_BATCH_SIZE", 10, minimum=1),

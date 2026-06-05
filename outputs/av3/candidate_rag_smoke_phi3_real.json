@@ -1,0 +1,29 @@
+{
+  "total": 1,
+  "ok": 0,
+  "failed": 1,
+  "results": [
+    {
+      "target": {
+        "owner": "Victor",
+        "model": "microsoft/Phi-3-mini-4k-instruct",
+        "av3_provider": "featherless",
+        "dataset": "J1",
+        "range_start": 107,
+        "range_end": 118,
+        "selected_start": 108,
+        "selected_end": 108,
+        "calls": 1
+      },
+      "return_code": 2,
+      "selected_questions": null,
+      "processed_questions": null,
+      "successful_answers": null,
+      "failed_answers": null,
+      "skipped_questions": null,
+      "stdout_tail": "Loading configuration...\nLoading configuration... done (0 ms)\nConnecting to local PostgreSQL...\nConnecting to local PostgreSQL... done (31 ms)\nEnsuring candidate metadata schema...\nEnsuring candidate metadata schema... done (27 ms)\nSelecting candidate questions for J1...\nSelecting candidate questions for J1... done (3 ms)\nClosing PostgreSQL connection...\nClosing PostgreSQL connection... done (0 ms)",
+      "stderr_tail": "error: Fixed candidate prompt exceeds the known context window for microsoft/Phi-3-mini-4k-instruct. estimated_fixed_prompt_tokens=366 context_window_tokens=4 safety_margin_tokens=512.",
+      "ok": false
+    }
+  ]
+}

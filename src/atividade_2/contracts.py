@@ -142,6 +142,7 @@ class JudgeSettings:
     remote_candidate_top_p: float
     remote_candidate_context_safety_margin_tokens: int
     remote_candidate_context_window_tokens: int | None
+    remote_candidate_retry_on_context_window: bool
     judge_save_raw_response: bool
     judge_execution_strategy: JudgeExecutionStrategy
     judge_batch_size: int
@@ -539,6 +540,48 @@ class CandidateAnswerRecord:
     latency_ms: int | None = None
     raw_response: dict[str, Any] | None = None
     created_at: str | None = None
+
+
+@dataclass(frozen=True)
+class CandidateModelRuntimeProfileRecord:
+    """Persisted effective runtime profile for one AV3 provider/model."""
+
+    runtime_profile_id: int
+    av3_provider: str
+    provider_model_id: str
+    provider_model_key: str
+    context_window_tokens: int | None
+    default_max_output_tokens: int | None
+    safety_margin_tokens: int
+    source: str
+    confidence: str
+    active: bool
+    first_observed_at: str | None
+    last_observed_at: str | None
+    observation_count: int
+    metadata: dict[str, Any] = field(default_factory=dict)
+    created_at: str | None = None
+    updated_at: str | None = None
+
+
+@dataclass(frozen=True)
+class CandidateModelRuntimeObservationRecord:
+    """Historical provider/runtime observation persisted for auditability."""
+
+    runtime_observation_id: int
+    av3_provider: str
+    provider_model_id: str
+    provider_model_key: str
+    observed_context_window_tokens: int | None
+    observed_prompt_tokens: int | None
+    observed_requested_max_tokens: int | None
+    observed_total_tokens: int | None
+    error_class: str
+    error_message: str
+    candidate_run_id: int | None
+    candidate_answer_id: int | None
+    metadata: dict[str, Any] = field(default_factory=dict)
+    observed_at: str | None = None
 
 
 @dataclass(frozen=True)
