@@ -1,0 +1,6 @@
+2026-06-04T23:55:23+00:00 | audit_log_started | path=logs/candidate-rag-20260604-235523.log
+2026-06-04T23:55:23+00:00 | START Loading configuration
+2026-06-04T23:55:23+00:00 | DONE Loading configuration | elapsed_ms=0
+2026-06-04T23:55:23+00:00 | execution_summary | Dataset: J1 | Candidate model: x-ai/grok-4.3 | Provider: remote_http | Batch size: 1 | Question id: - | Question range: 119-119
+2026-06-04T23:55:23+00:00 | dry_run_finished | no database rows selected and no remote candidate calls made
+2026-06-04T23:55:23+00:00 | audit_log_finished

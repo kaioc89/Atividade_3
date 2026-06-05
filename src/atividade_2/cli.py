@@ -3,14 +3,27 @@
 from __future__ import annotations
 
 import argparse
+from collections.abc import Mapping
 from collections.abc import Sequence
 
 from .audit_log_parser import DEFAULT_PROD_LOGS_MANIFEST, format_audit_parse_report, parse_prod_logs_manifest
 from .config import ConfigurationError
 from .judge_clients.remote_http import RemoteJudgeError
 from .parser import JudgeParseError
-from .config import load_settings
+from .config import load_env, load_settings
 from .db import connect
+from .provider_catalogs import (
+    DEFAULT_FEATHERLESS_CATALOG_MAX_RESPONSE_BYTES,
+    DEFAULT_OPENROUTER_CATALOG_MAX_RESPONSE_BYTES,
+    FeatherlessCatalogClient,
+    OpenRouterCatalogClient,
+    ProviderCatalogClient,
+)
+from .provider_model_validation import (
+    SUPPORTED_PROVIDER_VALIDATION_PROVIDERS,
+    format_provider_model_validation_report,
+    provider_model_validation_exit_code,
+)
 from .run_candidates_rag_service import RunCandidatesRagRequest, RunCandidatesRagService
 from .run_judge_service import ResolvedRun, RunJudgeRequest, RunJudgeService, format_execution_summary
 
@@ -242,6 +255,33 @@ def build_parser() -> argparse.ArgumentParser:
         help="Disable animated terminal dots for long-running audit steps.",
     )
     run_candidates_rag.set_defaults(handler=run_candidates_rag_command)
+
+    validate_provider_models = subparsers.add_parser(
+        "validate-provider-models",
+        help="Read-only validation of AV3 provider model ids against provider catalogs.",
+    )
+    validate_provider_models.add_argument(
+        "--provider",
+        action="append",
+        choices=list(SUPPORTED_PROVIDER_VALIDATION_PROVIDERS),
+        help="Restrict validation to one provider. May be repeated.",
+    )
+    validate_provider_models.add_argument(
+        "--include-pending-confirmation",
+        action="store_true",
+        help="Include pending-confirmation assignments such as Gemini subtype follow-up rows.",
+    )
+    validate_provider_models.add_argument(
+        "--include-excluded",
+        action="store_true",
+        help="Include excluded assignments in the read-only report.",
+    )
+    validate_provider_models.add_argument(
+        "--json",
+        action="store_true",
+        help="Print the validation report as JSON.",
+    )
+    validate_provider_models.set_defaults(handler=validate_provider_models_command)
     return parser
 
 
@@ -456,6 +496,31 @@ def run_candidates_rag_command(args: argparse.Namespace) -> int:
     return 0
 
 
+def validate_provider_models_command(args: argparse.Namespace) -> int:
+    """Run read-only provider-model validation for AV3 assignments."""
+    from .provider_model_validation import ProviderModelValidationService
+    from .repositories import JudgeRepository
+
+    settings = load_settings()
+    env_values = load_env()
+    connection = connect(settings.database_url)
+    try:
+        repository = JudgeRepository(connection)
+        report = ProviderModelValidationService(
+            assignment_repository=repository,
+            catalog_clients=_build_provider_catalog_clients(env_values),
+        ).validate(
+            providers=args.provider,
+            include_pending_confirmation=args.include_pending_confirmation,
+            include_excluded=args.include_excluded,
+        )
+    finally:
+        connection.close()
+
+    print(format_provider_model_validation_report(report, as_json=args.json))
+    return provider_model_validation_exit_code(report)
+
+
 def _print_resolved_run(resolved: ResolvedRun) -> None:
     print(resolved.execution_summary)
     print(f"Batch size: {resolved.batch_size}")
@@ -469,6 +534,56 @@ def _positive_int(value: str) -> int:
         raise argparse.ArgumentTypeError("value must be an integer") from error
     if parsed < 1:
         raise argparse.ArgumentTypeError("value must be >= 1")
+    return parsed
+
+
+def _build_provider_catalog_clients(env_values: Mapping[str, str]) -> dict[str, ProviderCatalogClient]:
+    return {
+        "openrouter": OpenRouterCatalogClient(
+            base_url=env_values.get("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1"),
+            api_key=_resolve_provider_api_key(env_values, explicit_key_name="OPENROUTER_API_KEY"),
+            max_response_bytes=_parse_catalog_max_response_bytes(
+                env_values,
+                key="OPENROUTER_CATALOG_MAX_RESPONSE_BYTES",
+                default=DEFAULT_OPENROUTER_CATALOG_MAX_RESPONSE_BYTES,
+            ),
+        ),
+        "featherless": FeatherlessCatalogClient(
+            base_url=env_values.get("FEATHERLESS_BASE_URL", "https://api.featherless.ai/v1"),
+            api_key=_resolve_provider_api_key(env_values, explicit_key_name="FEATHERLESS_API_KEY"),
+            max_response_bytes=_parse_catalog_max_response_bytes(
+                env_values,
+                key="FEATHERLESS_CATALOG_MAX_RESPONSE_BYTES",
+                default=DEFAULT_FEATHERLESS_CATALOG_MAX_RESPONSE_BYTES,
+            ),
+        ),
+    }
+
+
+def _resolve_provider_api_key(
+    env_values: Mapping[str, str],
+    *,
+    explicit_key_name: str,
+) -> str | None:
+    explicit_value = (env_values.get(explicit_key_name) or "").strip()
+    return explicit_value or None
+
+
+def _parse_catalog_max_response_bytes(
+    env_values: Mapping[str, str],
+    *,
+    key: str,
+    default: int,
+) -> int:
+    raw_value = (env_values.get(key) or "").strip()
+    if not raw_value:
+        return default
+    try:
+        parsed = int(raw_value)
+    except ValueError as error:
+        raise ConfigurationError(f"{key} must be an integer.") from error
+    if parsed < 1:
+        raise ConfigurationError(f"{key} must be >= 1.")
     return parsed
 
 

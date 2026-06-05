@@ -365,6 +365,24 @@ def test_candidate_rag_schema_creates_prompt_table_with_active_prompt_index() ->
     assert "WHERE ativo;" in sql_statements
 
 
+def test_candidate_assignment_schema_creates_registry_and_range_tables() -> None:
+    cursor = MultiRecordingCursor()
+    repository = JudgeRepository(TransactionConnection(cursor))
+
+    repository._ensure_candidate_rag_schema(cursor)
+
+    sql_statements = "\n".join(cursor.queries)
+    assert "CREATE TABLE IF NOT EXISTS av3.candidate_model_assignments" in sql_statements
+    assert "REFERENCES public.modelos(id_modelo)" in sql_statements
+    assert "UNIQUE (id_modelo_av2, owner, original_provider_model_id)" in sql_statements
+    assert "CREATE TABLE IF NOT EXISTS av3.candidate_model_assignment_ranges" in sql_statements
+    assert "REFERENCES av3.candidate_model_assignments(id_assignment) ON DELETE CASCADE" in sql_statements
+    assert "CHECK (dataset_code IN ('J1', 'J2'))" in sql_statements
+    assert "CHECK (question_sequence_end >= question_sequence_start)" in sql_statements
+    assert "CREATE INDEX IF NOT EXISTS idx_candidate_model_assignments_owner_model" in sql_statements
+    assert "CREATE INDEX IF NOT EXISTS idx_candidate_model_assignment_ranges_dataset_sequence" in sql_statements
+
+
 def test_candidate_rag_schema_creates_run_answer_and_chunk_constraints() -> None:
     cursor = MultiRecordingCursor()
     repository = JudgeRepository(TransactionConnection(cursor))
@@ -400,7 +418,7 @@ def test_candidate_rag_schema_is_idempotent_on_repeated_calls() -> None:
     repository._ensure_candidate_rag_schema(cursor)
     repository._ensure_candidate_rag_schema(cursor)
 
-    assert len(cursor.queries) == 18
+    assert len(cursor.queries) == 28
     assert all("IF NOT EXISTS" in query for query in cursor.queries)
     assert all("DROP TABLE" not in query for query in cursor.queries)
     assert all("ALTER TABLE" not in query for query in cursor.queries)
@@ -436,10 +454,13 @@ def test_candidate_schema_is_present_in_project_ddl() -> None:
     ddl = Path("database/ddl_banco/ddl_atividade_2.sql").read_text(encoding="utf-8")
 
     assert "CREATE TABLE av3.prompt_candidatos (" in ddl
+    assert "CREATE TABLE av3.candidate_model_assignments (" in ddl
+    assert "CREATE TABLE av3.candidate_model_assignment_ranges (" in ddl
     assert "CREATE TABLE av3.candidate_runs (" in ddl
     assert "CREATE TABLE av3.candidate_answers (" in ddl
     assert "CREATE TABLE av3.candidate_answer_context_chunks (" in ddl
     assert "CREATE UNIQUE INDEX idx_prompt_candidatos_active_dataset" in ddl
+    assert "CREATE INDEX idx_candidate_model_assignments_provider_status" in ddl
     assert "CREATE INDEX idx_candidate_answers_run_status" in ddl
 
 
