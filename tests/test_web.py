@@ -671,6 +671,12 @@ class FakeDumpService:
         )
 
 
+class FakeDumpServiceWithOutputDir(FakeDumpService):
+    def __init__(self, output_dir: Path) -> None:
+        super().__init__()
+        self.output_dir = output_dir
+
+
 class FakeDatabaseResetService:
     def __init__(self) -> None:
         self.calls = 0
@@ -1408,8 +1414,11 @@ def test_web_index_contains_progress_element() -> None:
     assert "database-clean-backup-confirm" not in response.text
     assert "Fazer backup e limpar" not in response.text
     assert 'id="database-dump-dialog" class="confirm-dialog"' in response.text
+    assert 'id="database-dump-download" class="button-link" href="#" download hidden>Baixar arquivo</a>' in response.text
     assert 'id="database-dump-status" class="status"></span>' in response.text
     assert "Dump completo em outputs/backup." not in response.text
+    assert "await downloadDatabaseDump(data);" in response.text
+    assert 'window.open(data.download_url, "_blank", "noopener");' not in response.text
     assert "confirm(" not in response.text
     assert '<progress id="batch-progress"' in response.text
     assert 'setText("selected", summary?.selected_answers ?? eligibility?.will_process ?? data.progress?.total);' in response.text
@@ -2185,6 +2194,34 @@ def test_database_dump_download_rejects_path_traversal(tmp_path) -> None:
     response = client.get("/api/database-dumps/../secret.sql")
 
     assert response.status_code in {400, 404}
+
+
+def test_database_dump_download_returns_generated_sql_file(tmp_path) -> None:
+    filename = "atividade_2_20260430_120000.sql"
+    dump_path = tmp_path / filename
+    dump_path.write_text("SELECT 1;\n", encoding="utf-8")
+    client = TestClient(create_app(FakeRunJudgeService(), backup_dir=tmp_path))
+
+    response = client.get(f"/api/database-dumps/{filename}")
+
+    assert response.status_code == 200
+    assert response.text == "SELECT 1;\n"
+    assert response.headers["content-type"].startswith("application/sql")
+    assert 'attachment; filename="atividade_2_20260430_120000.sql"' == response.headers["content-disposition"]
+
+
+def test_database_dump_download_uses_dump_service_output_dir(tmp_path) -> None:
+    output_dir = tmp_path / "runtime" / "backup"
+    output_dir.mkdir(parents=True)
+    filename = "atividade_2_20260430_120000.sql"
+    (output_dir / filename).write_text("SELECT 1;\n", encoding="utf-8")
+    dump_service = FakeDumpServiceWithOutputDir(output_dir)
+    client = TestClient(create_app(FakeRunJudgeService(), dump_service=dump_service))
+
+    response = client.get(f"/api/database-dumps/{filename}")
+
+    assert response.status_code == 200
+    assert response.text == "SELECT 1;\n"
 
 
 def test_mutating_endpoint_requires_csrf_token() -> None:

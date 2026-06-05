@@ -2,7 +2,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from atividade_2 import database_dump
-from atividade_2.database_dump import DatabaseDumpService, DatabaseResetService
+from atividade_2.database_dump import DatabaseDumpService, DatabaseResetService, resolve_backup_dir
 
 
 def test_create_dump_writes_only_timestamped_backup_outside_prod(monkeypatch, tmp_path) -> None:
@@ -105,6 +105,12 @@ def test_create_dump_uses_browser_download_in_prod(monkeypatch, tmp_path) -> Non
     assert not root_backup.exists()
     assert result.delivery == "browser_download"
     assert result.download_url == "/api/database-dumps/atividade_2_20260502_093000.sql"
+
+
+def test_resolve_backup_dir_returns_resolved_runtime_directory(tmp_path) -> None:
+    resolved = resolve_backup_dir(tmp_path / "outputs" / "backup")
+
+    assert resolved == (tmp_path / "outputs" / "backup").resolve()
 
 
 def test_restore_backup_adds_dashboard_compatibility_columns(monkeypatch, tmp_path) -> None:
