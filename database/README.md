@@ -24,6 +24,14 @@ make db-restore-validate
 
 Isso garante que o PostgreSQL local esteja de pe, com o backup principal restaurado e validado.
 
+Quando o banco ativo ja foi restaurado manualmente ou quando a branch introduz evolucoes de schema, use:
+
+```bash
+make db-ensure-schema
+```
+
+Esse fluxo atualiza apenas estrutura e seeds determinísticos de AV3 no `DATABASE_URL` ativo. Ele nao executa restore, nao limpa schemas e nao sobrescreve `backup_atividade_2.sql`.
+
 ## Faixas canonicas de perguntas carregadas
 
 A base canonica do projeto nao carrega o dataset inteiro. Ela carrega apenas as faixas efetivamente cobertas pelos alunos:
@@ -71,20 +79,19 @@ Gera:
 database/dumps/dump_respostas.sql
 ```
 
-### 4. Copiar a base atual para o backup principal da raiz
+### 4. Promover a base atual para o backup canônico da raiz
 
 ```bash
-make db-dump-root-backup
+make db-backup-promote
 ```
 
 Atualiza:
 
 ```text
-outputs/backup/atividade_2_YYYYmmdd_HHMMSS.sql
 backup_atividade_2.sql
 ```
 
-O arquivo timestampado preserva o historico local. O arquivo unico da raiz e atualizado apenas com `APP_ENV=prod`; em `dev` e `test`, o dump fica somente em `outputs/backup/`. A base fixa de reset usada por `make db-migrate-or-create` fica em `backup_atividade_2_reset.sql`.
+O arquivo timestampado em `outputs/backup/atividade_2_YYYYmmdd_HHMMSS.sql` sempre e gerado por `make db-backup` e preserva o historico local. `backup_atividade_2.sql` e o artefato canônico protegido: ele so e sobrescrito por promocao explicita e somente depois de validar que `public.respostas_atividade_1`, `public.avaliacoes_juiz`, `av3.rag_chunks`, `av3.rag_embeddings` e `av3.retrieval_runs` ativos possuem contagem maior que zero. A base fixa de reset usada por `make db-migrate-or-create` fica em `backup_atividade_2_reset.sql`.
 
 ### 5. Gerar tudo de uma vez
 
@@ -97,7 +104,7 @@ Esse comando gera:
 - `database/dumps/dump_estrutura_vazia.sql`
 - `database/dumps/dump_perguntas.sql`
 - `database/dumps/dump_respostas.sql`
-- `backup_atividade_2.sql`
+- `outputs/backup/atividade_2_YYYYmmdd_HHMMSS.sql`
 
 ## Restore esperado
 
@@ -149,10 +156,10 @@ Use `--replace` para reconstruir as respostas dos modelos encontrados nos CSVs e
 make db-dump-responses
 ```
 
-5. Promova a base atual para o backup principal da raiz:
+5. Promova a base atual para o backup canônico da raiz:
 
 ```bash
-make db-dump-root-backup
+make db-backup-promote
 ```
 
 6. Se voce tambem quiser atualizar todos os artefatos fracionados:

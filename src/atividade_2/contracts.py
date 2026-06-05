@@ -119,6 +119,10 @@ class JudgeSettings:
     backup_root_file: str
     judge_provider: JudgeProvider
     embedding_api_key: str | None
+    featherless_url: str | None
+    featherless_api_key: str | None
+    openrouter_url: str | None
+    openrouter_api_key: str | None
     remote_judge_base_url: str | None
     remote_judge_api_key: str | None
     remote_judge_endpoints: dict[str, RemoteJudgeEndpoint]
@@ -133,6 +137,9 @@ class JudgeSettings:
     remote_judge_max_tokens: int
     remote_judge_top_p: float
     remote_judge_openai_compatible: bool
+    remote_candidate_temperature: float
+    remote_candidate_max_tokens: int | None
+    remote_candidate_top_p: float
     judge_save_raw_response: bool
     judge_execution_strategy: JudgeExecutionStrategy
     judge_batch_size: int

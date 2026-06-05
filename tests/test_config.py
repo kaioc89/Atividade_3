@@ -23,6 +23,10 @@ def test_settings_load_default_models_from_env() -> None:
 
     assert settings.app_env == "dev"
     assert settings.backup_root_file == "backup_atividade_2.sql"
+    assert settings.featherless_url == "https://api.featherless.ai/v1"
+    assert settings.featherless_api_key is None
+    assert settings.openrouter_url == "https://openrouter.ai/api/v1"
+    assert settings.openrouter_api_key is None
     assert settings.remote_judge_base_url == "https://example.invalid/v1"
     assert settings.remote_judge_api_key == "test-key"
     assert settings.remote_judge_endpoints == {}
@@ -114,6 +118,29 @@ def test_dotenv_values_override_process_environment(tmp_path) -> None:
     assert settings.remote_secondary_judge_model == "llama-3.3-70b-versatile"
     assert settings.remote_arbiter_judge_model == "gemini-2.5-flash"
     assert settings.judge_execution_strategy == "parallel"
+
+
+def test_candidate_provider_env_values_can_be_loaded_from_env() -> None:
+    env = dict(BASE_ENV)
+    env["FEATHERLESS_URL"] = "https://featherless.example.invalid/v1"
+    env["FEATHERLESS_API"] = "featherless-secret"
+    env["OPENROUTER_URL"] = "https://openrouter.example.invalid/api/v1"
+    env["OPENROUTER_KEY"] = "openrouter-secret"
+    env["REMOTE_CANDIDATE_MAX_TOKENS"] = "1024"
+    env["REMOTE_CANDIDATE_TEMPERATURE"] = "0.2"
+    env["REMOTE_CANDIDATE_TOP_P"] = "0.9"
+    env["EMBEDDING_API_KEY"] = "embedding-secret"
+
+    settings = load_settings(dotenv_path=None, env=env)
+
+    assert settings.featherless_url == "https://featherless.example.invalid/v1"
+    assert settings.featherless_api_key == "featherless-secret"
+    assert settings.openrouter_url == "https://openrouter.example.invalid/api/v1"
+    assert settings.openrouter_api_key == "openrouter-secret"
+    assert settings.remote_candidate_max_tokens == 1024
+    assert settings.remote_candidate_temperature == 0.2
+    assert settings.remote_candidate_top_p == 0.9
+    assert settings.embedding_api_key == "embedding-secret"
 
 
 def test_judge_model_cli_override_forces_single_mode() -> None:

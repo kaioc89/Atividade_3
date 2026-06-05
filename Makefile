@@ -3,7 +3,7 @@ PYTHON := $(VENV)/bin/python
 PIP := $(PYTHON) -m pip
 PYTEST := $(PYTHON) -m pytest
 
-.PHONY: venv install test db-up db-down db-logs db-psql db-status db-reset db-migrate-or-create db-restore-validate db-backup db-dump-structure db-dump-questions db-dump-responses db-dump-root-backup db-dump-all web-up web-down web-logs clean
+.PHONY: venv install test db-up db-down db-logs db-psql db-status db-reset db-migrate-or-create db-ensure-schema db-restore-validate db-backup db-backup-promote db-dump-structure db-dump-questions db-dump-responses db-dump-root-backup db-dump-all web-up web-down web-logs clean
 
 venv:
 	@if [ ! -d "$(VENV)" ]; then \
@@ -42,11 +42,17 @@ db-reset:
 db-migrate-or-create:
 	./scripts/db_migrate_or_create.sh $(if $(FORCE),--force)
 
+db-ensure-schema:
+	@./scripts/db_ensure_schema.sh
+
 db-restore-validate:
 	./scripts/db_restore_validate.sh
 
 db-backup:
 	./scripts/db_backup.sh
+
+db-backup-promote:
+	PROMOTE_BACKUP=1 ./scripts/db_backup.sh
 
 web-up: db-up
 	./scripts/web_up.sh
@@ -69,7 +75,7 @@ db-dump-responses:
 db-dump-root-backup:
 	./scripts/db_dump_root_backup.sh
 
-db-dump-all: db-dump-structure db-dump-questions db-dump-responses db-dump-root-backup
+db-dump-all: db-dump-structure db-dump-questions db-dump-responses db-backup
 
 clean:
 	find . -type d -name __pycache__ -prune -exec rm -rf {} +

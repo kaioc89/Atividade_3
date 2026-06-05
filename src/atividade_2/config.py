@@ -18,6 +18,8 @@ from .contracts import (
 from .model_aliases import resolve_judge_model
 
 DEFAULT_DATABASE_URL = "postgresql://postgres:postgres@localhost:5432/app_dev"
+DEFAULT_FEATHERLESS_URL = "https://api.featherless.ai/v1"
+DEFAULT_OPENROUTER_URL = "https://openrouter.ai/api/v1"
 SUPPORTED_PANEL_MODES: set[str] = {"single", "primary_only", "2plus1"}
 SUPPORTED_PROVIDERS: set[str] = {"remote_http"}
 SUPPORTED_EXECUTION_STRATEGIES: set[str] = {"sequential", "parallel", "adaptive"}
@@ -92,6 +94,10 @@ def load_settings(dotenv_path: str | Path | None = ".env", env: Mapping[str, str
         backup_root_file=values.get("BACKUP_ROOT_FILE", "backup_atividade_2.sql"),
         judge_provider=provider,  # type: ignore[arg-type]
         embedding_api_key=_empty_to_none(values.get("EMBEDDING_API_KEY")),
+        featherless_url=_empty_to_none(values.get("FEATHERLESS_URL", DEFAULT_FEATHERLESS_URL)),
+        featherless_api_key=_empty_to_none(values.get("FEATHERLESS_API")),
+        openrouter_url=_empty_to_none(values.get("OPENROUTER_URL", DEFAULT_OPENROUTER_URL)),
+        openrouter_api_key=_empty_to_none(values.get("OPENROUTER_KEY")),
         remote_judge_base_url=_empty_to_none(values.get("REMOTE_JUDGE_BASE_URL")),
         remote_judge_api_key=_empty_to_none(values.get("REMOTE_JUDGE_API_KEY")),
         remote_judge_endpoints=_parse_remote_judge_endpoints(values),
@@ -106,6 +112,9 @@ def load_settings(dotenv_path: str | Path | None = ".env", env: Mapping[str, str
         remote_judge_max_tokens=_parse_int(values, "REMOTE_JUDGE_MAX_TOKENS", 1200, minimum=1),
         remote_judge_top_p=_parse_float(values, "REMOTE_JUDGE_TOP_P", 1.0, minimum=0.0),
         remote_judge_openai_compatible=_parse_bool(values, "REMOTE_JUDGE_OPENAI_COMPATIBLE", True),
+        remote_candidate_temperature=_parse_float(values, "REMOTE_CANDIDATE_TEMPERATURE", 0.0, minimum=0.0),
+        remote_candidate_max_tokens=_parse_optional_int(values, "REMOTE_CANDIDATE_MAX_TOKENS", minimum=1),
+        remote_candidate_top_p=_parse_float(values, "REMOTE_CANDIDATE_TOP_P", 1.0, minimum=0.0),
         judge_save_raw_response=_parse_bool(values, "JUDGE_SAVE_RAW_RESPONSE", True),
         judge_execution_strategy=execution_strategy,  # type: ignore[arg-type]
         judge_batch_size=_parse_int(values, "JUDGE_BATCH_SIZE", 10, minimum=1),
@@ -235,6 +244,18 @@ def _resolve_execution_strategy(
             f"{effective_strategy}. Supported values: adaptive, sequential, parallel."
         )
     return effective_strategy  # type: ignore[return-value]
+
+
+def _parse_optional_int(
+    values: Mapping[str, str],
+    key: str,
+    *,
+    minimum: int | None = None,
+) -> int | None:
+    raw_value = values.get(key)
+    if raw_value is None or not raw_value.strip():
+        return None
+    return _parse_int(values, key, 0, minimum=minimum)
 
 
 def _validate_remote_settings(settings: JudgeSettings) -> None:

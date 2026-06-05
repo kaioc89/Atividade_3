@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from math import ceil
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -15,6 +16,7 @@ from .candidate_prompts import build_candidate_prompt
 from .config import load_settings
 from .contracts import (
     CandidateAnswerRecord,
+    CandidateModelAssignment,
     CandidatePromptContext,
     CandidatePromptRecord,
     CandidateQuestionRecord,
@@ -51,9 +53,9 @@ class RunCandidatesRagRequest:
     remote_candidate_base_url: str | None = None
     remote_candidate_api_key: str | None = None
     remote_candidate_timeout_seconds: int = 120
-    remote_candidate_temperature: float = 0.0
-    remote_candidate_max_tokens: int = 4000
-    remote_candidate_top_p: float = 1.0
+    remote_candidate_temperature: float | None = None
+    remote_candidate_max_tokens: int | None = None
+    remote_candidate_top_p: float | None = None
     remote_candidate_openai_compatible: bool = True
 
 
@@ -102,6 +104,30 @@ class CandidateRunSummary:
 
 
 @dataclass(frozen=True)
+class ResolvedCandidateProviderConfig:
+    """Provider-specific remote HTTP settings resolved from the AV3 registry."""
+
+    av3_provider: str
+    base_url: str
+    api_key: str | None
+
+
+@dataclass(frozen=True)
+class ResolvedCandidateRuntimeConfig:
+    """Resolved candidate runtime config after assignment and env handling."""
+
+    model_name: str
+    technical_provider: str
+    av3_provider: str
+    base_url: str
+    api_key: str | None
+    temperature: float
+    top_p: float
+    max_tokens: int
+    save_raw_response: bool
+
+
+@dataclass(frozen=True)
 class RunCandidatesRagResult:
     """Service result contract shared by future CLI/Web adapters."""
 
@@ -112,6 +138,7 @@ class RunCandidatesRagResult:
     dataset: str
     model_name: str
     provider: str
+    runtime_config_summary: str | None = None
     candidate_run_id: int | None = None
     retrieval_run_id: int | None = None
     prompt_id: int | None = None
@@ -123,6 +150,9 @@ class CandidateRunRepositoryProtocol(Protocol):
 
     def ensure_schema(self) -> None:
         """Ensure required AV3 tables exist."""
+
+    def list_candidate_model_assignments(self) -> tuple[CandidateModelAssignment, ...]:
+        """Return the centralized AV3 candidate-model registry."""
 
     def get_rag_vector_base_summary(self, *, dataset: str) -> Any | None:
         """Return the active vector base summary for the requested dataset."""
@@ -252,21 +282,10 @@ class RunCandidatesRagService:
             with audit.step("Loading configuration"):
                 settings = self._settings_loader()
             audit.file_event("execution_summary", resolved.execution_summary.replace("\n", " | "))
-            if request.dry_run:
-                audit.file_event("dry_run_finished", "no database rows selected and no remote candidate calls made")
-                audit.terminal_event("Dry run: no database rows selected and no remote candidate calls made.")
-                return RunCandidatesRagResult(
-                    dry_run=True,
-                    audit_log=str(resolved.audit_path),
-                    execution_summary=resolved.execution_summary,
-                    batch_size=resolved.batch_size,
-                    dataset=resolved.dataset,
-                    model_name=resolved.model_name,
-                    provider=resolved.provider,
-                )
-
             with audit.step("Connecting to local PostgreSQL", detail="DATABASE_URL=<redacted>"):
                 connection = self._connect(settings.database_url)
+            repository: CandidateRunRepositoryProtocol | None = None
+            run: CandidateRunRecord | None = None
             try:
                 repository = self._repository_factory(connection)
                 snapshot_service = self._snapshot_service_factory(repository)
@@ -284,35 +303,6 @@ class RunCandidatesRagService:
                     dataset=resolved.dataset,
                     prompt_id=resolved.prompt_id,
                 )
-                started_at = _utcnow_iso()
-                run = repository.create_candidate_run(
-                    run=CandidateRunRecord(
-                        candidate_run_id=None,
-                        dataset=resolved.dataset,
-                        retrieval_run_id=int(vector_base.retrieval_run_id),
-                        prompt_id=int(prompt.prompt_id),
-                        model_name=resolved.model_name,
-                        provider=resolved.provider,
-                        batch_size=resolved.batch_size,
-                        run_status="running",
-                        temperature=request.remote_candidate_temperature,
-                        max_tokens=request.remote_candidate_max_tokens,
-                        top_p=request.remote_candidate_top_p,
-                        started_at=started_at,
-                        created_by=request.created_by,
-                        metadata=_run_metadata(resolved, vector_base, prompt, request),
-                    )
-                )
-                audit.event(
-                    AuditEvent(
-                        "run_started",
-                        (
-                            f"candidate_run_id={run.candidate_run_id} dataset={resolved.dataset} "
-                            f"model={resolved.model_name} provider={resolved.provider} "
-                            f"retrieval_run_id={vector_base.retrieval_run_id} prompt_id={prompt.prompt_id}"
-                        ),
-                    )
-                )
                 with audit.step(
                     f"Selecting candidate questions for {resolved.dataset}",
                     detail=(
@@ -328,8 +318,70 @@ class RunCandidatesRagService:
                         question_sequence_end=resolved.question_sequence_end,
                         question_id=resolved.question_id,
                     )
+                runtime_config = _resolve_candidate_runtime_config(
+                    repository=repository,
+                    settings=settings,
+                    request=request,
+                    resolved=resolved,
+                    questions=questions,
+                    require_api_key=not request.dry_run,
+                )
+                runtime_summary = _format_candidate_runtime_config(
+                    runtime_config,
+                    api_key_state="<set>" if runtime_config.api_key else "<not required in dry-run>",
+                )
+                audit.file_event("candidate_runtime_config", runtime_summary.replace("\n", " | "))
+                audit.terminal_event(runtime_summary)
+                if request.dry_run:
+                    audit.file_event("dry_run_finished", "no candidate_run rows created and no remote candidate calls made")
+                    audit.terminal_event("Dry run: no candidate_run rows created and no remote candidate calls made.")
+                    return RunCandidatesRagResult(
+                        dry_run=True,
+                        audit_log=str(resolved.audit_path),
+                        execution_summary=resolved.execution_summary,
+                        runtime_config_summary=runtime_summary,
+                        batch_size=resolved.batch_size,
+                        dataset=resolved.dataset,
+                        model_name=resolved.model_name,
+                        provider=resolved.provider,
+                    )
+
+                started_at = _utcnow_iso()
+                run = repository.create_candidate_run(
+                    run=CandidateRunRecord(
+                        candidate_run_id=None,
+                        dataset=resolved.dataset,
+                        retrieval_run_id=int(vector_base.retrieval_run_id),
+                        prompt_id=int(prompt.prompt_id),
+                        model_name=resolved.model_name,
+                        provider=resolved.provider,
+                        batch_size=resolved.batch_size,
+                        run_status="running",
+                        temperature=runtime_config.temperature,
+                        max_tokens=runtime_config.max_tokens,
+                        top_p=runtime_config.top_p,
+                        started_at=started_at,
+                        created_by=request.created_by,
+                        metadata=_run_metadata(resolved, vector_base, prompt, request, runtime_config),
+                    )
+                )
+                audit.event(
+                    AuditEvent(
+                        "run_started",
+                        (
+                            f"candidate_run_id={run.candidate_run_id} dataset={resolved.dataset} "
+                            f"model={resolved.model_name} provider={resolved.provider} "
+                            f"retrieval_run_id={vector_base.retrieval_run_id} prompt_id={prompt.prompt_id}"
+                        ),
+                    )
+                )
                 retriever = self._retriever_factory(repository, settings, resolved.dataset)
-                client = self._client_factory(request, settings)
+                client = None
+                if questions:
+                    client_request = request
+                    if self._client_factory is _default_client_factory:
+                        client_request = _with_remote_candidate_config(request, runtime_config)
+                    client = self._client_factory(client_request, settings)
                 question_results: list[CandidateQuestionRunResult] = []
                 successful_answers = 0
                 failed_answers = 0
@@ -424,6 +476,7 @@ class RunCandidatesRagService:
                         continue
 
                     try:
+                        assert client is not None
                         raw_response = client.generate(rendered_prompt, model=resolved.model_name)
                         audit.event(
                             AuditEvent(
@@ -560,6 +613,7 @@ class RunCandidatesRagService:
                     dry_run=False,
                     audit_log=str(resolved.audit_path),
                     execution_summary=resolved.execution_summary,
+                    runtime_config_summary=runtime_summary,
                     batch_size=resolved.batch_size,
                     dataset=resolved.dataset,
                     model_name=resolved.model_name,
@@ -569,6 +623,27 @@ class RunCandidatesRagService:
                     prompt_id=int(prompt.prompt_id),
                     summary=summary,
                 )
+            except Exception as error:
+                if repository is not None and run is not None and run.candidate_run_id is not None:
+                    repository.update_candidate_run_status(
+                        candidate_run_id=int(run.candidate_run_id),
+                        run_status="failed",
+                        finished_at=_utcnow_iso(),
+                        metadata={
+                            "error_message": str(error),
+                            "error_type": type(error).__name__,
+                        },
+                    )
+                    audit.event(
+                        AuditEvent(
+                            "run_failed",
+                            (
+                                f"candidate_run_id={run.candidate_run_id} "
+                                f"error_type={type(error).__name__} error={error}"
+                            ),
+                        )
+                    )
+                raise
             finally:
                 with audit.step("Closing PostgreSQL connection"):
                     connection.close()
@@ -616,6 +691,7 @@ def _run_metadata(
     vector_base: Any,
     prompt: CandidatePromptRecord,
     request: RunCandidatesRagRequest,
+    runtime_config: ResolvedCandidateRuntimeConfig | None = None,
 ) -> dict[str, Any]:
     return {
         "retrieval_name": getattr(vector_base, "retrieval_name", None),
@@ -629,6 +705,17 @@ def _run_metadata(
         },
         "skip_existing_successful": resolved.skip_existing_successful,
         "save_raw_response": request.save_raw_response,
+        "candidate_runtime": None
+        if runtime_config is None
+        else {
+            "technical_provider": runtime_config.technical_provider,
+            "av3_provider": runtime_config.av3_provider,
+            "base_url": runtime_config.base_url,
+            "api_key": "<set>" if runtime_config.api_key else "<missing>",
+            "temperature": runtime_config.temperature,
+            "top_p": runtime_config.top_p,
+            "max_tokens": runtime_config.max_tokens,
+        },
     }
 
 
@@ -687,12 +774,274 @@ def _default_client_factory(request: RunCandidatesRagRequest, _settings: Any) ->
             api_key=(request.remote_candidate_api_key or "").strip(),
             provider=request.provider,
             timeout_seconds=request.remote_candidate_timeout_seconds,
-            temperature=request.remote_candidate_temperature,
-            max_tokens=request.remote_candidate_max_tokens,
-            top_p=request.remote_candidate_top_p,
+            temperature=float(request.remote_candidate_temperature or 0.0),
+            max_tokens=int(request.remote_candidate_max_tokens or 1024),
+            top_p=float(request.remote_candidate_top_p or 1.0),
             openai_compatible=request.remote_candidate_openai_compatible,
             save_raw_response=request.save_raw_response,
         )
+    )
+
+
+def _with_remote_candidate_config(
+    request: RunCandidatesRagRequest,
+    runtime_config: ResolvedCandidateRuntimeConfig,
+) -> RunCandidatesRagRequest:
+    return RunCandidatesRagRequest(
+        model_name=request.model_name,
+        provider=request.provider,
+        dataset=request.dataset,
+        batch_size=request.batch_size,
+        question_sequence_start=request.question_sequence_start,
+        question_sequence_end=request.question_sequence_end,
+        question_id=request.question_id,
+        prompt_id=request.prompt_id,
+        retrieval_run_id=request.retrieval_run_id,
+        skip_existing_successful=request.skip_existing_successful,
+        save_raw_response=request.save_raw_response,
+        dry_run=request.dry_run,
+        audit_log=request.audit_log,
+        no_audit_animation=request.no_audit_animation,
+        created_by=request.created_by,
+        remote_candidate_base_url=runtime_config.base_url,
+        remote_candidate_api_key=runtime_config.api_key,
+        remote_candidate_timeout_seconds=request.remote_candidate_timeout_seconds,
+        remote_candidate_temperature=runtime_config.temperature,
+        remote_candidate_max_tokens=runtime_config.max_tokens,
+        remote_candidate_top_p=runtime_config.top_p,
+        remote_candidate_openai_compatible=request.remote_candidate_openai_compatible,
+    )
+
+
+def _resolve_candidate_provider_config(
+    *,
+    settings: Any,
+    assignment: CandidateModelAssignment,
+    require_api_key: bool,
+) -> ResolvedCandidateProviderConfig:
+    provider = assignment.av3_provider.casefold()
+    if provider == "openrouter":
+        api_key = (getattr(settings, "openrouter_api_key", None) or "").strip() or None
+        if require_api_key and not api_key:
+            raise ValueError("OPENROUTER_KEY is required for openrouter candidate execution.")
+        base_url = (getattr(settings, "openrouter_url", None) or "").strip()
+        if not base_url:
+            raise ValueError("OPENROUTER_URL is required for openrouter candidate execution.")
+        return ResolvedCandidateProviderConfig(
+            av3_provider=provider,
+            base_url=base_url,
+            api_key=api_key,
+        )
+    if provider == "featherless":
+        api_key = (getattr(settings, "featherless_api_key", None) or "").strip() or None
+        if require_api_key and not api_key:
+            raise ValueError("FEATHERLESS_API is required for featherless candidate execution.")
+        base_url = (getattr(settings, "featherless_url", None) or "").strip()
+        if not base_url:
+            raise ValueError("FEATHERLESS_URL is required for featherless candidate execution.")
+        return ResolvedCandidateProviderConfig(
+            av3_provider=provider,
+            base_url=base_url,
+            api_key=api_key,
+        )
+    raise ValueError(
+        f"Candidate model {assignment.av3_provider_model_id} is mapped to unsupported av3_provider={assignment.av3_provider}."
+    )
+
+
+def _resolve_candidate_runtime_config(
+    *,
+    repository: CandidateRunRepositoryProtocol,
+    settings: Any,
+    request: RunCandidatesRagRequest,
+    resolved: ResolvedRunCandidatesRag,
+    questions: list[CandidateQuestionRecord],
+    require_api_key: bool,
+) -> ResolvedCandidateRuntimeConfig:
+    assignment = _resolve_candidate_assignment(
+        repository=repository,
+        dataset=resolved.dataset,
+        model_name=resolved.model_name,
+        questions=questions,
+    )
+    provider_config = _resolve_candidate_provider_config(
+        settings=settings,
+        assignment=assignment,
+        require_api_key=require_api_key,
+    )
+    max_tokens = resolve_candidate_max_tokens(
+        model_name=resolved.model_name,
+        av3_provider=provider_config.av3_provider,
+        requested_max_tokens=_resolve_requested_candidate_max_tokens(settings=settings, request=request),
+    )
+    temperature = _resolve_candidate_temperature(settings=settings, request=request)
+    top_p = _resolve_candidate_top_p(settings=settings, request=request)
+
+    if questions:
+        sample_prompt = _render_prompt(
+            question=questions[0],
+            retrieval_result=RagRetrievalResult(
+                question_id=questions[0].question_id,
+                dataset=resolved.dataset,
+                retrieval_run_id=None,
+                retrieval_name=None,
+                embedding_model=None,
+                top_k=0,
+                status="success",
+                chunks=[],
+            ),
+            prompt=repository.get_or_create_candidate_prompt(dataset=resolved.dataset, prompt_id=resolved.prompt_id),
+        )
+        max_tokens = _apply_context_budget_guard(
+            prompt_text=sample_prompt,
+            model_name=resolved.model_name,
+            av3_provider=provider_config.av3_provider,
+            max_tokens=max_tokens,
+        )
+
+    return ResolvedCandidateRuntimeConfig(
+        model_name=resolved.model_name,
+        technical_provider=resolved.provider,
+        av3_provider=provider_config.av3_provider,
+        base_url=provider_config.base_url,
+        api_key=provider_config.api_key,
+        temperature=temperature,
+        top_p=top_p,
+        max_tokens=max_tokens,
+        save_raw_response=request.save_raw_response,
+    )
+
+
+def _resolve_candidate_assignment(
+    *,
+    repository: CandidateRunRepositoryProtocol,
+    dataset: str,
+    model_name: str,
+    questions: list[CandidateQuestionRecord],
+) -> CandidateModelAssignment:
+    normalized_model_name = model_name.strip().casefold()
+    assignments = tuple(
+        assignment
+        for assignment in repository.list_candidate_model_assignments()
+        if assignment.active
+        and (assignment.av3_provider_model_id or "").strip().casefold() == normalized_model_name
+        and any(assignment_range.dataset_code == dataset for assignment_range in assignment.ranges)
+    )
+    if not assignments:
+        raise ValueError(
+            f"No AV3 candidate assignment found for dataset={dataset} and candidate_model={model_name}."
+        )
+
+    if questions:
+        question_sequences = {question.question_sequence for question in questions}
+        assignments = tuple(
+            assignment
+            for assignment in assignments
+            if any(assignment.covers(dataset=dataset, question_sequence=sequence) for sequence in question_sequences)
+        )
+        if not assignments:
+            raise ValueError(
+                f"Candidate model {model_name} does not cover the selected {dataset} question range."
+            )
+
+    runnable_assignments = tuple(assignment for assignment in assignments if assignment.is_runnable())
+    if not runnable_assignments:
+        raise ValueError(f"Candidate model {model_name} has no runnable AV3 assignment for dataset={dataset}.")
+
+    providers = {assignment.av3_provider for assignment in runnable_assignments}
+    if len(providers) != 1:
+        raise ValueError(
+            f"Candidate model {model_name} resolved to multiple AV3 providers for dataset={dataset}: "
+            f"{', '.join(sorted(providers))}."
+        )
+    return runnable_assignments[0]
+
+
+def resolve_candidate_max_tokens(
+    *,
+    model_name: str,
+    av3_provider: str,
+    requested_max_tokens: int | None,
+) -> int:
+    if requested_max_tokens is not None:
+        return int(requested_max_tokens)
+
+    upper_name = model_name.upper()
+    if any(token in upper_name for token in ("1.5B", "1B", "2B", "3B")):
+        return 1024
+    if any(token in upper_name for token in ("7B", "8B")):
+        return 1500
+    if av3_provider == "openrouter":
+        return 3000
+    return 1024
+
+
+def _resolve_candidate_temperature(*, settings: Any, request: RunCandidatesRagRequest) -> float:
+    if request.remote_candidate_temperature is not None:
+        return float(request.remote_candidate_temperature)
+    return float(getattr(settings, "remote_candidate_temperature", 0.0))
+
+
+def _resolve_candidate_top_p(*, settings: Any, request: RunCandidatesRagRequest) -> float:
+    if request.remote_candidate_top_p is not None:
+        return float(request.remote_candidate_top_p)
+    return float(getattr(settings, "remote_candidate_top_p", 1.0))
+
+
+def _resolve_requested_candidate_max_tokens(*, settings: Any, request: RunCandidatesRagRequest) -> int | None:
+    if request.remote_candidate_max_tokens is not None:
+        return int(request.remote_candidate_max_tokens)
+    value = getattr(settings, "remote_candidate_max_tokens", None)
+    return None if value is None else int(value)
+
+
+KNOWN_CONTEXT_WINDOWS = {
+    "google/gemma-2-2b-it": 8192,
+    "qwen/qwen2.5-3b-instruct": 32768,
+    "qwen/qwen2.5-7b-instruct": 32768,
+}
+
+
+def _apply_context_budget_guard(
+    *,
+    prompt_text: str,
+    model_name: str,
+    av3_provider: str,
+    max_tokens: int,
+) -> int:
+    context_window = KNOWN_CONTEXT_WINDOWS.get(model_name.strip().casefold())
+    if context_window is None:
+        return max_tokens
+    estimated_prompt_tokens = ceil(len(prompt_text) / 4)
+    remaining_budget = context_window - estimated_prompt_tokens
+    if remaining_budget <= 0:
+        raise ValueError(
+            f"Estimated prompt exceeds the known context window for {model_name}. "
+            f"estimated_prompt_tokens={estimated_prompt_tokens} context_window={context_window}."
+        )
+    if estimated_prompt_tokens + max_tokens <= context_window:
+        return max_tokens
+    if av3_provider == "openrouter":
+        return max(1, min(max_tokens, remaining_budget))
+    return max(1, min(max_tokens, remaining_budget))
+
+
+def _format_candidate_runtime_config(
+    runtime_config: ResolvedCandidateRuntimeConfig,
+    *,
+    api_key_state: str,
+) -> str:
+    return (
+        "Candidate runtime config:\n"
+        f"  model: {runtime_config.model_name}\n"
+        f"  technical provider: {runtime_config.technical_provider}\n"
+        f"  av3 provider: {runtime_config.av3_provider}\n"
+        f"  base_url: {runtime_config.base_url}\n"
+        f"  api_key: {api_key_state}\n"
+        f"  temperature: {runtime_config.temperature}\n"
+        f"  top_p: {runtime_config.top_p}\n"
+        f"  max_tokens: {runtime_config.max_tokens}\n"
+        f"  save_raw_response: {str(runtime_config.save_raw_response).lower()}"
     )
 
 
