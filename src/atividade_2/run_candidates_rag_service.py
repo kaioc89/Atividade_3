@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
-from concurrent.futures import ThreadPoolExecutor, as_completed
+import hashlib
+import time
+from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, as_completed, wait
 from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Protocol
+from urllib.parse import urlsplit, urlunsplit
 
 from .audit import AuditEvent, AuditLogger
 from .candidate_context_budget import (
@@ -163,6 +166,12 @@ class ResolvedCandidateExecutionConfig:
 
     strategy: str
     parallel_max_workers: int
+    adaptive_initial_concurrency: int
+    adaptive_max_concurrency: int
+    adaptive_success_threshold: int
+    adaptive_max_retries: int
+    adaptive_base_backoff_seconds: float
+    adaptive_max_backoff_seconds: float
 
 
 @dataclass(frozen=True)
@@ -182,6 +191,71 @@ class CandidateQuestionTaskResult:
     question_result: CandidateQuestionRunResult
     budget: CandidatePromptBudget | None
     runtime_config: ResolvedCandidateRuntimeConfig
+
+
+@dataclass(frozen=True)
+class CandidateAdaptiveGroupKey:
+    """Secret-safe grouping key for adaptive candidate scheduling."""
+
+    av3_provider: str
+    base_url: str
+    api_key_fingerprint: str
+    model_name: str
+
+    @property
+    def label(self) -> str:
+        return (
+            f"av3_provider={self.av3_provider} base_url={self.base_url} "
+            f"api_key={self.api_key_fingerprint} model={self.model_name}"
+        )
+
+
+@dataclass
+class CandidateAdaptiveGroupState:
+    """Mutable per-provider/model scheduler metrics."""
+
+    key: CandidateAdaptiveGroupKey
+    current_concurrency: int
+    max_concurrency: int
+    in_flight: int = 0
+    cooldown_until: float = 0.0
+    consecutive_successes: int = 0
+    successes: int = 0
+    failures: int = 0
+    timeouts: int = 0
+    rate_limits: int = 0
+    transient_failures: int = 0
+    non_retryable_failures: int = 0
+    retries: int = 0
+    requeued: int = 0
+    disabled: bool = False
+
+    @property
+    def final_concurrency(self) -> int:
+        return self.current_concurrency
+
+
+@dataclass(frozen=True)
+class CandidateAdaptiveQueuedTask:
+    question: CandidateQuestionRecord
+    group_key: CandidateAdaptiveGroupKey
+    attempt: int = 0
+    ready_at: float = 0.0
+
+
+@dataclass(frozen=True)
+class CandidateAdaptiveCompletedTask:
+    queued: CandidateAdaptiveQueuedTask
+    result: CandidateQuestionTaskResult
+
+
+@dataclass(frozen=True)
+class CandidateErrorClassification:
+    reason: str
+    retryable: bool
+    fatal_group: bool = False
+    timeout: bool = False
+    rate_limit: bool = False
 
 
 @dataclass(frozen=True)
@@ -327,6 +401,8 @@ class RunCandidatesRagService:
         retriever_factory: Callable[[CandidateRunRepositoryProtocol, Any, str], RagRetrieverService] | None = None,
         client_factory: Callable[[RunCandidatesRagRequest, Any], CandidateClient] | None = None,
         snapshot_service_factory: Callable[[CandidateRunRepositoryProtocol], RagContextSnapshotService] | None = None,
+        sleep_func: Callable[[float], None] = time.sleep,
+        monotonic_func: Callable[[], float] = time.monotonic,
     ) -> None:
         self._settings_loader = settings_loader
         self._connect = connect_func
@@ -334,6 +410,8 @@ class RunCandidatesRagService:
         self._retriever_factory = retriever_factory or _default_retriever_factory
         self._client_factory = client_factory or _default_client_factory
         self._snapshot_service_factory = snapshot_service_factory or _default_snapshot_service_factory
+        self._sleep = sleep_func
+        self._monotonic = monotonic_func
 
     def resolve(self, request: RunCandidatesRagRequest) -> ResolvedRunCandidatesRag:
         """Normalize request values without opening the database or calling providers."""
@@ -403,6 +481,12 @@ class RunCandidatesRagService:
                 question_id=resolved.question_id,
                 candidate_execution_strategy=execution_config.strategy,
                 candidate_parallel_max_workers=execution_config.parallel_max_workers,
+                candidate_adaptive_initial_concurrency=execution_config.adaptive_initial_concurrency,
+                candidate_adaptive_max_concurrency=execution_config.adaptive_max_concurrency,
+                candidate_adaptive_success_threshold=execution_config.adaptive_success_threshold,
+                candidate_adaptive_max_retries=execution_config.adaptive_max_retries,
+                candidate_adaptive_base_backoff_seconds=execution_config.adaptive_base_backoff_seconds,
+                candidate_adaptive_max_backoff_seconds=execution_config.adaptive_max_backoff_seconds,
             )
             audit.file_event("execution_summary", execution_summary.replace("\n", " | "))
             with audit.step("Connecting to local PostgreSQL", detail="DATABASE_URL=<redacted>"):
@@ -538,7 +622,21 @@ class RunCandidatesRagService:
                 client_request = request
                 if self._client_factory is _default_client_factory:
                     client_request = _with_remote_candidate_config(request, runtime_config)
-                if execution_config.strategy == "parallel":
+                adaptive_metrics: dict[str, Any] | None = None
+                if execution_config.strategy == "adaptive":
+                    scheduler = CandidateAdaptiveScheduler(service=self, execution_config=execution_config, audit=audit)
+                    task_results = scheduler.run(
+                        settings=settings,
+                        request=request,
+                        client_request=client_request,
+                        resolved=resolved,
+                        prompt=prompt,
+                        questions=questions,
+                        runtime_config=runtime_config,
+                        candidate_run_id=int(run.candidate_run_id),
+                    )
+                    adaptive_metrics = scheduler.summary()
+                elif execution_config.strategy == "parallel":
                     task_results = self._run_candidate_questions_parallel(
                         settings=settings,
                         request=request,
@@ -607,9 +705,17 @@ class RunCandidatesRagService:
                     "candidate_execution": {
                         "strategy": execution_config.strategy,
                         "parallel_max_workers": execution_config.parallel_max_workers,
+                        "adaptive_initial_concurrency": execution_config.adaptive_initial_concurrency,
+                        "adaptive_max_concurrency": execution_config.adaptive_max_concurrency,
+                        "adaptive_success_threshold": execution_config.adaptive_success_threshold,
+                        "adaptive_max_retries": execution_config.adaptive_max_retries,
+                        "adaptive_base_backoff_seconds": execution_config.adaptive_base_backoff_seconds,
+                        "adaptive_max_backoff_seconds": execution_config.adaptive_max_backoff_seconds,
                     },
                     "candidate_runtime_profile": _candidate_runtime_profile_metadata(runtime_config),
                 }
+                if adaptive_metrics is not None:
+                    completion_metadata["candidate_adaptive"] = adaptive_metrics
                 candidate_budget_metadata = aggregate_budget_metadata(
                     budgets=budget_summaries,
                     requested_max_tokens=runtime_config.requested_max_tokens,
@@ -712,6 +818,7 @@ class RunCandidatesRagService:
                     runtime_config=runtime_config,
                     candidate_run_id=candidate_run_id,
                     audit=audit,
+                    propagate_retryable_generation_errors=False,
                 )
                 for question in questions
             ]
@@ -744,6 +851,7 @@ class RunCandidatesRagService:
         runtime_config: ResolvedCandidateRuntimeConfig,
         candidate_run_id: int,
         audit: AuditLogger,
+        propagate_retryable_generation_errors: bool = False,
     ) -> CandidateQuestionTaskResult:
         connection = self._connect(settings.database_url)
         try:
@@ -763,11 +871,749 @@ class RunCandidatesRagService:
                 request=request,
                 runtime_config=runtime_config,
                 candidate_run_id=candidate_run_id,
-                isolate_unhandled_errors=True,
+                isolate_unhandled_errors=not propagate_retryable_generation_errors,
                 parallel_audit=True,
+                propagate_retryable_generation_errors=propagate_retryable_generation_errors,
             )
         finally:
             connection.close()
+
+    def _persist_adaptive_terminal_failure(
+        self,
+        *,
+        settings: Any,
+        resolved: ResolvedRunCandidatesRag,
+        prompt: CandidatePromptRecord,
+        question: CandidateQuestionRecord,
+        runtime_config: ResolvedCandidateRuntimeConfig,
+        candidate_run_id: int,
+        error: Exception,
+        audit: AuditLogger,
+    ) -> CandidateQuestionTaskResult:
+        connection = self._connect(settings.database_url)
+        try:
+            repository = self._repository_factory(connection)
+            return _persist_unhandled_candidate_question_failure(
+                repository=repository,
+                audit=audit,
+                question=question,
+                prompt=prompt,
+                resolved=resolved,
+                runtime_config=runtime_config,
+                candidate_run_id=candidate_run_id,
+                error=error,
+            )
+        finally:
+            connection.close()
+
+
+class CandidateAdaptiveScheduler:
+    """Conservative per-group scheduler for AV3 candidate execution."""
+
+    def __init__(
+        self,
+        *,
+        service: RunCandidatesRagService,
+        execution_config: ResolvedCandidateExecutionConfig,
+        audit: AuditLogger,
+    ) -> None:
+        self.service = service
+        self.execution_config = execution_config
+        self.audit = audit
+        self.groups: dict[CandidateAdaptiveGroupKey, CandidateAdaptiveGroupState] = {}
+
+    def run(
+        self,
+        *,
+        settings: Any,
+        request: RunCandidatesRagRequest,
+        client_request: RunCandidatesRagRequest,
+        resolved: ResolvedRunCandidatesRag,
+        prompt: CandidatePromptRecord,
+        questions: list[CandidateQuestionRecord],
+        runtime_config: ResolvedCandidateRuntimeConfig,
+        candidate_run_id: int,
+    ) -> list[CandidateQuestionTaskResult]:
+        if not questions:
+            return []
+
+        group_key = candidate_adaptive_group_key(runtime_config)
+        self._ensure_group(group_key, candidate_run_id=candidate_run_id)
+        pending = [
+            CandidateAdaptiveQueuedTask(
+                question=question,
+                group_key=group_key,
+                ready_at=self.service._monotonic(),
+            )
+            for question in sorted(questions, key=lambda item: (item.question_sequence, item.question_id))
+        ]
+        max_workers = max(1, sum(group.max_concurrency for group in self.groups.values()))
+        results: list[CandidateQuestionTaskResult] = []
+        futures: dict[Future[CandidateAdaptiveCompletedTask], CandidateAdaptiveQueuedTask] = {}
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            while pending or futures:
+                if self._submit_ready(
+                    pending=pending,
+                    futures=futures,
+                    executor=executor,
+                    settings=settings,
+                    request=request,
+                    client_request=client_request,
+                    resolved=resolved,
+                    prompt=prompt,
+                    runtime_config=runtime_config,
+                    candidate_run_id=candidate_run_id,
+                ):
+                    continue
+
+                if not futures:
+                    delay = self._next_delay(pending)
+                    if delay > 0:
+                        self.service._sleep(delay)
+                    continue
+
+                done, _ = wait(
+                    futures.keys(),
+                    timeout=self._next_wait_timeout(pending),
+                    return_when=FIRST_COMPLETED,
+                )
+                if not done:
+                    continue
+                for future in done:
+                    queued = futures.pop(future)
+                    state = self.groups[queued.group_key]
+                    state.in_flight -= 1
+                    try:
+                        completed = future.result()
+                    except Exception as error:
+                        terminal_results = self._handle_exception(
+                            error=error,
+                            queued=queued,
+                            pending=pending,
+                            state=state,
+                            settings=settings,
+                            resolved=resolved,
+                            prompt=prompt,
+                            runtime_config=runtime_config,
+                            candidate_run_id=candidate_run_id,
+                        )
+                        results.extend(terminal_results)
+                    else:
+                        results.extend(
+                            self._handle_result(
+                                completed.result,
+                                queued=queued,
+                                pending=pending,
+                                state=state,
+                                settings=settings,
+                                resolved=resolved,
+                                prompt=prompt,
+                                runtime_config=runtime_config,
+                                candidate_run_id=candidate_run_id,
+                            )
+                        )
+        self._audit_final(candidate_run_id)
+        return results
+
+    def summary(self) -> dict[str, Any]:
+        states = list(self.groups.values())
+        if not states:
+            return {
+                "successes": 0,
+                "failures": 0,
+                "timeouts": 0,
+                "rate_limits": 0,
+                "transient_failures": 0,
+                "non_retryable_failures": 0,
+                "retries": 0,
+                "requeued": 0,
+                "final_concurrency": 1,
+            }
+        return {
+            "successes": sum(state.successes for state in states),
+            "failures": sum(state.failures for state in states),
+            "timeouts": sum(state.timeouts for state in states),
+            "rate_limits": sum(state.rate_limits for state in states),
+            "transient_failures": sum(state.transient_failures for state in states),
+            "non_retryable_failures": sum(state.non_retryable_failures for state in states),
+            "retries": sum(state.retries for state in states),
+            "requeued": sum(state.requeued for state in states),
+            "final_concurrency": max(state.final_concurrency for state in states),
+            "groups": [
+                {
+                    "av3_provider": state.key.av3_provider,
+                    "base_url": state.key.base_url,
+                    "api_key": state.key.api_key_fingerprint,
+                    "model": state.key.model_name,
+                    "current_concurrency": state.current_concurrency,
+                    "max_concurrency": state.max_concurrency,
+                    "consecutive_successes": state.consecutive_successes,
+                    "successes": state.successes,
+                    "failures": state.failures,
+                    "timeouts": state.timeouts,
+                    "rate_limits": state.rate_limits,
+                    "transient_failures": state.transient_failures,
+                    "non_retryable_failures": state.non_retryable_failures,
+                    "retries": state.retries,
+                    "requeued": state.requeued,
+                    "disabled": state.disabled,
+                    "final_concurrency": state.final_concurrency,
+                }
+                for state in states
+            ],
+        }
+
+    def _submit_ready(
+        self,
+        *,
+        pending: list[CandidateAdaptiveQueuedTask],
+        futures: dict[Future[CandidateAdaptiveCompletedTask], CandidateAdaptiveQueuedTask],
+        executor: ThreadPoolExecutor,
+        settings: Any,
+        request: RunCandidatesRagRequest,
+        client_request: RunCandidatesRagRequest,
+        resolved: ResolvedRunCandidatesRag,
+        prompt: CandidatePromptRecord,
+        runtime_config: ResolvedCandidateRuntimeConfig,
+        candidate_run_id: int,
+    ) -> bool:
+        now = self.service._monotonic()
+        submitted = False
+        index = 0
+        while index < len(pending):
+            queued = pending[index]
+            state = self.groups[queued.group_key]
+            if state.disabled:
+                pending.pop(index)
+                continue
+            if state.in_flight >= state.current_concurrency:
+                index += 1
+                continue
+            if now < queued.ready_at or now < state.cooldown_until:
+                index += 1
+                continue
+            pending.pop(index)
+            state.in_flight += 1
+            futures[
+                executor.submit(
+                    self._execute_queued_task,
+                    queued=queued,
+                    settings=settings,
+                    request=request,
+                    client_request=client_request,
+                    resolved=resolved,
+                    prompt=prompt,
+                    runtime_config=runtime_config,
+                    candidate_run_id=candidate_run_id,
+                )
+            ] = queued
+            submitted = True
+        return submitted
+
+    def _execute_queued_task(
+        self,
+        *,
+        queued: CandidateAdaptiveQueuedTask,
+        settings: Any,
+        request: RunCandidatesRagRequest,
+        client_request: RunCandidatesRagRequest,
+        resolved: ResolvedRunCandidatesRag,
+        prompt: CandidatePromptRecord,
+        runtime_config: ResolvedCandidateRuntimeConfig,
+        candidate_run_id: int,
+    ) -> CandidateAdaptiveCompletedTask:
+        result = self.service._run_candidate_question_worker(
+            settings=settings,
+            request=request,
+            client_request=client_request,
+            resolved=resolved,
+            prompt=prompt,
+            question=queued.question,
+            runtime_config=runtime_config,
+            candidate_run_id=candidate_run_id,
+            audit=self.audit,
+            propagate_retryable_generation_errors=True,
+        )
+        return CandidateAdaptiveCompletedTask(queued=queued, result=result)
+
+    def _handle_result(
+        self,
+        result: CandidateQuestionTaskResult,
+        *,
+        queued: CandidateAdaptiveQueuedTask,
+        pending: list[CandidateAdaptiveQueuedTask],
+        state: CandidateAdaptiveGroupState,
+        settings: Any,
+        resolved: ResolvedRunCandidatesRag,
+        prompt: CandidatePromptRecord,
+        runtime_config: ResolvedCandidateRuntimeConfig,
+        candidate_run_id: int,
+    ) -> list[CandidateQuestionTaskResult]:
+        question_result = result.question_result
+        if question_result.status == "success":
+            self._handle_success(state, queued=queued, candidate_run_id=candidate_run_id)
+            return [result]
+        if question_result.status == "skipped":
+            return [result]
+
+        classification = classify_candidate_error_message(question_result.error_message or "")
+        state.failures += 1
+        state.consecutive_successes = 0
+        if classification.fatal_group:
+            state.non_retryable_failures += 1
+            discarded = self._disable_group(
+                state=state,
+                pending=pending,
+                reason=classification.reason,
+                candidate_run_id=candidate_run_id,
+                question=queued.question,
+                attempt=queued.attempt,
+                error_message=question_result.error_message or classification.reason,
+            )
+            terminal_results = [result]
+            for discarded_task in discarded:
+                terminal_results.append(
+                    self.service._persist_adaptive_terminal_failure(
+                        settings=settings,
+                        resolved=resolved,
+                        prompt=prompt,
+                        question=discarded_task.question,
+                        runtime_config=runtime_config,
+                        candidate_run_id=candidate_run_id,
+                        error=RuntimeError(question_result.error_message or classification.reason),
+                        audit=self.audit,
+                    )
+                )
+            return terminal_results
+
+        state.non_retryable_failures += 1
+        self._audit_task_failed(
+            state=state,
+            candidate_run_id=candidate_run_id,
+            question=queued.question,
+            attempt=queued.attempt,
+            reason=classification.reason,
+            error_message=question_result.error_message or "",
+        )
+        return [result]
+
+    def _handle_exception(
+        self,
+        *,
+        error: Exception,
+        queued: CandidateAdaptiveQueuedTask,
+        pending: list[CandidateAdaptiveQueuedTask],
+        state: CandidateAdaptiveGroupState,
+        settings: Any,
+        resolved: ResolvedRunCandidatesRag,
+        prompt: CandidatePromptRecord,
+        runtime_config: ResolvedCandidateRuntimeConfig,
+        candidate_run_id: int,
+    ) -> list[CandidateQuestionTaskResult]:
+        classification = classify_candidate_error(error)
+        state.failures += 1
+        state.consecutive_successes = 0
+        if classification.timeout:
+            state.timeouts += 1
+        if classification.rate_limit:
+            state.rate_limits += 1
+        if classification.retryable:
+            state.transient_failures += 1
+        else:
+            state.non_retryable_failures += 1
+
+        if not classification.retryable or queued.attempt >= self.execution_config.adaptive_max_retries:
+            if classification.fatal_group:
+                discarded = self._disable_group(
+                    state=state,
+                    pending=pending,
+                    reason=classification.reason,
+                    candidate_run_id=candidate_run_id,
+                    question=queued.question,
+                    attempt=queued.attempt,
+                    error_message=str(error),
+                )
+            else:
+                discarded = []
+                self._audit_task_failed(
+                    state=state,
+                    candidate_run_id=candidate_run_id,
+                    question=queued.question,
+                    attempt=queued.attempt,
+                    reason=classification.reason,
+                    error_message=str(error),
+                )
+            terminal_results = [
+                self.service._persist_adaptive_terminal_failure(
+                    settings=settings,
+                    resolved=resolved,
+                    prompt=prompt,
+                    question=queued.question,
+                    runtime_config=runtime_config,
+                    candidate_run_id=candidate_run_id,
+                    error=error,
+                    audit=self.audit,
+                )
+            ]
+            for discarded_task in discarded:
+                terminal_results.append(
+                    self.service._persist_adaptive_terminal_failure(
+                        settings=settings,
+                        resolved=resolved,
+                        prompt=prompt,
+                        question=discarded_task.question,
+                        runtime_config=runtime_config,
+                        candidate_run_id=candidate_run_id,
+                        error=error,
+                        audit=self.audit,
+                    )
+                )
+            return terminal_results
+
+        self._reduce_concurrency(
+            state=state,
+            reason=classification.reason,
+            candidate_run_id=candidate_run_id,
+            question=queued.question,
+            attempt=queued.attempt,
+        )
+        backoff = self._backoff_seconds(queued.attempt)
+        ready_at = self.service._monotonic() + backoff
+        state.cooldown_until = max(state.cooldown_until, ready_at)
+        state.retries += 1
+        state.requeued += 1
+        retried = CandidateAdaptiveQueuedTask(
+            question=queued.question,
+            group_key=queued.group_key,
+            attempt=queued.attempt + 1,
+            ready_at=ready_at,
+        )
+        pending.append(retried)
+        pending.sort(key=lambda item: (item.ready_at, item.question.question_sequence, item.question.question_id))
+        self.audit.event(
+            AuditEvent(
+                "candidate_adaptive_task_requeued",
+                self._event_detail(
+                    state=state,
+                    candidate_run_id=candidate_run_id,
+                    question=queued.question,
+                    attempt=retried.attempt,
+                    reason=classification.reason,
+                    backoff_seconds=backoff,
+                    extra=f"error_type={type(error).__name__}",
+                ),
+            )
+        )
+        return []
+
+    def _handle_success(
+        self,
+        state: CandidateAdaptiveGroupState,
+        *,
+        queued: CandidateAdaptiveQueuedTask,
+        candidate_run_id: int,
+    ) -> None:
+        state.successes += 1
+        state.consecutive_successes += 1
+        if (
+            state.consecutive_successes >= self.execution_config.adaptive_success_threshold
+            and state.current_concurrency < state.max_concurrency
+        ):
+            old = state.current_concurrency
+            state.current_concurrency += 1
+            state.consecutive_successes = 0
+            self.audit.event(
+                AuditEvent(
+                    "candidate_adaptive_increased",
+                    self._event_detail(
+                        state=state,
+                        candidate_run_id=candidate_run_id,
+                        question=queued.question,
+                        attempt=queued.attempt,
+                        reason=f"success_threshold from={old} to={state.current_concurrency}",
+                        backoff_seconds=0,
+                    ),
+                )
+            )
+
+    def _reduce_concurrency(
+        self,
+        *,
+        state: CandidateAdaptiveGroupState,
+        reason: str,
+        candidate_run_id: int,
+        question: CandidateQuestionRecord,
+        attempt: int,
+    ) -> None:
+        old = state.current_concurrency
+        state.current_concurrency = max(1, state.current_concurrency - 1)
+        self.audit.event(
+            AuditEvent(
+                "candidate_adaptive_reduced",
+                self._event_detail(
+                    state=state,
+                    candidate_run_id=candidate_run_id,
+                    question=question,
+                    attempt=attempt,
+                    reason=f"{reason} from={old} to={state.current_concurrency}",
+                    backoff_seconds=0,
+                ),
+            )
+        )
+
+    def _disable_group(
+        self,
+        *,
+        state: CandidateAdaptiveGroupState,
+        pending: list[CandidateAdaptiveQueuedTask],
+        reason: str,
+        candidate_run_id: int,
+        question: CandidateQuestionRecord,
+        attempt: int,
+        error_message: str,
+    ) -> list[CandidateAdaptiveQueuedTask]:
+        state.disabled = True
+        discarded: list[CandidateAdaptiveQueuedTask] = []
+        index = 0
+        while index < len(pending):
+            if pending[index].group_key == state.key:
+                discarded.append(pending.pop(index))
+                continue
+            index += 1
+        state.failures += len(discarded)
+        state.non_retryable_failures += len(discarded)
+        self._audit_task_failed(
+            state=state,
+            candidate_run_id=candidate_run_id,
+            question=question,
+            attempt=attempt,
+            reason=reason,
+            error_message=error_message,
+        )
+        self.audit.event(
+            AuditEvent(
+                "candidate_adaptive_group_disabled",
+                self._event_detail(
+                    state=state,
+                    candidate_run_id=candidate_run_id,
+                    question=question,
+                    attempt=attempt,
+                    reason=f"{reason} discarded_pending={len(discarded)}",
+                    backoff_seconds=0,
+                ),
+            )
+        )
+        return discarded
+
+    def _audit_task_failed(
+        self,
+        *,
+        state: CandidateAdaptiveGroupState,
+        candidate_run_id: int,
+        question: CandidateQuestionRecord,
+        attempt: int,
+        reason: str,
+        error_message: str,
+    ) -> None:
+        self.audit.event(
+            AuditEvent(
+                "candidate_adaptive_task_failed",
+                self._event_detail(
+                    state=state,
+                    candidate_run_id=candidate_run_id,
+                    question=question,
+                    attempt=attempt,
+                    reason=reason,
+                    backoff_seconds=0,
+                    extra=f"error={_safe_error_message(error_message)}",
+                ),
+            )
+        )
+
+    def _ensure_group(self, key: CandidateAdaptiveGroupKey, *, candidate_run_id: int) -> None:
+        if key in self.groups:
+            return
+        initial = min(
+            self.execution_config.adaptive_initial_concurrency,
+            self.execution_config.adaptive_max_concurrency,
+        )
+        state = CandidateAdaptiveGroupState(
+            key=key,
+            current_concurrency=initial,
+            max_concurrency=self.execution_config.adaptive_max_concurrency,
+        )
+        self.groups[key] = state
+        self.audit.event(
+            AuditEvent(
+                "candidate_adaptive_initial",
+                (
+                    f"candidate_run_id={candidate_run_id} {key.label} "
+                    f"question_id=- question_sequence=- attempt=0 "
+                    f"current_concurrency={state.current_concurrency} max_concurrency={state.max_concurrency} "
+                    "reason=initial backoff_seconds=0"
+                ),
+            )
+        )
+
+    def _audit_final(self, candidate_run_id: int) -> None:
+        for state in self.groups.values():
+            self.audit.event(
+                AuditEvent(
+                    "candidate_adaptive_final",
+                    (
+                        f"candidate_run_id={candidate_run_id} {state.key.label} "
+                        f"question_id=- question_sequence=- attempt=- "
+                        f"current_concurrency={state.current_concurrency} max_concurrency={state.max_concurrency} "
+                        "reason=final backoff_seconds=0 "
+                        f"successes={state.successes} failures={state.failures} timeouts={state.timeouts} "
+                        f"rate_limits={state.rate_limits} transient_failures={state.transient_failures} "
+                        f"non_retryable_failures={state.non_retryable_failures} retries={state.retries} "
+                        f"requeued={state.requeued} disabled={state.disabled} "
+                        f"final_concurrency={state.final_concurrency}"
+                    ),
+                )
+            )
+
+    def _backoff_seconds(self, attempt: int) -> float:
+        base = self.execution_config.adaptive_base_backoff_seconds
+        maximum = self.execution_config.adaptive_max_backoff_seconds
+        return min(maximum, base * (2 ** attempt))
+
+    def _next_delay(self, pending: list[CandidateAdaptiveQueuedTask]) -> float:
+        if not pending:
+            return 0.0
+        now = self.service._monotonic()
+        return max(0.0, min(max(item.ready_at, self.groups[item.group_key].cooldown_until) for item in pending) - now)
+
+    def _next_wait_timeout(self, pending: list[CandidateAdaptiveQueuedTask]) -> float:
+        delay = self._next_delay(pending)
+        if delay <= 0:
+            return 0.05
+        return min(delay, 0.05)
+
+    def _event_detail(
+        self,
+        *,
+        state: CandidateAdaptiveGroupState,
+        candidate_run_id: int,
+        question: CandidateQuestionRecord,
+        attempt: int,
+        reason: str,
+        backoff_seconds: float,
+        extra: str | None = None,
+    ) -> str:
+        detail = (
+            f"candidate_run_id={candidate_run_id} {state.key.label} "
+            f"question_id={question.question_id} question_sequence={question.question_sequence} "
+            f"attempt={attempt} current_concurrency={state.current_concurrency} "
+            f"max_concurrency={state.max_concurrency} reason={reason} "
+            f"backoff_seconds={backoff_seconds:g}"
+        )
+        if extra:
+            detail = f"{detail} {extra}"
+        return detail
+
+
+def candidate_adaptive_group_key(runtime_config: ResolvedCandidateRuntimeConfig) -> CandidateAdaptiveGroupKey:
+    return CandidateAdaptiveGroupKey(
+        av3_provider=runtime_config.av3_provider,
+        base_url=_safe_base_url(runtime_config.base_url),
+        api_key_fingerprint=_api_key_fingerprint(runtime_config.api_key),
+        model_name=runtime_config.model_name,
+    )
+
+
+def _safe_base_url(value: str | None) -> str:
+    if not value:
+        return "<unset>"
+    parsed = urlsplit(value)
+    if not parsed.scheme or not parsed.netloc:
+        return value.split("?", 1)[0] or "<unset>"
+    hostname = parsed.hostname or parsed.netloc
+    netloc = hostname
+    if parsed.port is not None:
+        netloc = f"{netloc}:{parsed.port}"
+    return urlunsplit((parsed.scheme, netloc, parsed.path.rstrip("/"), "", ""))
+
+
+def _api_key_fingerprint(value: str | None) -> str:
+    if not value:
+        return "<unset>"
+    digest = hashlib.sha256(value.encode("utf-8")).hexdigest()[:12]
+    return f"<set:{digest}>"
+
+
+def classify_candidate_error(error: Exception) -> CandidateErrorClassification:
+    status_code = getattr(error, "status_code", None)
+    message = str(error)
+    return classify_candidate_error_message(message, status_code=status_code, error=error)
+
+
+def classify_candidate_error_message(
+    message: str,
+    *,
+    status_code: int | None = None,
+    error: Exception | None = None,
+) -> CandidateErrorClassification:
+    normalized = message.casefold()
+    if parse_candidate_runtime_observation(message) is not None:
+        return CandidateErrorClassification(reason="context_window", retryable=False)
+    if status_code == 429 or "http 429" in normalized:
+        return CandidateErrorClassification(reason="http_429", retryable=True, rate_limit=True)
+    if status_code in {502, 503, 504} or any(f"http {code}" in normalized for code in (502, 503, 504)):
+        return CandidateErrorClassification(reason=f"http_{status_code}" if status_code else "http_5xx", retryable=True)
+    if isinstance(error, TimeoutError) or _message_contains_any(normalized, ("timed out", "timeout", "socket timeout")):
+        return CandidateErrorClassification(reason="timeout", retryable=True, timeout=True)
+    if _message_contains_any(
+        normalized,
+        (
+            "connection reset",
+            "temporarily unavailable",
+            "temporary failure",
+            "network is unreachable",
+            "connection aborted",
+            "connection refused",
+            "remote candidate request failed",
+        ),
+    ):
+        return CandidateErrorClassification(reason="temporary_network_failure", retryable=True)
+    if _message_contains_any(
+        normalized,
+        (
+            "api_key is required",
+            "api key is required",
+            "missing api key",
+            "invalid api key",
+            "invalid provider credential",
+            "unauthorized",
+            "forbidden",
+            "access denied",
+            "gated",
+            "model not found",
+            "unsupported candidate provider",
+            "unsupported av3_provider",
+            "no av3 candidate assignment",
+            "no runnable av3 assignment",
+            "invalid request",
+            "schema",
+            "prompt",
+            "config",
+        ),
+    ):
+        return CandidateErrorClassification(reason="non_retryable_config_or_access", retryable=False, fatal_group=True)
+    if status_code is not None and 500 <= status_code <= 599:
+        return CandidateErrorClassification(reason=f"http_{status_code}", retryable=True)
+    return CandidateErrorClassification(reason="non_retryable_error", retryable=False)
+
+
+def _message_contains_any(value: str, needles: tuple[str, ...]) -> bool:
+    return any(needle in value for needle in needles)
+
+
+def _safe_error_message(value: str) -> str:
+    if not value:
+        return "<empty>"
+    return "<redacted>"
 
 
 def _resolve_audit_path(value: str | None) -> Path:
@@ -788,8 +1634,14 @@ def _build_execution_summary(
     question_id: int | None,
     candidate_execution_strategy: str = "sequential",
     candidate_parallel_max_workers: int = 2,
+    candidate_adaptive_initial_concurrency: int = 1,
+    candidate_adaptive_max_concurrency: int = 2,
+    candidate_adaptive_success_threshold: int = 3,
+    candidate_adaptive_max_retries: int = 2,
+    candidate_adaptive_base_backoff_seconds: float = 2.0,
+    candidate_adaptive_max_backoff_seconds: float = 60.0,
 ) -> str:
-    return (
+    lines = [
         f"Dataset: {dataset}\n"
         f"Candidate model: {model_name}\n"
         f"Provider: {provider}\n"
@@ -798,7 +1650,20 @@ def _build_execution_summary(
         f"Question range: {_format_question_range(question_sequence_start, question_sequence_end)}\n"
         f"Candidate execution strategy: {candidate_execution_strategy}\n"
         f"Candidate parallel max workers: {candidate_parallel_max_workers}"
-    )
+    ]
+    if candidate_execution_strategy == "adaptive":
+        lines.extend(
+            [
+                f"Candidate adaptive initial/max concurrency: {candidate_adaptive_initial_concurrency}/{candidate_adaptive_max_concurrency}",
+                f"Candidate adaptive success threshold: {candidate_adaptive_success_threshold}",
+                f"Candidate adaptive max retries: {candidate_adaptive_max_retries}",
+                (
+                    "Candidate adaptive backoff seconds: "
+                    f"{candidate_adaptive_base_backoff_seconds:g}..{candidate_adaptive_max_backoff_seconds:g}"
+                ),
+            ]
+        )
+    return "\n".join(lines)
 
 
 def _format_question_range(start: int | None, end: int | None) -> str:
@@ -836,6 +1701,12 @@ def _run_metadata(
         else {
             "strategy": execution_config.strategy,
             "parallel_max_workers": execution_config.parallel_max_workers,
+            "adaptive_initial_concurrency": execution_config.adaptive_initial_concurrency,
+            "adaptive_max_concurrency": execution_config.adaptive_max_concurrency,
+            "adaptive_success_threshold": execution_config.adaptive_success_threshold,
+            "adaptive_max_retries": execution_config.adaptive_max_retries,
+            "adaptive_base_backoff_seconds": execution_config.adaptive_base_backoff_seconds,
+            "adaptive_max_backoff_seconds": execution_config.adaptive_max_backoff_seconds,
         },
         "candidate_runtime": None
         if runtime_config is None
@@ -898,6 +1769,7 @@ def _execute_candidate_question_task(
     candidate_run_id: int,
     isolate_unhandled_errors: bool,
     parallel_audit: bool,
+    propagate_retryable_generation_errors: bool = False,
 ) -> CandidateQuestionTaskResult:
     if parallel_audit:
         audit.event(
@@ -922,6 +1794,7 @@ def _execute_candidate_question_task(
             request=request,
             runtime_config=runtime_config,
             candidate_run_id=candidate_run_id,
+            propagate_retryable_generation_errors=propagate_retryable_generation_errors,
         )
     except Exception as error:
         if not isolate_unhandled_errors:
@@ -976,6 +1849,7 @@ def _execute_candidate_question_task_inner(
     request: RunCandidatesRagRequest,
     runtime_config: ResolvedCandidateRuntimeConfig,
     candidate_run_id: int,
+    propagate_retryable_generation_errors: bool = False,
 ) -> CandidateQuestionTaskResult:
     audit.event(
         AuditEvent(
@@ -1075,6 +1949,7 @@ def _execute_candidate_question_task_inner(
         request=request,
         runtime_config=runtime_config,
         candidate_run_id=candidate_run_id,
+        propagate_retryable_generation_errors=propagate_retryable_generation_errors,
     )
     if outcome.budget is not None:
         _log_candidate_prompt_budget(
@@ -1499,9 +2374,9 @@ def _resolve_candidate_execution_config(
         else getattr(settings, "candidate_execution_strategy", "sequential")
     )
     normalized_strategy = str(strategy).strip().casefold()
-    if normalized_strategy not in {"sequential", "parallel"}:
+    if normalized_strategy not in {"sequential", "parallel", "adaptive"}:
         raise ValueError(
-            "candidate_execution_strategy must be one of: parallel, sequential."
+            "candidate_execution_strategy must be one of: adaptive, parallel, sequential."
         )
 
     raw_max_workers = (
@@ -1513,9 +2388,36 @@ def _resolve_candidate_execution_config(
     if parallel_max_workers < 1:
         raise ValueError("candidate_parallel_max_workers must be >= 1.")
 
+    adaptive_initial_concurrency = int(getattr(settings, "candidate_adaptive_initial_concurrency", 1))
+    adaptive_max_concurrency = int(getattr(settings, "candidate_adaptive_max_concurrency", 2))
+    adaptive_success_threshold = int(getattr(settings, "candidate_adaptive_success_threshold", 3))
+    adaptive_max_retries = int(getattr(settings, "candidate_adaptive_max_retries", 2))
+    adaptive_base_backoff_seconds = float(getattr(settings, "candidate_adaptive_base_backoff_seconds", 2.0))
+    adaptive_max_backoff_seconds = float(getattr(settings, "candidate_adaptive_max_backoff_seconds", 60.0))
+    if adaptive_initial_concurrency < 1:
+        raise ValueError("candidate_adaptive_initial_concurrency must be >= 1.")
+    if adaptive_max_concurrency < 1:
+        raise ValueError("candidate_adaptive_max_concurrency must be >= 1.")
+    if adaptive_initial_concurrency > adaptive_max_concurrency:
+        raise ValueError("candidate_adaptive_initial_concurrency must be <= candidate_adaptive_max_concurrency.")
+    if adaptive_success_threshold < 1:
+        raise ValueError("candidate_adaptive_success_threshold must be >= 1.")
+    if adaptive_max_retries < 0:
+        raise ValueError("candidate_adaptive_max_retries must be >= 0.")
+    if adaptive_base_backoff_seconds < 0:
+        raise ValueError("candidate_adaptive_base_backoff_seconds must be >= 0.")
+    if adaptive_max_backoff_seconds < adaptive_base_backoff_seconds:
+        raise ValueError("candidate_adaptive_max_backoff_seconds must be >= candidate_adaptive_base_backoff_seconds.")
+
     return ResolvedCandidateExecutionConfig(
         strategy=normalized_strategy,
         parallel_max_workers=parallel_max_workers,
+        adaptive_initial_concurrency=adaptive_initial_concurrency,
+        adaptive_max_concurrency=adaptive_max_concurrency,
+        adaptive_success_threshold=adaptive_success_threshold,
+        adaptive_max_retries=adaptive_max_retries,
+        adaptive_base_backoff_seconds=adaptive_base_backoff_seconds,
+        adaptive_max_backoff_seconds=adaptive_max_backoff_seconds,
     )
 
 
@@ -1576,10 +2478,21 @@ def _format_candidate_execution_preflight(
 ) -> str:
     if execution_config is None:
         return ""
-    return (
+    summary = (
         f"\n  Candidate execution strategy: {execution_config.strategy}"
         f"\n  Candidate parallel max workers: {execution_config.parallel_max_workers}"
     )
+    if execution_config.strategy == "adaptive":
+        summary = (
+            f"{summary}"
+            "\n  Candidate adaptive initial/max concurrency: "
+            f"{execution_config.adaptive_initial_concurrency}/{execution_config.adaptive_max_concurrency}"
+            f"\n  Candidate adaptive success threshold: {execution_config.adaptive_success_threshold}"
+            f"\n  Candidate adaptive max retries: {execution_config.adaptive_max_retries}"
+            "\n  Candidate adaptive backoff seconds: "
+            f"{execution_config.adaptive_base_backoff_seconds:g}..{execution_config.adaptive_max_backoff_seconds:g}"
+        )
+    return summary
 
 
 def _candidate_runtime_profile_metadata(
@@ -1611,6 +2524,7 @@ def _execute_candidate_generation(
     request: RunCandidatesRagRequest,
     runtime_config: ResolvedCandidateRuntimeConfig,
     candidate_run_id: int,
+    propagate_retryable_generation_errors: bool = False,
 ) -> CandidateGenerationOutcome:
     initial_budget = _budget_retrieval_for_question(
         question=question,
@@ -1799,7 +2713,11 @@ def _execute_candidate_generation(
                         rendered_prompt = retried_prompt
                     if "retried_budget" in locals():
                         initial_budget = retried_budget
+                    if propagate_retryable_generation_errors and classify_candidate_error(error).retryable:
+                        raise
 
+        if propagate_retryable_generation_errors and classify_candidate_error(error).retryable:
+            raise
         audit.event(
             AuditEvent(
                 "generation_failed",

@@ -96,7 +96,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--dry-run", action="store_true", help="Resolve and print commands without remote calls.")
     parser.add_argument(
         "--candidate-execution-strategy",
-        choices=["sequential", "parallel"],
+        choices=["sequential", "parallel", "adaptive"],
         help="Pass through candidate execution strategy to run-candidates-rag.",
     )
     parser.add_argument(

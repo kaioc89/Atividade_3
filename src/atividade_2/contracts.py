@@ -10,7 +10,7 @@ JudgeProvider = Literal["remote_http"]
 JudgeRole = Literal["single", "primary", "arbiter"]
 StoredJudgeRole = Literal["principal", "controle", "arbitro"]
 JudgeExecutionStrategy = Literal["sequential", "parallel", "adaptive"]
-CandidateExecutionStrategy = Literal["sequential", "parallel"]
+CandidateExecutionStrategy = Literal["sequential", "parallel", "adaptive"]
 AppEnvironment = Literal["dev", "test", "prod"]
 CandidateRunStatus = Literal["created", "running", "completed", "failed", "cancelled"]
 CandidateAnswerStatus = Literal["created", "running", "success", "failed", "skipped"]
@@ -146,6 +146,12 @@ class JudgeSettings:
     remote_candidate_retry_on_context_window: bool
     candidate_execution_strategy: CandidateExecutionStrategy
     candidate_parallel_max_workers: int
+    candidate_adaptive_initial_concurrency: int
+    candidate_adaptive_max_concurrency: int
+    candidate_adaptive_success_threshold: int
+    candidate_adaptive_max_retries: int
+    candidate_adaptive_base_backoff_seconds: float
+    candidate_adaptive_max_backoff_seconds: float
     judge_save_raw_response: bool
     judge_execution_strategy: JudgeExecutionStrategy
     judge_batch_size: int

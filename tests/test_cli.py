@@ -262,13 +262,13 @@ def test_run_candidates_rag_parser_accepts_candidate_execution_strategy() -> Non
             "--batch-size",
             "2",
             "--candidate-execution-strategy",
-            "parallel",
+            "adaptive",
             "--candidate-parallel-max-workers",
             "3",
         ]
     )
 
-    assert args.candidate_execution_strategy == "parallel"
+    assert args.candidate_execution_strategy == "adaptive"
     assert args.candidate_parallel_max_workers == 3
 
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import threading
 import time
 from dataclasses import dataclass, field
@@ -22,9 +23,11 @@ from atividade_2.contracts import (
     RetrievedRagChunk,
 )
 from atividade_2.candidate_runtime_learning import parse_candidate_runtime_observation
+from atividade_2.candidate_clients.remote_http import RemoteCandidateError
 from atividade_2.run_candidates_rag_service import (
     RunCandidatesRagRequest,
     RunCandidatesRagService,
+    classify_candidate_error,
     _default_client_factory,
     _format_candidate_runtime_config,
     _resolve_candidate_provider_config,
@@ -49,6 +52,14 @@ class FakeSettings:
     remote_candidate_context_safety_margin_tokens: int = 512
     remote_candidate_context_window_tokens: int | None = None
     remote_candidate_retry_on_context_window: bool = False
+    candidate_execution_strategy: str = "sequential"
+    candidate_parallel_max_workers: int = 2
+    candidate_adaptive_initial_concurrency: int = 1
+    candidate_adaptive_max_concurrency: int = 2
+    candidate_adaptive_success_threshold: int = 2
+    candidate_adaptive_max_retries: int = 1
+    candidate_adaptive_base_backoff_seconds: float = 0.0
+    candidate_adaptive_max_backoff_seconds: float = 0.0
 
 
 class FakeConnection:
@@ -615,6 +626,7 @@ def _service(
     client_factory=None,
     snapshot_service: FakeSnapshotService | None = None,
     connect_func=None,
+    settings_loader=FakeSettings,
 ) -> RunCandidatesRagService:
     repository = repository or FakeRepository()
     retriever = retriever or FakeRetriever()
@@ -627,7 +639,7 @@ def _service(
             return connection
 
     return RunCandidatesRagService(
-        settings_loader=FakeSettings,
+        settings_loader=settings_loader,
         connect_func=connect_func,
         repository_factory=lambda _: repository,
         retriever_factory=lambda _repository, _settings, _dataset: retriever,
@@ -659,6 +671,7 @@ def _parallel_service(
     retriever: FakeRetriever,
     client,
     snapshot_service: FakeSnapshotService | None = None,
+    settings_loader=FakeSettings,
 ) -> tuple[RunCandidatesRagService, list[FakeConnection], list[FakeRepository]]:
     connections: list[FakeConnection] = []
     repositories: list[FakeRepository] = []
@@ -678,7 +691,7 @@ def _parallel_service(
         return created_repository
 
     service = RunCandidatesRagService(
-        settings_loader=FakeSettings,
+        settings_loader=settings_loader,
         connect_func=connect_func,
         repository_factory=repository_factory,
         retriever_factory=lambda _repository, _settings, _dataset: retriever,
@@ -763,6 +776,35 @@ def test_dry_run_resolves_configuration_without_db_writes_or_client_calls(tmp_pa
     assert repository.created_runs == []
     assert retriever.calls == [(101, "J1", None)]
     assert client.calls == []
+
+
+def test_adaptive_dry_run_reports_strategy_without_creating_candidate_run(tmp_path) -> None:
+    repository = FakeRepository()
+    retriever = FakeRetriever()
+    client = FakeClient()
+    retriever.results[("J1", 101)] = _success_result(dataset="J1", question_id=101)
+    service = _service(repository=repository, retriever=retriever, client=client)
+
+    result = service.run(
+        RunCandidatesRagRequest(
+            dataset="J1",
+            model_name="candidate-j1",
+            provider="remote_http",
+            batch_size=1,
+            dry_run=True,
+            candidate_execution_strategy="adaptive",
+            audit_log=str(tmp_path / "adaptive-dry-run.log"),
+            no_audit_animation=True,
+        )
+    )
+
+    assert result.candidate_run_id is None
+    assert result.summary is None
+    assert repository.created_runs == []
+    assert repository.persisted_answers == []
+    assert client.calls == []
+    assert "Candidate execution strategy: adaptive" in result.execution_summary
+    assert "Candidate adaptive initial/max concurrency: 1/2" in result.execution_summary
 
 
 def test_dry_run_does_not_require_openrouter_or_featherless_keys(tmp_path) -> None:
@@ -2159,6 +2201,308 @@ def test_parallel_audit_events_do_not_leak_secrets(tmp_path) -> None:
     assert "candidate_parallel_task_started" in audit_text
     assert "candidate_parallel_task_finished" in audit_text
     assert "candidate_parallel_finished" in audit_text
+    assert "featherless-test-key" not in audit_text
+    assert "openrouter-test-key" not in audit_text
+
+
+def test_candidate_error_classifier_marks_transient_provider_errors_retryable() -> None:
+    assert classify_candidate_error(RemoteCandidateError("Remote candidate returned HTTP 429", status_code=429)).retryable
+    assert classify_candidate_error(RemoteCandidateError("Remote candidate returned HTTP 502", status_code=502)).retryable
+    assert classify_candidate_error(RemoteCandidateError("Remote candidate returned HTTP 503", status_code=503)).retryable
+    assert classify_candidate_error(RemoteCandidateError("Remote candidate returned HTTP 504", status_code=504)).retryable
+    assert classify_candidate_error(TimeoutError("socket timeout")).timeout is True
+
+
+def test_candidate_error_classifier_marks_config_and_context_window_non_retryable() -> None:
+    assert classify_candidate_error(RuntimeError("Candidate api_key is required.")).fatal_group is True
+    assert classify_candidate_error(RuntimeError("model not found")).fatal_group is True
+    assert classify_candidate_error(RuntimeError("Provider model is gated for this API key.")).fatal_group is True
+    context_error = RuntimeError("Requested prompt exceeds context size of 4096 tokens.")
+    assert classify_candidate_error(context_error).retryable is False
+
+
+def test_adaptive_path_starts_with_initial_concurrency_and_increases_after_threshold(tmp_path) -> None:
+    repository = FakeRepository()
+    repository.questions_by_dataset["J1"] = [
+        CandidateQuestionRecord(101, "J1", "OAB_Bench", 1, "Q1", None),
+        CandidateQuestionRecord(102, "J1", "OAB_Bench", 2, "Q2", None),
+        CandidateQuestionRecord(103, "J1", "OAB_Bench", 3, "Q3", None),
+        CandidateQuestionRecord(104, "J1", "OAB_Bench", 4, "Q4", None),
+    ]
+    retriever = FakeRetriever()
+    for question in repository.questions_by_dataset["J1"]:
+        retriever.results[("J1", question.question_id)] = _success_result(
+            dataset="J1",
+            question_id=question.question_id,
+        )
+    client = ThreadCountingClient()
+    service, _connections, _repositories = _parallel_service(
+        repository=repository,
+        retriever=retriever,
+        client=client,
+    )
+    audit_path = tmp_path / "adaptive-increase.log"
+
+    result = service.run(
+        RunCandidatesRagRequest(
+            dataset="J1",
+            model_name="candidate-j1",
+            provider="remote_http",
+            batch_size=4,
+            candidate_execution_strategy="adaptive",
+            audit_log=str(audit_path),
+            no_audit_animation=True,
+        )
+    )
+
+    assert result.summary is not None
+    assert result.summary.successful_answers == 4
+    assert client.max_active <= 2
+    audit_text = audit_path.read_text(encoding="utf-8")
+    assert "candidate_adaptive_initial" in audit_text
+    assert "initial" in audit_text
+    assert "current_concurrency=1" in audit_text
+    assert "candidate_adaptive_increased" in audit_text
+    assert repository.updated_runs[-1]["metadata"]["candidate_adaptive"]["successes"] == 4
+    assert repository.updated_runs[-1]["metadata"]["candidate_adaptive"]["final_concurrency"] == 2
+
+
+def test_adaptive_retries_429_then_persists_one_successful_answer(tmp_path) -> None:
+    repository = FakeRepository()
+    retriever = FakeRetriever()
+    retriever.results[("J1", 101)] = _success_result(dataset="J1", question_id=101)
+    client = FakeClient(
+        failures={
+            0: RemoteCandidateError("Remote candidate returned HTTP 429: rate limited", status_code=429),
+        }
+    )
+    service, _connections, _repositories = _parallel_service(
+        repository=repository,
+        retriever=retriever,
+        client=client,
+    )
+
+    result = service.run(
+        RunCandidatesRagRequest(
+            dataset="J1",
+            model_name="candidate-j1",
+            provider="remote_http",
+            batch_size=1,
+            candidate_execution_strategy="adaptive",
+            audit_log=str(tmp_path / "adaptive-429.log"),
+            no_audit_animation=True,
+        )
+    )
+
+    assert result.summary is not None
+    assert result.summary.successful_answers == 1
+    assert [answer.status for answer in repository.persisted_answers] == ["success"]
+    metadata = repository.updated_runs[-1]["metadata"]["candidate_adaptive"]
+    assert metadata["rate_limits"] == 1
+    assert metadata["retries"] == 1
+    assert metadata["requeued"] == 1
+
+
+def test_adaptive_reduces_after_timeout_and_exhausted_retry_persists_failed_answer(tmp_path) -> None:
+    repository = FakeRepository()
+    retriever = FakeRetriever()
+    retriever.results[("J1", 101)] = _success_result(dataset="J1", question_id=101)
+    client = FakeClient(
+        failures={
+            0: TimeoutError("socket timeout"),
+            1: TimeoutError("socket timeout"),
+        }
+    )
+    service, _connections, _repositories = _parallel_service(
+        repository=repository,
+        retriever=retriever,
+        client=client,
+    )
+    audit_path = tmp_path / "adaptive-timeout.log"
+
+    result = service.run(
+        RunCandidatesRagRequest(
+            dataset="J1",
+            model_name="candidate-j1",
+            provider="remote_http",
+            batch_size=1,
+            candidate_execution_strategy="adaptive",
+            audit_log=str(audit_path),
+            no_audit_animation=True,
+        )
+    )
+
+    assert result.summary is not None
+    assert result.summary.failed_answers == 1
+    assert [answer.status for answer in repository.persisted_answers] == ["failed"]
+    metadata = repository.updated_runs[-1]["metadata"]["candidate_adaptive"]
+    assert metadata["timeouts"] == 2
+    assert metadata["retries"] == 1
+    assert metadata["final_concurrency"] == 1
+    assert "candidate_adaptive_reduced" in audit_path.read_text(encoding="utf-8")
+
+
+def test_adaptive_retries_502_503_504_classified_as_transient() -> None:
+    for status_code in (502, 503, 504):
+        classification = classify_candidate_error(
+            RemoteCandidateError(f"Remote candidate returned HTTP {status_code}", status_code=status_code)
+        )
+        assert classification.retryable is True
+        assert classification.reason == f"http_{status_code}"
+
+
+def test_adaptive_non_retryable_failure_persists_failed_answer_and_continues(tmp_path) -> None:
+    repository = FakeRepository()
+    repository.questions_by_dataset["J1"] = [
+        CandidateQuestionRecord(101, "J1", "OAB_Bench", 1, "Q1", None),
+        CandidateQuestionRecord(102, "J1", "OAB_Bench", 2, "Q2", None),
+        CandidateQuestionRecord(103, "J1", "OAB_Bench", 3, "Q3", None),
+    ]
+    retriever = FakeRetriever()
+    for question in repository.questions_by_dataset["J1"]:
+        retriever.results[("J1", question.question_id)] = _success_result(
+            dataset="J1",
+            question_id=question.question_id,
+        )
+    client = ThreadCountingClient(fail_on_question_text="Q2")
+    service, _connections, _repositories = _parallel_service(
+        repository=repository,
+        retriever=retriever,
+        client=client,
+    )
+
+    result = service.run(
+        RunCandidatesRagRequest(
+            dataset="J1",
+            model_name="candidate-j1",
+            provider="remote_http",
+            batch_size=3,
+            candidate_execution_strategy="adaptive",
+            audit_log=str(tmp_path / "adaptive-nonretry.log"),
+            no_audit_animation=True,
+        )
+    )
+
+    assert result.summary is not None
+    assert result.summary.successful_answers == 2
+    assert result.summary.failed_answers == 1
+    assert [answer.status for answer in repository.persisted_answers].count("failed") == 1
+    assert repository.updated_runs[-1]["run_status"] == "completed"
+
+
+def test_adaptive_group_level_config_error_disables_group_and_finalizes_run(tmp_path) -> None:
+    repository = FakeRepository()
+    repository.questions_by_dataset["J1"] = [
+        CandidateQuestionRecord(101, "J1", "OAB_Bench", 1, "Q1", None),
+        CandidateQuestionRecord(102, "J1", "OAB_Bench", 2, "Q2", None),
+    ]
+    retriever = FakeRetriever()
+    for question in repository.questions_by_dataset["J1"]:
+        retriever.results[("J1", question.question_id)] = _success_result(
+            dataset="J1",
+            question_id=question.question_id,
+        )
+    client = FakeClient(failures={0: RuntimeError("Candidate api_key is required.")})
+    service, _connections, _repositories = _parallel_service(
+        repository=repository,
+        retriever=retriever,
+        client=client,
+    )
+    audit_path = tmp_path / "adaptive-group-disabled.log"
+
+    result = service.run(
+        RunCandidatesRagRequest(
+            dataset="J1",
+            model_name="candidate-j1",
+            provider="remote_http",
+            batch_size=2,
+            candidate_execution_strategy="adaptive",
+            audit_log=str(audit_path),
+            no_audit_animation=True,
+        )
+    )
+
+    assert result.summary is not None
+    assert result.summary.failed_answers == 2
+    assert repository.updated_runs[-1]["run_status"] == "completed"
+    assert repository.updated_runs[-1]["metadata"]["candidate_adaptive"]["non_retryable_failures"] == 2
+    assert "candidate_adaptive_group_disabled" in audit_path.read_text(encoding="utf-8")
+
+
+def test_adaptive_context_window_retry_uses_existing_runtime_learning_not_transient_retry(tmp_path) -> None:
+    repository = FakeRepository()
+    retriever = FakeRetriever()
+    retriever.results[("J1", 101)] = _success_result(dataset="J1", question_id=101)
+    client = FakeClient(
+        failures={
+            0: RuntimeError("Platform records context_length as 4096; context size of 4096.")
+        },
+        responses={
+            1: CandidateRawResponse(
+                text="Resposta final apos retry.",
+                provider="fake",
+                model="candidate-j1",
+                latency_ms=25,
+            )
+        },
+    )
+    service, _connections, _repositories = _parallel_service(
+        repository=repository,
+        retriever=retriever,
+        client=client,
+    )
+
+    result = service.run(
+        RunCandidatesRagRequest(
+            dataset="J1",
+            model_name="candidate-j1",
+            provider="remote_http",
+            batch_size=1,
+            remote_candidate_retry_on_context_window=True,
+            candidate_execution_strategy="adaptive",
+            audit_log=str(tmp_path / "adaptive-context.log"),
+            no_audit_animation=True,
+        )
+    )
+
+    assert result.summary is not None
+    assert result.summary.successful_answers == 1
+    assert repository.runtime_observations[0]["observed_context_window_tokens"] == 4096
+    assert repository.persisted_answers[0].raw_response["context_window_retry"]["attempted"] is True
+    metadata = repository.updated_runs[-1]["metadata"]["candidate_adaptive"]
+    assert metadata["retries"] == 0
+    assert metadata["transient_failures"] == 0
+
+
+def test_adaptive_audit_events_do_not_leak_api_keys_and_include_fingerprint(tmp_path) -> None:
+    repository = FakeRepository()
+    retriever = FakeRetriever()
+    retriever.results[("J1", 101)] = _success_result(dataset="J1", question_id=101)
+    client = FakeClient()
+    service, _connections, _repositories = _parallel_service(
+        repository=repository,
+        retriever=retriever,
+        client=client,
+    )
+    audit_path = tmp_path / "adaptive-audit.log"
+
+    service.run(
+        RunCandidatesRagRequest(
+            dataset="J1",
+            model_name="candidate-j1",
+            provider="remote_http",
+            batch_size=1,
+            candidate_execution_strategy="adaptive",
+            audit_log=str(audit_path),
+            no_audit_animation=True,
+        )
+    )
+
+    audit_text = audit_path.read_text(encoding="utf-8")
+    fingerprint = hashlib.sha256("featherless-test-key".encode("utf-8")).hexdigest()[:12]
+    assert "candidate_adaptive_initial" in audit_text
+    assert "candidate_adaptive_final" in audit_text
+    assert f"<set:{fingerprint}>" in audit_text
     assert "featherless-test-key" not in audit_text
     assert "openrouter-test-key" not in audit_text
 

@@ -59,3 +59,14 @@ def test_smoke_command_passes_candidate_execution_strategy_when_provided() -> No
     )
 
     assert command[-2:] == ["--candidate-execution-strategy", "parallel"]
+
+
+def test_smoke_command_passes_adaptive_candidate_execution_strategy() -> None:
+    module = _load_smoke_module()
+
+    command = module.build_command(
+        _args(candidate_execution_strategy="adaptive"),
+        _target(module),
+    )
+
+    assert command[-2:] == ["--candidate-execution-strategy", "adaptive"]

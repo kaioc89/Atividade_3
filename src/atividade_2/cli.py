@@ -261,8 +261,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     run_candidates_rag.add_argument(
         "--candidate-execution-strategy",
-        choices=["sequential", "parallel"],
-        help="Run candidate questions sequentially or with bounded parallel workers.",
+        choices=["sequential", "parallel", "adaptive"],
+        help="Run candidate questions sequentially, with bounded parallel workers, or adaptively.",
     )
     run_candidates_rag.add_argument(
         "--candidate-parallel-max-workers",

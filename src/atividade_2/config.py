@@ -23,7 +23,7 @@ DEFAULT_OPENROUTER_URL = "https://openrouter.ai/api/v1"
 SUPPORTED_PANEL_MODES: set[str] = {"single", "primary_only", "2plus1"}
 SUPPORTED_PROVIDERS: set[str] = {"remote_http"}
 SUPPORTED_EXECUTION_STRATEGIES: set[str] = {"sequential", "parallel", "adaptive"}
-SUPPORTED_CANDIDATE_EXECUTION_STRATEGIES: set[str] = {"sequential", "parallel"}
+SUPPORTED_CANDIDATE_EXECUTION_STRATEGIES: set[str] = {"sequential", "parallel", "adaptive"}
 SUPPORTED_APP_ENVS: set[str] = {"dev", "test", "prod"}
 
 
@@ -89,6 +89,39 @@ def load_settings(dotenv_path: str | Path | None = ".env", env: Mapping[str, str
             "JUDGE_ADAPTIVE_INITIAL_CONCURRENCY must be <= JUDGE_ADAPTIVE_MAX_CONCURRENCY."
         )
 
+    candidate_adaptive_initial_concurrency = _parse_int(
+        values,
+        "CANDIDATE_ADAPTIVE_INITIAL_CONCURRENCY",
+        1,
+        minimum=1,
+    )
+    candidate_adaptive_max_concurrency = _parse_int(
+        values,
+        "CANDIDATE_ADAPTIVE_MAX_CONCURRENCY",
+        2,
+        minimum=1,
+    )
+    if candidate_adaptive_initial_concurrency > candidate_adaptive_max_concurrency:
+        raise ConfigurationError(
+            "CANDIDATE_ADAPTIVE_INITIAL_CONCURRENCY must be <= CANDIDATE_ADAPTIVE_MAX_CONCURRENCY."
+        )
+    candidate_adaptive_base_backoff_seconds = _parse_float(
+        values,
+        "CANDIDATE_ADAPTIVE_BASE_BACKOFF_SECONDS",
+        2.0,
+        minimum=0.0,
+    )
+    candidate_adaptive_max_backoff_seconds = _parse_float(
+        values,
+        "CANDIDATE_ADAPTIVE_MAX_BACKOFF_SECONDS",
+        60.0,
+        minimum=0.0,
+    )
+    if candidate_adaptive_max_backoff_seconds < candidate_adaptive_base_backoff_seconds:
+        raise ConfigurationError(
+            "CANDIDATE_ADAPTIVE_MAX_BACKOFF_SECONDS must be >= CANDIDATE_ADAPTIVE_BASE_BACKOFF_SECONDS."
+        )
+
     return JudgeSettings(
         app_env=_get_choice(values, "APP_ENV", "dev", SUPPORTED_APP_ENVS),  # type: ignore[arg-type]
         database_url=values.get("DATABASE_URL", DEFAULT_DATABASE_URL),
@@ -144,6 +177,22 @@ def load_settings(dotenv_path: str | Path | None = ".env", env: Mapping[str, str
             2,
             minimum=1,
         ),
+        candidate_adaptive_initial_concurrency=candidate_adaptive_initial_concurrency,
+        candidate_adaptive_max_concurrency=candidate_adaptive_max_concurrency,
+        candidate_adaptive_success_threshold=_parse_int(
+            values,
+            "CANDIDATE_ADAPTIVE_SUCCESS_THRESHOLD",
+            3,
+            minimum=1,
+        ),
+        candidate_adaptive_max_retries=_parse_int(
+            values,
+            "CANDIDATE_ADAPTIVE_MAX_RETRIES",
+            2,
+            minimum=0,
+        ),
+        candidate_adaptive_base_backoff_seconds=candidate_adaptive_base_backoff_seconds,
+        candidate_adaptive_max_backoff_seconds=candidate_adaptive_max_backoff_seconds,
         judge_save_raw_response=_parse_bool(values, "JUDGE_SAVE_RAW_RESPONSE", True),
         judge_execution_strategy=execution_strategy,  # type: ignore[arg-type]
         judge_batch_size=_parse_int(values, "JUDGE_BATCH_SIZE", 10, minimum=1),
