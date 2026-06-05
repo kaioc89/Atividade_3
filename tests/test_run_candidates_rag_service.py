@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 import pytest
 
 from atividade_2.contracts import (
+    CandidateAnswerContextChunkRecord,
     CandidateAnswerRecord,
     CandidateModelAssignment,
     CandidateModelAssignmentRange,
@@ -23,6 +24,7 @@ from atividade_2.contracts import (
     RagVectorBaseSummary,
     RetrievedRagChunk,
 )
+from atividade_2.rag_context_snapshots import build_retrieval_snapshot_chunks
 from atividade_2.candidate_runtime_learning import parse_candidate_runtime_observation
 from atividade_2.candidate_clients.remote_http import RemoteCandidateError
 from atividade_2.run_candidates_rag_service import (
@@ -80,6 +82,8 @@ class FakeRepository:
         self.created_runs: list[CandidateRunRecord] = []
         self.updated_runs: list[dict[str, object]] = []
         self.persisted_answers: list[CandidateAnswerRecord] = []
+        self.persisted_context_chunks: list[CandidateAnswerContextChunkRecord] = []
+        self.fail_context_snapshot_persistence = False
         self.runtime_profiles: dict[tuple[str, str], CandidateModelRuntimeProfileRecord] = {}
         self.runtime_observations: list[dict[str, object]] = []
         self.pending_selection_result: CandidateQuestionSelectionResult | None = None
@@ -432,8 +436,9 @@ class FakeRepository:
 
     def persist_candidate_answer(self, *, answer: CandidateAnswerRecord) -> CandidateAnswerRecord:
         with self._lock:
+            candidate_answer_id = self.next_candidate_answer_id + len(self.persisted_answers)
             stored = CandidateAnswerRecord(
-                candidate_answer_id=self.next_candidate_answer_id,
+                candidate_answer_id=candidate_answer_id,
                 candidate_run_id=answer.candidate_run_id,
                 question_id=answer.question_id,
                 model_name=answer.model_name,
@@ -447,8 +452,45 @@ class FakeRepository:
                 created_at="2026-06-04T13:05:00",
             )
             self.persisted_answers.append(stored)
-            self.next_candidate_answer_id += 1
         return stored
+
+    def persist_successful_candidate_answer_with_context_snapshot(
+        self,
+        *,
+        answer: CandidateAnswerRecord,
+        retrieval_result: RagRetrievalResult,
+    ) -> tuple[CandidateAnswerRecord, list[CandidateAnswerContextChunkRecord]]:
+        if answer.status != "success":
+            raise ValueError("Atomic candidate answer snapshot persistence requires status='success'.")
+        with self._lock:
+            candidate_answer_id = self.next_candidate_answer_id + len(self.persisted_answers)
+            if self.fail_context_snapshot_persistence:
+                self.next_candidate_answer_id += 1
+                raise RuntimeError("snapshot persistence unavailable")
+            stored = CandidateAnswerRecord(
+                candidate_answer_id=candidate_answer_id,
+                candidate_run_id=answer.candidate_run_id,
+                question_id=answer.question_id,
+                model_name=answer.model_name,
+                rendered_prompt=answer.rendered_prompt,
+                status=answer.status,
+                answer_text=answer.answer_text,
+                final_choice=answer.final_choice,
+                error_message=answer.error_message,
+                latency_ms=answer.latency_ms,
+                raw_response=answer.raw_response,
+                created_at="2026-06-04T13:05:00",
+            )
+            chunks = build_retrieval_snapshot_chunks(
+                candidate_answer_id=candidate_answer_id,
+                retrieval_result=retrieval_result,
+            )
+            self.persisted_answers.append(stored)
+            self.persisted_context_chunks[:] = [
+                chunk for chunk in self.persisted_context_chunks if chunk.candidate_answer_id != candidate_answer_id
+            ]
+            self.persisted_context_chunks.extend(chunks)
+        return stored, chunks
 
     def get_candidate_model_runtime_profile(
         self,
@@ -658,6 +700,8 @@ def _clone_worker_repository(shared: FakeRepository) -> FakeRepository:
     repository.existing_successes = shared.existing_successes
     repository.existing_failures = shared.existing_failures
     repository.persisted_answers = shared.persisted_answers
+    repository.persisted_context_chunks = shared.persisted_context_chunks
+    repository.fail_context_snapshot_persistence = shared.fail_context_snapshot_persistence
     repository.runtime_profiles = shared.runtime_profiles
     repository.runtime_observations = shared.runtime_observations
     repository.success_exists_calls = shared.success_exists_calls
@@ -1352,7 +1396,7 @@ def test_context_window_failure_records_observation_and_upserts_profile(tmp_path
 def test_context_window_failure_retries_once_when_enabled(tmp_path) -> None:
     repository = FakeRepository()
     retriever = FakeRetriever()
-    retriever.results[("J1", 101)] = _success_result(dataset="J1", question_id=101, chunk_text="A" * 800)
+    retriever.results[("J1", 101)] = _success_result(dataset="J1", question_id=101, chunk_text="A" * 20000)
     client = FakeClient(
         failures={0: RuntimeError("Platform records context_length as 4096; context size of 4096.")},
         responses={
@@ -1383,6 +1427,8 @@ def test_context_window_failure_retries_once_when_enabled(tmp_path) -> None:
     assert len(client.calls) == 2
     assert repository.persisted_answers[0].status == "success"
     assert repository.persisted_answers[0].raw_response["context_window_retry"]["attempted"] is True
+    assert len(repository.persisted_context_chunks[0].chunk_text_snapshot) < 20000
+    assert repository.persisted_context_chunks[0].metadata["candidate_budget"]["was_truncated"] is True
     assert repository.updated_runs[-1]["metadata"]["candidate_runtime_profile"]["context_window_tokens"] == 4096
 
 
@@ -1817,8 +1863,7 @@ def test_persists_context_snapshot(tmp_path) -> None:
     repository = FakeRepository()
     retriever = FakeRetriever()
     retriever.results[("J1", 101)] = _success_result(dataset="J1", question_id=101)
-    snapshot_service = FakeSnapshotService()
-    service = _service(repository=repository, retriever=retriever, snapshot_service=snapshot_service)
+    service = _service(repository=repository, retriever=retriever)
 
     service.run(
         RunCandidatesRagRequest(
@@ -1831,10 +1876,11 @@ def test_persists_context_snapshot(tmp_path) -> None:
         )
     )
 
-    assert snapshot_service.calls
-    candidate_answer_id, retrieval_result = snapshot_service.calls[0]
-    assert candidate_answer_id == 801
-    assert retrieval_result.status == "success"
+    assert repository.persisted_context_chunks
+    chunk = repository.persisted_context_chunks[0]
+    assert chunk.candidate_answer_id == 801
+    assert chunk.metadata["retrieval_run_id"] == 21
+    assert chunk.metadata["dataset"] == "J1"
 
 
 def test_budgeted_context_snapshot_uses_included_text_and_metadata(tmp_path) -> None:
@@ -1844,8 +1890,7 @@ def test_budgeted_context_snapshot_uses_included_text_and_metadata(tmp_path) -> 
         CandidateQuestionRecord(101, "J1", "OAB_Bench", 71, "Questao J1 101.", None)
     ]
     retriever.results[("J1", 101)] = _success_result(dataset="J1", question_id=101, chunk_text="A" * 2000)
-    snapshot_service = FakeSnapshotService()
-    service = _service(repository=repository, retriever=retriever, snapshot_service=snapshot_service)
+    service = _service(repository=repository, retriever=retriever)
 
     service.run(
         RunCandidatesRagRequest(
@@ -1861,10 +1906,9 @@ def test_budgeted_context_snapshot_uses_included_text_and_metadata(tmp_path) -> 
         )
     )
 
-    _candidate_answer_id, retrieval_result = snapshot_service.calls[0]
-    chunk = retrieval_result.chunks[0]
+    chunk = repository.persisted_context_chunks[0]
     budget_metadata = chunk.metadata["candidate_budget"]
-    assert len(chunk.chunk_text) < 2000
+    assert len(chunk.chunk_text_snapshot) < 2000
     assert budget_metadata["included_in_prompt"] is True
     assert budget_metadata["was_truncated"] is True
     assert budget_metadata["truncation_reason"] == "context_budget"
@@ -2045,12 +2089,10 @@ def test_parallel_path_uses_bounded_workers_and_worker_owned_connections(tmp_pat
             question_id=question.question_id,
         )
     client = ThreadCountingClient()
-    snapshot_service = FakeSnapshotService()
     service, connections, repositories = _parallel_service(
         repository=repository,
         retriever=retriever,
         client=client,
-        snapshot_service=snapshot_service,
     )
 
     result = service.run(
@@ -2078,7 +2120,7 @@ def test_parallel_path_uses_bounded_workers_and_worker_owned_connections(tmp_pat
     assert len(repositories) == 4
     assert all(connection.closed for connection in connections)
     assert len(repository.persisted_answers) == 3
-    assert len(snapshot_service.calls) == 3
+    assert len(repository.persisted_context_chunks) == 3
 
 
 def test_parallel_path_persists_failed_answer_and_continues_other_questions(tmp_path) -> None:
@@ -2125,7 +2167,8 @@ def test_parallel_path_persists_failed_answer_and_continues_other_questions(tmp_
     assert repository.updated_runs[-1]["metadata"]["failed_answers"] == 1
     assert [answer.status for answer in repository.persisted_answers].count("success") == 2
     assert [answer.status for answer in repository.persisted_answers].count("failed") == 1
-    assert len(snapshot_service.calls) == 3
+    assert len(repository.persisted_context_chunks) == 2
+    assert len(snapshot_service.calls) == 1
 
 
 def test_parallel_defensive_skip_existing_still_works_after_selection(tmp_path) -> None:
@@ -2270,6 +2313,7 @@ def test_adaptive_path_starts_with_initial_concurrency_and_increases_after_thres
     assert "candidate_adaptive_increased" in audit_text
     assert repository.updated_runs[-1]["metadata"]["candidate_adaptive"]["successes"] == 4
     assert repository.updated_runs[-1]["metadata"]["candidate_adaptive"]["final_concurrency"] == 2
+    assert len(repository.persisted_context_chunks) == 4
 
 
 def test_adaptive_retries_429_then_persists_one_successful_answer(tmp_path) -> None:
@@ -2302,6 +2346,7 @@ def test_adaptive_retries_429_then_persists_one_successful_answer(tmp_path) -> N
     assert result.summary is not None
     assert result.summary.successful_answers == 1
     assert [answer.status for answer in repository.persisted_answers] == ["success"]
+    assert len(repository.persisted_context_chunks) == 1
     metadata = repository.updated_runs[-1]["metadata"]["candidate_adaptive"]
     assert metadata["rate_limits"] == 1
     assert metadata["retries"] == 1
@@ -2437,7 +2482,7 @@ def test_adaptive_group_level_config_error_disables_group_and_finalizes_run(tmp_
 def test_adaptive_context_window_retry_uses_existing_runtime_learning_not_transient_retry(tmp_path) -> None:
     repository = FakeRepository()
     retriever = FakeRetriever()
-    retriever.results[("J1", 101)] = _success_result(dataset="J1", question_id=101)
+    retriever.results[("J1", 101)] = _success_result(dataset="J1", question_id=101, chunk_text="A" * 20000)
     client = FakeClient(
         failures={
             0: RuntimeError("Platform records context_length as 4096; context size of 4096.")
@@ -2474,6 +2519,9 @@ def test_adaptive_context_window_retry_uses_existing_runtime_learning_not_transi
     assert result.summary.successful_answers == 1
     assert repository.runtime_observations[0]["observed_context_window_tokens"] == 4096
     assert repository.persisted_answers[0].raw_response["context_window_retry"]["attempted"] is True
+    retried_chunk = repository.persisted_context_chunks[0]
+    assert len(retried_chunk.chunk_text_snapshot) < 20000
+    assert retried_chunk.metadata["candidate_budget"]["was_truncated"] is True
     metadata = repository.updated_runs[-1]["metadata"]["candidate_adaptive"]
     assert metadata["retries"] == 0
     assert metadata["transient_failures"] == 0
@@ -2512,39 +2560,53 @@ def test_adaptive_audit_events_do_not_leak_api_keys_and_include_fingerprint(tmp_
     assert "openrouter-test-key" not in audit_text
 
 
-def test_unexpected_service_exception_after_run_creation_marks_run_failed(tmp_path) -> None:
-    class FailingSnapshotService(FakeSnapshotService):
-        def persist_retrieval_snapshot(
-            self,
-            *,
-            candidate_answer_id: int,
-            retrieval_result: RagRetrievalResult,
-        ) -> list[object]:
-            raise RuntimeError("snapshot persistence unavailable")
-
+def test_snapshot_persistence_failure_leaves_no_success_answer_and_allows_rerun(tmp_path) -> None:
     repository = FakeRepository()
+    repository.fail_context_snapshot_persistence = True
     retriever = FakeRetriever()
     retriever.results[("J1", 101)] = _success_result(dataset="J1", question_id=101)
     service = _service(
         repository=repository,
         retriever=retriever,
-        snapshot_service=FailingSnapshotService(),
     )
 
-    with pytest.raises(RuntimeError, match="snapshot persistence unavailable"):
-        service.run(
-            RunCandidatesRagRequest(
-                dataset="J1",
-                model_name="candidate-j1",
-                provider="remote_http",
-                batch_size=1,
-                audit_log=str(tmp_path / "service-level-failure.log"),
-                no_audit_animation=True,
-            )
+    result = service.run(
+        RunCandidatesRagRequest(
+            dataset="J1",
+            model_name="candidate-j1",
+            provider="remote_http",
+            batch_size=1,
+            audit_log=str(tmp_path / "service-level-failure.log"),
+            no_audit_animation=True,
         )
+    )
 
-    assert repository.updated_runs[-1]["run_status"] == "failed"
+    assert result.summary is not None
+    assert result.summary.failed_answers == 1
+    assert result.summary.question_results[0].error_message == "context_snapshot_persistence_failed"
+    assert repository.persisted_answers == []
+    assert repository.persisted_context_chunks == []
+    assert repository.updated_runs[-1]["run_status"] == "completed"
     assert repository.updated_runs[-1]["finished_at"] is not None
+    assert repository.updated_runs[-1]["metadata"]["failed_answers"] == 1
+
+    repository.fail_context_snapshot_persistence = False
+    retry_result = service.run(
+        RunCandidatesRagRequest(
+            dataset="J1",
+            model_name="candidate-j1",
+            provider="remote_http",
+            batch_size=1,
+            audit_log=str(tmp_path / "service-level-retry.log"),
+            no_audit_animation=True,
+        )
+    )
+
+    assert retry_result.summary is not None
+    assert retry_result.summary.successful_answers == 1
+    assert repository.select_calls[-1]["skip_existing_successful"] is True
+    assert repository.persisted_answers[0].status == "success"
+    assert repository.persisted_context_chunks[0].candidate_answer_id == repository.persisted_answers[0].candidate_answer_id
 
 
 def test_fails_before_creating_run_when_model_has_no_runnable_assignment(tmp_path) -> None:
