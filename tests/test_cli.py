@@ -463,6 +463,8 @@ def test_run_candidates_rag_dry_run_calls_service_with_dry_run_true(
             remote_candidate_temperature=0.2,
             remote_candidate_max_tokens=1024,
             remote_candidate_top_p=0.9,
+            remote_candidate_context_safety_margin_tokens=512,
+            remote_candidate_context_window_tokens=None,
         ),
     )
     monkeypatch.setattr(cli, "RunCandidatesRagService", lambda: service)
@@ -488,6 +490,8 @@ def test_run_candidates_rag_dry_run_calls_service_with_dry_run_true(
     assert service.requests[0].remote_candidate_temperature == 0.2
     assert service.requests[0].remote_candidate_max_tokens == 1024
     assert service.requests[0].remote_candidate_top_p == 0.9
+    assert service.requests[0].remote_candidate_context_safety_margin_tokens == 512
+    assert service.requests[0].remote_candidate_context_window_tokens is None
     assert "Dataset: J1" in output
     assert "Batch size: 2" in output
 
@@ -505,6 +509,8 @@ def test_run_candidates_rag_passes_audit_log_and_question_range(
             remote_candidate_temperature=0.2,
             remote_candidate_max_tokens=1024,
             remote_candidate_top_p=0.9,
+            remote_candidate_context_safety_margin_tokens=512,
+            remote_candidate_context_window_tokens=None,
         ),
     )
     monkeypatch.setattr(cli, "RunCandidatesRagService", lambda: service)
@@ -570,7 +576,7 @@ def test_run_candidates_rag_command_prints_summary(
             model_name="candidate-j2",
             provider="remote_http",
             runtime_config_summary=(
-                "Candidate runtime config:\n"
+                "Candidate runtime preflight:\n"
                 "  model: candidate-j2\n"
                 "  technical provider: remote_http\n"
                 "  av3 provider: featherless\n"
@@ -578,7 +584,10 @@ def test_run_candidates_rag_command_prints_summary(
                 "  api_key: <set>\n"
                 "  temperature: 0.2\n"
                 "  top_p: 0.9\n"
-                "  max_tokens: 1024\n"
+                "  requested_max_tokens: 1024\n"
+                "  final_max_tokens: 1024\n"
+                "  context_window_tokens: unknown\n"
+                "  safety_margin_tokens: 512\n"
                 "  save_raw_response: false"
             ),
             candidate_run_id=501,
@@ -600,6 +609,8 @@ def test_run_candidates_rag_command_prints_summary(
             remote_candidate_temperature=0.2,
             remote_candidate_max_tokens=1024,
             remote_candidate_top_p=0.9,
+            remote_candidate_context_safety_margin_tokens=512,
+            remote_candidate_context_window_tokens=None,
         ),
     )
     monkeypatch.setattr(cli, "RunCandidatesRagService", lambda: service)
@@ -620,7 +631,7 @@ def test_run_candidates_rag_command_prints_summary(
 
     output = capsys.readouterr().out
     assert exit_code == 0
-    assert "Candidate runtime config:" in output
+    assert "Candidate runtime preflight:" in output
     assert "api_key: <set>" in output
     assert "Execution result:" in output
     assert "Candidate run id: 501" in output
@@ -644,6 +655,8 @@ def test_run_candidates_rag_returns_exit_code_2_on_validation_error(
             remote_candidate_temperature=0.2,
             remote_candidate_max_tokens=1024,
             remote_candidate_top_p=0.9,
+            remote_candidate_context_safety_margin_tokens=512,
+            remote_candidate_context_window_tokens=None,
         ),
     )
     monkeypatch.setattr(cli, "RunCandidatesRagService", lambda: service)

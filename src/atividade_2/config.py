@@ -112,9 +112,20 @@ def load_settings(dotenv_path: str | Path | None = ".env", env: Mapping[str, str
         remote_judge_max_tokens=_parse_int(values, "REMOTE_JUDGE_MAX_TOKENS", 1200, minimum=1),
         remote_judge_top_p=_parse_float(values, "REMOTE_JUDGE_TOP_P", 1.0, minimum=0.0),
         remote_judge_openai_compatible=_parse_bool(values, "REMOTE_JUDGE_OPENAI_COMPATIBLE", True),
-        remote_candidate_temperature=_parse_float(values, "REMOTE_CANDIDATE_TEMPERATURE", 0.0, minimum=0.0),
+        remote_candidate_temperature=_parse_float(values, "REMOTE_CANDIDATE_TEMPERATURE", 0.2, minimum=0.0),
         remote_candidate_max_tokens=_parse_optional_int(values, "REMOTE_CANDIDATE_MAX_TOKENS", minimum=1),
-        remote_candidate_top_p=_parse_float(values, "REMOTE_CANDIDATE_TOP_P", 1.0, minimum=0.0),
+        remote_candidate_top_p=_parse_float(values, "REMOTE_CANDIDATE_TOP_P", 0.9, minimum=0.0),
+        remote_candidate_context_safety_margin_tokens=_parse_int(
+            values,
+            "REMOTE_CANDIDATE_CONTEXT_SAFETY_MARGIN_TOKENS",
+            512,
+            minimum=0,
+        ),
+        remote_candidate_context_window_tokens=_parse_optional_int(
+            values,
+            "REMOTE_CANDIDATE_CONTEXT_WINDOW_TOKENS",
+            minimum=1,
+        ),
         judge_save_raw_response=_parse_bool(values, "JUDGE_SAVE_RAW_RESPONSE", True),
         judge_execution_strategy=execution_strategy,  # type: ignore[arg-type]
         judge_batch_size=_parse_int(values, "JUDGE_BATCH_SIZE", 10, minimum=1),

@@ -40,6 +40,8 @@ class FakeSettings:
     remote_candidate_temperature: float = 0.2
     remote_candidate_max_tokens: int | None = 1024
     remote_candidate_top_p: float = 0.9
+    remote_candidate_context_safety_margin_tokens: int = 512
+    remote_candidate_context_window_tokens: int | None = None
 
 
 class FakeConnection:
@@ -454,6 +456,7 @@ def test_dry_run_resolves_configuration_without_db_writes_or_client_calls(tmp_pa
     repository.questions_by_dataset["J1"] = [
         CandidateQuestionRecord(101, "J1", "OAB_Bench", 71, "Questao J1 101.", None)
     ]
+    retriever.results[("J1", 101)] = _success_result(dataset="J1", question_id=101)
     service = _service(repository=repository, retriever=retriever, client=client)
 
     result = service.run(
@@ -475,11 +478,12 @@ def test_dry_run_resolves_configuration_without_db_writes_or_client_calls(tmp_pa
     assert result.summary is None
     assert result.runtime_config_summary is not None
     assert "av3 provider: featherless" in result.runtime_config_summary
-    assert "api_key: <set>" in result.runtime_config_summary
-    assert "max_tokens: 1024" in result.runtime_config_summary
+    assert "api_key: <not required in dry-run>" in result.runtime_config_summary
+    assert "final_max_tokens: 1024" in result.runtime_config_summary
+    assert "context_window_tokens: 8192" in result.runtime_config_summary
     assert repository.ensure_schema_calls == 1
     assert repository.created_runs == []
-    assert retriever.calls == []
+    assert retriever.calls == [(101, "J1", None)]
     assert client.calls == []
 
 
@@ -490,6 +494,7 @@ def test_dry_run_does_not_require_openrouter_or_featherless_keys(tmp_path) -> No
     repository.questions_by_dataset["J1"] = [
         CandidateQuestionRecord(101, "J1", "OAB_Bench", 119, "Questao J1 101.", None)
     ]
+    retriever.results[("J1", 101)] = _success_result(dataset="J1", question_id=101)
 
     @dataclass
     class MissingProviderKeysSettings:
@@ -527,6 +532,7 @@ def test_dry_run_does_not_require_openrouter_or_featherless_keys(tmp_path) -> No
     assert result.runtime_config_summary is not None
     assert "av3 provider: openrouter" in result.runtime_config_summary
     assert "api_key: <not required in dry-run>" in result.runtime_config_summary
+    assert retriever.calls == [(101, "J1", None)]
     assert client.calls == []
 
 
@@ -812,6 +818,23 @@ def test_runtime_config_uses_explicit_candidate_max_tokens_for_gemma() -> None:
     )
 
     assert runtime_config.max_tokens == 1024
+
+
+def test_explicit_candidate_max_tokens_reaches_remote_http_client_config() -> None:
+    request = RunCandidatesRagRequest(
+        dataset="J1",
+        model_name="google/gemma-2-2b-it",
+        provider="remote_http",
+        remote_candidate_base_url="https://api.featherless.ai/v1",
+        remote_candidate_api_key="candidate-secret",
+        remote_candidate_temperature=0.2,
+        remote_candidate_max_tokens=1024,
+        remote_candidate_top_p=0.9,
+    )
+
+    client = _default_client_factory(request, FakeSettings())
+
+    assert client.config.max_tokens == 1024
 
 
 def test_provider_keys_are_not_logged_in_audit_file(tmp_path) -> None:
@@ -1134,6 +1157,136 @@ def test_persists_context_snapshot(tmp_path) -> None:
     candidate_answer_id, retrieval_result = snapshot_service.calls[0]
     assert candidate_answer_id == 801
     assert retrieval_result.status == "success"
+
+
+def test_budgeted_context_snapshot_uses_included_text_and_metadata(tmp_path) -> None:
+    repository = FakeRepository()
+    retriever = FakeRetriever()
+    repository.questions_by_dataset["J1"] = [
+        CandidateQuestionRecord(101, "J1", "OAB_Bench", 71, "Questao J1 101.", None)
+    ]
+    retriever.results[("J1", 101)] = _success_result(dataset="J1", question_id=101, chunk_text="A" * 2000)
+    snapshot_service = FakeSnapshotService()
+    service = _service(repository=repository, retriever=retriever, snapshot_service=snapshot_service)
+
+    service.run(
+        RunCandidatesRagRequest(
+            dataset="J1",
+            model_name="google/gemma-2-2b-it",
+            provider="remote_http",
+            batch_size=1,
+            remote_candidate_max_tokens=1024,
+            remote_candidate_context_window_tokens=1600,
+            remote_candidate_context_safety_margin_tokens=128,
+            audit_log=str(tmp_path / "budgeted-snapshot.log"),
+            no_audit_animation=True,
+        )
+    )
+
+    _candidate_answer_id, retrieval_result = snapshot_service.calls[0]
+    chunk = retrieval_result.chunks[0]
+    budget_metadata = chunk.metadata["candidate_budget"]
+    assert len(chunk.chunk_text) < 2000
+    assert budget_metadata["included_in_prompt"] is True
+    assert budget_metadata["was_truncated"] is True
+    assert budget_metadata["truncation_reason"] == "context_budget"
+
+
+def test_run_metadata_records_candidate_budget(tmp_path) -> None:
+    repository = FakeRepository()
+    retriever = FakeRetriever()
+    repository.questions_by_dataset["J1"] = [
+        CandidateQuestionRecord(101, "J1", "OAB_Bench", 71, "Questao J1 101.", None)
+    ]
+    retriever.results[("J1", 101)] = _success_result(dataset="J1", question_id=101, chunk_text="A" * 2000)
+    service = _service(repository=repository, retriever=retriever)
+
+    service.run(
+        RunCandidatesRagRequest(
+            dataset="J1",
+            model_name="google/gemma-2-2b-it",
+            provider="remote_http",
+            batch_size=1,
+            remote_candidate_max_tokens=1024,
+            remote_candidate_context_window_tokens=1600,
+            remote_candidate_context_safety_margin_tokens=128,
+            audit_log=str(tmp_path / "budgeted-run-metadata.log"),
+            no_audit_animation=True,
+        )
+    )
+
+    metadata = repository.updated_runs[-1]["metadata"]
+    candidate_budget = metadata["candidate_budget"]
+    assert candidate_budget["context_window_tokens"] == 1600
+    assert candidate_budget["requested_max_tokens"] == 1024
+    assert candidate_budget["final_max_tokens"] == 1024
+    assert candidate_budget["retrieved_chunks"] == 1
+    assert candidate_budget["included_chunks"] == 1
+    assert candidate_budget["truncated_chunks"] == 1
+
+
+def test_dry_run_logs_preflight_and_prompt_budget_without_creating_run(tmp_path) -> None:
+    repository = FakeRepository()
+    retriever = FakeRetriever()
+    repository.questions_by_dataset["J1"] = [
+        CandidateQuestionRecord(101, "J1", "OAB_Bench", 71, "Questao J1 101.", None)
+    ]
+    retriever.results[("J1", 101)] = _success_result(dataset="J1", question_id=101, chunk_text="A" * 2000)
+    audit_path = tmp_path / "gemma-dry-run-budget.log"
+    service = _service(repository=repository, retriever=retriever)
+
+    service.run(
+        RunCandidatesRagRequest(
+            dataset="J1",
+            model_name="google/gemma-2-2b-it",
+            provider="remote_http",
+            batch_size=1,
+            question_sequence_start=71,
+            question_sequence_end=71,
+            dry_run=True,
+            audit_log=str(audit_path),
+            no_audit_animation=True,
+        )
+    )
+
+    audit_text = audit_path.read_text(encoding="utf-8")
+    assert "Candidate runtime preflight:" in audit_text
+    assert "api_key: <not required in dry-run>" in audit_text
+    assert "final_max_tokens: 1024" in audit_text
+    assert "context_window_tokens: 8192" in audit_text
+    assert "Candidate prompt budget:" in audit_text
+    assert "question_id: 101" in audit_text
+    assert repository.created_runs == []
+
+
+def test_budget_failure_fails_before_creating_run_or_provider_call(tmp_path) -> None:
+    repository = FakeRepository()
+    retriever = FakeRetriever()
+    repository.questions_by_dataset["J1"] = [
+        CandidateQuestionRecord(101, "J1", "OAB_Bench", 71, "Q" * 2000, None)
+    ]
+    retriever.results[("J1", 101)] = _success_result(dataset="J1", question_id=101, chunk_text="A" * 2000)
+    client = FakeClient()
+    service = _service(repository=repository, retriever=retriever, client=client)
+
+    with pytest.raises(ValueError, match="Fixed candidate prompt exceeds"):
+        service.run(
+            RunCandidatesRagRequest(
+                dataset="J1",
+                model_name="google/gemma-2-2b-it",
+                provider="remote_http",
+                batch_size=1,
+                remote_candidate_max_tokens=80,
+                remote_candidate_context_window_tokens=150,
+                remote_candidate_context_safety_margin_tokens=20,
+                audit_log=str(tmp_path / "budget-failure.log"),
+                no_audit_animation=True,
+            )
+        )
+
+    assert client.calls == []
+    assert repository.created_runs == []
+    assert repository.updated_runs == []
 
 
 def test_records_failure_status_when_retrieval_has_no_chunks(tmp_path) -> None:

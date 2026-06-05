@@ -83,9 +83,9 @@ class RemoteHttpCandidateClientConfig:
     api_key: str
     provider: str = "remote_http"
     timeout_seconds: int = 120
-    temperature: float = 0.0
-    max_tokens: int = 4000
-    top_p: float = 1.0
+    temperature: float = 0.2
+    max_tokens: int = 1024
+    top_p: float = 0.9
     openai_compatible: bool = True
     save_raw_response: bool = False
 

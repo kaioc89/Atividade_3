@@ -140,6 +140,8 @@ class JudgeSettings:
     remote_candidate_temperature: float
     remote_candidate_max_tokens: int | None
     remote_candidate_top_p: float
+    remote_candidate_context_safety_margin_tokens: int
+    remote_candidate_context_window_tokens: int | None
     judge_save_raw_response: bool
     judge_execution_strategy: JudgeExecutionStrategy
     judge_batch_size: int

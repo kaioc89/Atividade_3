@@ -481,6 +481,8 @@ def run_candidates_rag_command(args: argparse.Namespace) -> int:
         remote_candidate_temperature=settings.remote_candidate_temperature,
         remote_candidate_max_tokens=settings.remote_candidate_max_tokens,
         remote_candidate_top_p=settings.remote_candidate_top_p,
+        remote_candidate_context_safety_margin_tokens=settings.remote_candidate_context_safety_margin_tokens,
+        remote_candidate_context_window_tokens=settings.remote_candidate_context_window_tokens,
     )
     result = RunCandidatesRagService().run(request)
     if result.runtime_config_summary is not None:

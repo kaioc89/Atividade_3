@@ -3,13 +3,21 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from math import ceil
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Protocol
 
 from .audit import AuditEvent, AuditLogger
+from .candidate_context_budget import (
+    BudgetedCandidateRetrievalContext,
+    CandidatePromptBudget,
+    aggregate_budget_metadata,
+    budget_candidate_retrieval_context,
+    clamp_max_output_tokens_to_fixed_prompt,
+    resolve_candidate_max_output_tokens,
+    resolve_candidate_model_runtime_profile,
+)
 from .candidate_clients.base import CandidateClient
 from .candidate_clients.remote_http import RemoteHttpCandidateClient, RemoteHttpCandidateClientConfig
 from .candidate_prompts import build_candidate_prompt
@@ -56,6 +64,8 @@ class RunCandidatesRagRequest:
     remote_candidate_temperature: float | None = None
     remote_candidate_max_tokens: int | None = None
     remote_candidate_top_p: float | None = None
+    remote_candidate_context_safety_margin_tokens: int | None = None
+    remote_candidate_context_window_tokens: int | None = None
     remote_candidate_openai_compatible: bool = True
 
 
@@ -123,7 +133,11 @@ class ResolvedCandidateRuntimeConfig:
     api_key: str | None
     temperature: float
     top_p: float
+    requested_max_tokens: int
     max_tokens: int
+    context_window_tokens: int | None
+    safety_margin_tokens: int
+    model_profile_source: str
     save_raw_response: bool
 
 
@@ -328,11 +342,40 @@ class RunCandidatesRagService:
                 )
                 runtime_summary = _format_candidate_runtime_config(
                     runtime_config,
-                    api_key_state="<set>" if runtime_config.api_key else "<not required in dry-run>",
+                    api_key_state="<not required in dry-run>"
+                    if request.dry_run
+                    else ("<set>" if runtime_config.api_key else "<missing>"),
                 )
                 audit.file_event("candidate_runtime_config", runtime_summary.replace("\n", " | "))
                 audit.terminal_event(runtime_summary)
+                retriever = self._retriever_factory(repository, settings, resolved.dataset)
                 if request.dry_run:
+                    for question in questions:
+                        retrieval_result = retriever.retrieve_for_question(
+                            question_id=question.question_id,
+                            dataset=resolved.dataset,
+                        )
+                        audit.event(
+                            AuditEvent(
+                                "dry_run_retrieval_finished",
+                                (
+                                    f"question_id={question.question_id} status={retrieval_result.status} "
+                                    f"chunks={len(retrieval_result.chunks)}"
+                                ),
+                            )
+                        )
+                        if retrieval_result.status == "success":
+                            budgeted_context = _budget_retrieval_for_question(
+                                question=question,
+                                retrieval_result=retrieval_result,
+                                prompt=prompt,
+                                runtime_config=runtime_config,
+                            )
+                            _log_candidate_prompt_budget(
+                                audit=audit,
+                                question=question,
+                                budget=budgeted_context.budget,
+                            )
                     audit.file_event("dry_run_finished", "no candidate_run rows created and no remote candidate calls made")
                     audit.terminal_event("Dry run: no candidate_run rows created and no remote candidate calls made.")
                     return RunCandidatesRagResult(
@@ -375,7 +418,6 @@ class RunCandidatesRagService:
                         ),
                     )
                 )
-                retriever = self._retriever_factory(repository, settings, resolved.dataset)
                 client = None
                 if questions:
                     client_request = request
@@ -386,6 +428,7 @@ class RunCandidatesRagService:
                 successful_answers = 0
                 failed_answers = 0
                 skipped_questions = 0
+                budget_summaries: list[CandidatePromptBudget] = []
 
                 for question in questions:
                     audit.event(
@@ -436,9 +479,24 @@ class RunCandidatesRagService:
                             ),
                         )
                     )
+                    retrieval_result_for_prompt = retrieval_result
+                    if retrieval_result.status == "success":
+                        budgeted_context = _budget_retrieval_for_question(
+                            question=question,
+                            retrieval_result=retrieval_result,
+                            prompt=prompt,
+                            runtime_config=runtime_config,
+                        )
+                        budget_summaries.append(budgeted_context.budget)
+                        retrieval_result_for_prompt = budgeted_context.retrieval_result_for_prompt
+                        _log_candidate_prompt_budget(
+                            audit=audit,
+                            question=question,
+                            budget=budgeted_context.budget,
+                        )
                     rendered_prompt = _render_prompt(
                         question=question,
-                        retrieval_result=retrieval_result,
+                        retrieval_result=retrieval_result_for_prompt,
                         prompt=prompt,
                     )
                     if retrieval_result.status != "success":
@@ -567,7 +625,7 @@ class RunCandidatesRagService:
                     assert stored_answer.candidate_answer_id is not None
                     snapshot_rows = snapshot_service.persist_retrieval_snapshot(
                         candidate_answer_id=stored_answer.candidate_answer_id,
-                        retrieval_result=retrieval_result,
+                        retrieval_result=retrieval_result_for_prompt,
                     )
                     audit.event(
                         AuditEvent(
@@ -587,17 +645,24 @@ class RunCandidatesRagService:
                     skipped_questions=skipped_questions,
                     question_results=question_results,
                 )
+                completion_metadata: dict[str, Any] = {
+                    "selected_questions": summary.selected_questions,
+                    "processed_questions": summary.processed_questions,
+                    "successful_answers": summary.successful_answers,
+                    "failed_answers": summary.failed_answers,
+                    "skipped_questions": summary.skipped_questions,
+                }
+                candidate_budget_metadata = aggregate_budget_metadata(
+                    budgets=budget_summaries,
+                    requested_max_tokens=runtime_config.requested_max_tokens,
+                )
+                if candidate_budget_metadata:
+                    completion_metadata["candidate_budget"] = candidate_budget_metadata
                 repository.update_candidate_run_status(
                     candidate_run_id=int(run.candidate_run_id),
                     run_status="completed",
                     finished_at=_utcnow_iso(),
-                    metadata={
-                        "selected_questions": summary.selected_questions,
-                        "processed_questions": summary.processed_questions,
-                        "successful_answers": summary.successful_answers,
-                        "failed_answers": summary.failed_answers,
-                        "skipped_questions": summary.skipped_questions,
-                    },
+                    metadata=completion_metadata,
                 )
                 audit.event(
                     AuditEvent(
@@ -714,7 +779,11 @@ def _run_metadata(
             "api_key": "<set>" if runtime_config.api_key else "<missing>",
             "temperature": runtime_config.temperature,
             "top_p": runtime_config.top_p,
+            "requested_max_tokens": runtime_config.requested_max_tokens,
             "max_tokens": runtime_config.max_tokens,
+            "context_window_tokens": runtime_config.context_window_tokens,
+            "safety_margin_tokens": runtime_config.safety_margin_tokens,
+            "model_profile_source": runtime_config.model_profile_source,
         },
     }
 
@@ -774,9 +843,9 @@ def _default_client_factory(request: RunCandidatesRagRequest, _settings: Any) ->
             api_key=(request.remote_candidate_api_key or "").strip(),
             provider=request.provider,
             timeout_seconds=request.remote_candidate_timeout_seconds,
-            temperature=float(request.remote_candidate_temperature or 0.0),
+            temperature=float(request.remote_candidate_temperature if request.remote_candidate_temperature is not None else 0.2),
             max_tokens=int(request.remote_candidate_max_tokens or 1024),
-            top_p=float(request.remote_candidate_top_p or 1.0),
+            top_p=float(request.remote_candidate_top_p if request.remote_candidate_top_p is not None else 0.9),
             openai_compatible=request.remote_candidate_openai_compatible,
             save_raw_response=request.save_raw_response,
         )
@@ -809,6 +878,8 @@ def _with_remote_candidate_config(
         remote_candidate_temperature=runtime_config.temperature,
         remote_candidate_max_tokens=runtime_config.max_tokens,
         remote_candidate_top_p=runtime_config.top_p,
+        remote_candidate_context_safety_margin_tokens=runtime_config.safety_margin_tokens,
+        remote_candidate_context_window_tokens=runtime_config.context_window_tokens,
         remote_candidate_openai_compatible=request.remote_candidate_openai_compatible,
     )
 
@@ -869,35 +940,46 @@ def _resolve_candidate_runtime_config(
         assignment=assignment,
         require_api_key=require_api_key,
     )
-    max_tokens = resolve_candidate_max_tokens(
+    safety_margin_tokens = _resolve_candidate_context_safety_margin_tokens(settings=settings, request=request)
+    profile = resolve_candidate_model_runtime_profile(
+        provider=provider_config.av3_provider,
+        model_name=resolved.model_name,
+        safety_margin_tokens=safety_margin_tokens,
+        context_window_tokens_override=_resolve_candidate_context_window_tokens(settings=settings, request=request),
+    )
+    requested_max_tokens = resolve_candidate_max_tokens(
         model_name=resolved.model_name,
         av3_provider=provider_config.av3_provider,
         requested_max_tokens=_resolve_requested_candidate_max_tokens(settings=settings, request=request),
     )
+    max_tokens = requested_max_tokens
     temperature = _resolve_candidate_temperature(settings=settings, request=request)
     top_p = _resolve_candidate_top_p(settings=settings, request=request)
 
     if questions:
-        sample_prompt = _render_prompt(
-            question=questions[0],
-            retrieval_result=RagRetrievalResult(
-                question_id=questions[0].question_id,
-                dataset=resolved.dataset,
-                retrieval_run_id=None,
-                retrieval_name=None,
-                embedding_model=None,
-                top_k=0,
-                status="success",
-                chunks=[],
-            ),
-            prompt=repository.get_or_create_candidate_prompt(dataset=resolved.dataset, prompt_id=resolved.prompt_id),
-        )
-        max_tokens = _apply_context_budget_guard(
-            prompt_text=sample_prompt,
-            model_name=resolved.model_name,
-            av3_provider=provider_config.av3_provider,
-            max_tokens=max_tokens,
-        )
+        prompt = repository.get_or_create_candidate_prompt(dataset=resolved.dataset, prompt_id=resolved.prompt_id)
+        for question in questions:
+            fixed_prompt = _render_prompt(
+                question=question,
+                retrieval_result=RagRetrievalResult(
+                    question_id=question.question_id,
+                    dataset=resolved.dataset,
+                    retrieval_run_id=None,
+                    retrieval_name=None,
+                    embedding_model=None,
+                    top_k=0,
+                    status="success",
+                    chunks=[],
+                ),
+                prompt=prompt,
+            )
+            max_tokens = clamp_max_output_tokens_to_fixed_prompt(
+                model_name=resolved.model_name,
+                context_window_tokens=profile.context_window_tokens,
+                fixed_prompt_text=fixed_prompt,
+                max_output_tokens=max_tokens,
+                safety_margin_tokens=safety_margin_tokens,
+            )
 
     return ResolvedCandidateRuntimeConfig(
         model_name=resolved.model_name,
@@ -907,7 +989,11 @@ def _resolve_candidate_runtime_config(
         api_key=provider_config.api_key,
         temperature=temperature,
         top_p=top_p,
+        requested_max_tokens=requested_max_tokens,
         max_tokens=max_tokens,
+        context_window_tokens=profile.context_window_tokens,
+        safety_margin_tokens=safety_margin_tokens,
+        model_profile_source=profile.source,
         save_raw_response=request.save_raw_response,
     )
 
@@ -963,29 +1049,27 @@ def resolve_candidate_max_tokens(
     av3_provider: str,
     requested_max_tokens: int | None,
 ) -> int:
-    if requested_max_tokens is not None:
-        return int(requested_max_tokens)
-
-    upper_name = model_name.upper()
-    if any(token in upper_name for token in ("1.5B", "1B", "2B", "3B")):
-        return 1024
-    if any(token in upper_name for token in ("7B", "8B")):
-        return 1500
-    if av3_provider == "openrouter":
-        return 3000
-    return 1024
+    profile = resolve_candidate_model_runtime_profile(
+        provider=av3_provider,
+        model_name=model_name,
+        safety_margin_tokens=512,
+    )
+    return resolve_candidate_max_output_tokens(
+        profile=profile,
+        requested_max_tokens=requested_max_tokens,
+    )
 
 
 def _resolve_candidate_temperature(*, settings: Any, request: RunCandidatesRagRequest) -> float:
     if request.remote_candidate_temperature is not None:
         return float(request.remote_candidate_temperature)
-    return float(getattr(settings, "remote_candidate_temperature", 0.0))
+    return float(getattr(settings, "remote_candidate_temperature", 0.2))
 
 
 def _resolve_candidate_top_p(*, settings: Any, request: RunCandidatesRagRequest) -> float:
     if request.remote_candidate_top_p is not None:
         return float(request.remote_candidate_top_p)
-    return float(getattr(settings, "remote_candidate_top_p", 1.0))
+    return float(getattr(settings, "remote_candidate_top_p", 0.9))
 
 
 def _resolve_requested_candidate_max_tokens(*, settings: Any, request: RunCandidatesRagRequest) -> int | None:
@@ -995,35 +1079,17 @@ def _resolve_requested_candidate_max_tokens(*, settings: Any, request: RunCandid
     return None if value is None else int(value)
 
 
-KNOWN_CONTEXT_WINDOWS = {
-    "google/gemma-2-2b-it": 8192,
-    "qwen/qwen2.5-3b-instruct": 32768,
-    "qwen/qwen2.5-7b-instruct": 32768,
-}
+def _resolve_candidate_context_safety_margin_tokens(*, settings: Any, request: RunCandidatesRagRequest) -> int:
+    if request.remote_candidate_context_safety_margin_tokens is not None:
+        return int(request.remote_candidate_context_safety_margin_tokens)
+    return int(getattr(settings, "remote_candidate_context_safety_margin_tokens", 512))
 
 
-def _apply_context_budget_guard(
-    *,
-    prompt_text: str,
-    model_name: str,
-    av3_provider: str,
-    max_tokens: int,
-) -> int:
-    context_window = KNOWN_CONTEXT_WINDOWS.get(model_name.strip().casefold())
-    if context_window is None:
-        return max_tokens
-    estimated_prompt_tokens = ceil(len(prompt_text) / 4)
-    remaining_budget = context_window - estimated_prompt_tokens
-    if remaining_budget <= 0:
-        raise ValueError(
-            f"Estimated prompt exceeds the known context window for {model_name}. "
-            f"estimated_prompt_tokens={estimated_prompt_tokens} context_window={context_window}."
-        )
-    if estimated_prompt_tokens + max_tokens <= context_window:
-        return max_tokens
-    if av3_provider == "openrouter":
-        return max(1, min(max_tokens, remaining_budget))
-    return max(1, min(max_tokens, remaining_budget))
+def _resolve_candidate_context_window_tokens(*, settings: Any, request: RunCandidatesRagRequest) -> int | None:
+    if request.remote_candidate_context_window_tokens is not None:
+        return int(request.remote_candidate_context_window_tokens)
+    value = getattr(settings, "remote_candidate_context_window_tokens", None)
+    return None if value is None else int(value)
 
 
 def _format_candidate_runtime_config(
@@ -1031,8 +1097,13 @@ def _format_candidate_runtime_config(
     *,
     api_key_state: str,
 ) -> str:
+    context_window = (
+        str(runtime_config.context_window_tokens)
+        if runtime_config.context_window_tokens is not None
+        else "unknown"
+    )
     return (
-        "Candidate runtime config:\n"
+        "Candidate runtime preflight:\n"
         f"  model: {runtime_config.model_name}\n"
         f"  technical provider: {runtime_config.technical_provider}\n"
         f"  av3 provider: {runtime_config.av3_provider}\n"
@@ -1040,9 +1111,55 @@ def _format_candidate_runtime_config(
         f"  api_key: {api_key_state}\n"
         f"  temperature: {runtime_config.temperature}\n"
         f"  top_p: {runtime_config.top_p}\n"
-        f"  max_tokens: {runtime_config.max_tokens}\n"
+        f"  requested_max_tokens: {runtime_config.requested_max_tokens}\n"
+        f"  final_max_tokens: {runtime_config.max_tokens}\n"
+        f"  context_window_tokens: {context_window}\n"
+        f"  safety_margin_tokens: {runtime_config.safety_margin_tokens}\n"
         f"  save_raw_response: {str(runtime_config.save_raw_response).lower()}"
     )
+
+
+def _budget_retrieval_for_question(
+    *,
+    question: CandidateQuestionRecord,
+    retrieval_result: RagRetrievalResult,
+    prompt: CandidatePromptRecord,
+    runtime_config: ResolvedCandidateRuntimeConfig,
+) -> BudgetedCandidateRetrievalContext:
+    return budget_candidate_retrieval_context(
+        question=question,
+        retrieval_result=retrieval_result,
+        prompt=prompt,
+        model_name=runtime_config.model_name,
+        av3_provider=runtime_config.av3_provider,
+        max_tokens=runtime_config.max_tokens,
+        safety_margin_tokens=runtime_config.safety_margin_tokens,
+        context_window_tokens=runtime_config.context_window_tokens,
+    )
+
+
+def _format_candidate_prompt_budget(*, question: CandidateQuestionRecord, budget: CandidatePromptBudget) -> str:
+    return (
+        "Candidate prompt budget:\n"
+        f"  question_id: {question.question_id}\n"
+        f"  estimated_prompt_tokens_before_budget: {budget.estimated_prompt_tokens_before_budget}\n"
+        f"  estimated_prompt_tokens_after_budget: {budget.estimated_prompt_tokens_after_budget}\n"
+        f"  retrieved_chunks: {budget.retrieved_chunks}\n"
+        f"  included_chunks: {budget.included_chunks}\n"
+        f"  truncated_chunks: {budget.truncated_chunks}\n"
+        f"  dropped_chunks: {budget.dropped_chunks}"
+    )
+
+
+def _log_candidate_prompt_budget(
+    *,
+    audit: AuditLogger,
+    question: CandidateQuestionRecord,
+    budget: CandidatePromptBudget,
+) -> None:
+    budget_summary = _format_candidate_prompt_budget(question=question, budget=budget)
+    audit.file_event("candidate_prompt_budget", budget_summary.replace("\n", " | "))
+    audit.terminal_event(budget_summary)
 
 
 def _default_retriever_factory(

@@ -9,6 +9,7 @@ from .contracts import (
     RagRetrievalResult,
     RetrievedRagChunk,
 )
+from .candidate_context_budget import budget_metadata_for_chunk
 
 _UNSAFE_METADATA_KEYS = {
     "answerkey",
@@ -140,6 +141,7 @@ def _build_snapshot_metadata(
     return {
         **sanitized_chunk_metadata,
         **snapshot_metadata,
+        **budget_metadata_for_chunk(chunk),
     }
 
 
