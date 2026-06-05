@@ -297,7 +297,11 @@ def test_validate_provider_models_returns_nonzero_when_checked_model_is_missing(
         lambda _env: {
             "openrouter": FakeProviderCatalogClient(
                 entries=(
-                    ProviderModelCatalogEntry(provider="openrouter", model_id="openai/gpt-4.1"),
+                    ProviderModelCatalogEntry(
+                        provider="openrouter",
+                        model_id="meta-llama/llama-3.2-3b-instruct",
+                    ),
+                    ProviderModelCatalogEntry(provider="openrouter", model_id="openai/gpt-5-chat"),
                     ProviderModelCatalogEntry(
                         provider="openrouter",
                         model_id="google/gemini-3.5-flash",
@@ -348,7 +352,11 @@ def test_validate_provider_models_reports_jose_grok_under_openrouter_when_pendin
         lambda _env: {
             "openrouter": FakeProviderCatalogClient(
                 entries=(
-                    ProviderModelCatalogEntry(provider="openrouter", model_id="openai/gpt-5"),
+                    ProviderModelCatalogEntry(
+                        provider="openrouter",
+                        model_id="meta-llama/llama-3.2-3b-instruct",
+                    ),
+                    ProviderModelCatalogEntry(provider="openrouter", model_id="openai/gpt-5-chat"),
                     ProviderModelCatalogEntry(
                         provider="openrouter",
                         model_id="google/gemini-3.5-flash",
@@ -376,7 +384,9 @@ def test_validate_provider_models_reports_jose_grok_under_openrouter_when_pendin
     output = capsys.readouterr().out
 
     assert exit_code == 0
-    assert '"total_assignments": 3' in output
+    assert '"total_assignments": 5' in output
+    assert '"id_modelo_av2": 5' in output
+    assert '"id_modelo_av2": 9' in output
     assert '"id_modelo_av2": 15' in output
     assert '"av3_provider": "openrouter"' in output
     assert '"av3_provider_model_id": "x-ai/grok-4.3"' in output
@@ -411,8 +421,8 @@ def test_validate_provider_models_returns_two_when_provider_catalog_fails(
     output = capsys.readouterr().out
 
     assert exit_code == 2
-    assert '"total_assignments": 2' in output
-    assert '"provider_errors": 2' in output
+    assert '"total_assignments": 4' in output
+    assert '"provider_errors": 4' in output
 
 
 def test_run_judge_dry_run_prints_single_summary(capsys: pytest.CaptureFixture[str], tmp_path) -> None:
@@ -463,6 +473,9 @@ def test_run_candidates_rag_dry_run_calls_service_with_dry_run_true(
             remote_candidate_temperature=0.2,
             remote_candidate_max_tokens=1024,
             remote_candidate_top_p=0.9,
+            remote_candidate_context_safety_margin_tokens=512,
+            remote_candidate_context_window_tokens=None,
+            remote_candidate_retry_on_context_window=False,
         ),
     )
     monkeypatch.setattr(cli, "RunCandidatesRagService", lambda: service)
@@ -488,6 +501,8 @@ def test_run_candidates_rag_dry_run_calls_service_with_dry_run_true(
     assert service.requests[0].remote_candidate_temperature == 0.2
     assert service.requests[0].remote_candidate_max_tokens == 1024
     assert service.requests[0].remote_candidate_top_p == 0.9
+    assert service.requests[0].remote_candidate_context_safety_margin_tokens == 512
+    assert service.requests[0].remote_candidate_context_window_tokens is None
     assert "Dataset: J1" in output
     assert "Batch size: 2" in output
 
@@ -505,6 +520,9 @@ def test_run_candidates_rag_passes_audit_log_and_question_range(
             remote_candidate_temperature=0.2,
             remote_candidate_max_tokens=1024,
             remote_candidate_top_p=0.9,
+            remote_candidate_context_safety_margin_tokens=512,
+            remote_candidate_context_window_tokens=None,
+            remote_candidate_retry_on_context_window=False,
         ),
     )
     monkeypatch.setattr(cli, "RunCandidatesRagService", lambda: service)
@@ -549,6 +567,43 @@ def test_run_candidates_rag_passes_audit_log_and_question_range(
     assert request.no_audit_animation is True
 
 
+def test_run_candidates_rag_passes_retry_on_context_window_flag(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = FakeRunCandidatesRagService()
+    monkeypatch.setattr(
+        cli,
+        "load_settings",
+        lambda: SimpleNamespace(
+            remote_candidate_temperature=0.2,
+            remote_candidate_max_tokens=1024,
+            remote_candidate_top_p=0.9,
+            remote_candidate_context_safety_margin_tokens=512,
+            remote_candidate_context_window_tokens=None,
+            remote_candidate_retry_on_context_window=False,
+        ),
+    )
+    monkeypatch.setattr(cli, "RunCandidatesRagService", lambda: service)
+
+    exit_code = cli.main(
+        [
+            "run-candidates-rag",
+            "--dataset",
+            "J1",
+            "--candidate-model",
+            "candidate-j1",
+            "--provider",
+            "remote_http",
+            "--batch-size",
+            "1",
+            "--retry-on-context-window",
+        ]
+    )
+
+    assert exit_code == 0
+    assert service.requests[0].remote_candidate_retry_on_context_window is True
+
+
 def test_run_candidates_rag_command_prints_summary(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -570,7 +625,7 @@ def test_run_candidates_rag_command_prints_summary(
             model_name="candidate-j2",
             provider="remote_http",
             runtime_config_summary=(
-                "Candidate runtime config:\n"
+                "Candidate runtime preflight:\n"
                 "  model: candidate-j2\n"
                 "  technical provider: remote_http\n"
                 "  av3 provider: featherless\n"
@@ -578,7 +633,10 @@ def test_run_candidates_rag_command_prints_summary(
                 "  api_key: <set>\n"
                 "  temperature: 0.2\n"
                 "  top_p: 0.9\n"
-                "  max_tokens: 1024\n"
+                "  requested_max_tokens: 1024\n"
+                "  final_max_tokens: 1024\n"
+                "  context_window_tokens: unknown\n"
+                "  safety_margin_tokens: 512\n"
                 "  save_raw_response: false"
             ),
             candidate_run_id=501,
@@ -600,6 +658,9 @@ def test_run_candidates_rag_command_prints_summary(
             remote_candidate_temperature=0.2,
             remote_candidate_max_tokens=1024,
             remote_candidate_top_p=0.9,
+            remote_candidate_context_safety_margin_tokens=512,
+            remote_candidate_context_window_tokens=None,
+            remote_candidate_retry_on_context_window=False,
         ),
     )
     monkeypatch.setattr(cli, "RunCandidatesRagService", lambda: service)
@@ -620,7 +681,7 @@ def test_run_candidates_rag_command_prints_summary(
 
     output = capsys.readouterr().out
     assert exit_code == 0
-    assert "Candidate runtime config:" in output
+    assert "Candidate runtime preflight:" in output
     assert "api_key: <set>" in output
     assert "Execution result:" in output
     assert "Candidate run id: 501" in output
@@ -644,6 +705,9 @@ def test_run_candidates_rag_returns_exit_code_2_on_validation_error(
             remote_candidate_temperature=0.2,
             remote_candidate_max_tokens=1024,
             remote_candidate_top_p=0.9,
+            remote_candidate_context_safety_margin_tokens=512,
+            remote_candidate_context_window_tokens=None,
+            remote_candidate_retry_on_context_window=False,
         ),
     )
     monkeypatch.setattr(cli, "RunCandidatesRagService", lambda: service)

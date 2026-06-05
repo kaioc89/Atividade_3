@@ -41,6 +41,7 @@ def test_settings_load_default_models_from_env() -> None:
     assert settings.judge_adaptive_max_retries == 3
     assert settings.judge_adaptive_base_backoff_seconds == 2.0
     assert settings.judge_adaptive_max_backoff_seconds == 60.0
+    assert settings.remote_candidate_retry_on_context_window is False
 
 
 def test_app_env_can_be_loaded_from_env() -> None:
@@ -129,6 +130,9 @@ def test_candidate_provider_env_values_can_be_loaded_from_env() -> None:
     env["REMOTE_CANDIDATE_MAX_TOKENS"] = "1024"
     env["REMOTE_CANDIDATE_TEMPERATURE"] = "0.2"
     env["REMOTE_CANDIDATE_TOP_P"] = "0.9"
+    env["REMOTE_CANDIDATE_CONTEXT_SAFETY_MARGIN_TOKENS"] = "384"
+    env["REMOTE_CANDIDATE_CONTEXT_WINDOW_TOKENS"] = "8192"
+    env["REMOTE_CANDIDATE_RETRY_ON_CONTEXT_WINDOW"] = "true"
     env["EMBEDDING_API_KEY"] = "embedding-secret"
 
     settings = load_settings(dotenv_path=None, env=env)
@@ -138,6 +142,11 @@ def test_candidate_provider_env_values_can_be_loaded_from_env() -> None:
     assert settings.openrouter_url == "https://openrouter.example.invalid/api/v1"
     assert settings.openrouter_api_key == "openrouter-secret"
     assert settings.remote_candidate_max_tokens == 1024
+    assert settings.remote_candidate_temperature == 0.2
+    assert settings.remote_candidate_top_p == 0.9
+    assert settings.remote_candidate_context_safety_margin_tokens == 384
+    assert settings.remote_candidate_context_window_tokens == 8192
+    assert settings.remote_candidate_retry_on_context_window is True
     assert settings.remote_candidate_temperature == 0.2
     assert settings.remote_candidate_top_p == 0.9
     assert settings.embedding_api_key == "embedding-secret"

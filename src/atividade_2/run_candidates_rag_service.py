@@ -3,20 +3,32 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from math import ceil
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Protocol
 
 from .audit import AuditEvent, AuditLogger
+from .candidate_context_budget import (
+    BudgetedCandidateRetrievalContext,
+    CandidatePromptBudget,
+    CandidateModelRuntimeProfile,
+    aggregate_budget_metadata,
+    budget_candidate_retrieval_context,
+    budget_to_metadata,
+    resolve_candidate_max_output_tokens,
+    resolve_candidate_model_runtime_profile,
+)
 from .candidate_clients.base import CandidateClient
 from .candidate_clients.remote_http import RemoteHttpCandidateClient, RemoteHttpCandidateClientConfig
+from .candidate_runtime_learning import parse_candidate_runtime_observation
 from .candidate_prompts import build_candidate_prompt
 from .config import load_settings
 from .contracts import (
     CandidateAnswerRecord,
     CandidateModelAssignment,
+    CandidateModelRuntimeObservationRecord,
+    CandidateModelRuntimeProfileRecord,
     CandidatePromptContext,
     CandidatePromptRecord,
     CandidateQuestionRecord,
@@ -56,6 +68,9 @@ class RunCandidatesRagRequest:
     remote_candidate_temperature: float | None = None
     remote_candidate_max_tokens: int | None = None
     remote_candidate_top_p: float | None = None
+    remote_candidate_context_safety_margin_tokens: int | None = None
+    remote_candidate_context_window_tokens: int | None = None
+    remote_candidate_retry_on_context_window: bool | None = None
     remote_candidate_openai_compatible: bool = True
 
 
@@ -123,8 +138,28 @@ class ResolvedCandidateRuntimeConfig:
     api_key: str | None
     temperature: float
     top_p: float
+    default_max_output_tokens: int
+    max_output_tokens_cap: int | None
+    requested_max_tokens: int
     max_tokens: int
+    context_window_tokens: int | None
+    safety_margin_tokens: int
+    chars_per_token_estimate: float
+    prompt_budget_utilization: float
+    model_profile_source: str
+    model_profile_confidence: str
     save_raw_response: bool
+    retry_on_context_window: bool
+
+
+@dataclass(frozen=True)
+class CandidateGenerationOutcome:
+    """Final per-question execution outcome after optional retry handling."""
+
+    answer: CandidateAnswerRecord
+    retrieval_result_for_prompt: RagRetrievalResult
+    budget: CandidatePromptBudget | None
+    runtime_config: ResolvedCandidateRuntimeConfig
 
 
 @dataclass(frozen=True)
@@ -167,6 +202,45 @@ class CandidateRunRepositoryProtocol(Protocol):
 
     def create_candidate_run(self, *, run: CandidateRunRecord) -> CandidateRunRecord:
         """Persist one candidate run."""
+
+    def get_candidate_model_runtime_profile(
+        self,
+        *,
+        av3_provider: str,
+        provider_model_id: str,
+    ) -> CandidateModelRuntimeProfileRecord | None:
+        """Return one persisted runtime profile, if available."""
+
+    def upsert_candidate_model_runtime_profile(
+        self,
+        *,
+        av3_provider: str,
+        provider_model_id: str,
+        context_window_tokens: int | None,
+        default_max_output_tokens: int | None,
+        safety_margin_tokens: int,
+        source: str,
+        confidence: str,
+        metadata: dict[str, Any] | None = None,
+    ) -> CandidateModelRuntimeProfileRecord:
+        """Insert or update one provider/model runtime profile."""
+
+    def record_candidate_model_runtime_observation(
+        self,
+        *,
+        av3_provider: str,
+        provider_model_id: str,
+        observed_context_window_tokens: int | None,
+        observed_prompt_tokens: int | None,
+        observed_requested_max_tokens: int | None,
+        observed_total_tokens: int | None,
+        error_class: str,
+        error_message: str,
+        candidate_run_id: int | None = None,
+        candidate_answer_id: int | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> CandidateModelRuntimeObservationRecord:
+        """Persist one immutable runtime observation."""
 
     def update_candidate_run_status(
         self,
@@ -328,11 +402,40 @@ class RunCandidatesRagService:
                 )
                 runtime_summary = _format_candidate_runtime_config(
                     runtime_config,
-                    api_key_state="<set>" if runtime_config.api_key else "<not required in dry-run>",
+                    api_key_state="<not required in dry-run>"
+                    if request.dry_run
+                    else ("<set>" if runtime_config.api_key else "<missing>"),
                 )
                 audit.file_event("candidate_runtime_config", runtime_summary.replace("\n", " | "))
                 audit.terminal_event(runtime_summary)
+                retriever = self._retriever_factory(repository, settings, resolved.dataset)
                 if request.dry_run:
+                    for question in questions:
+                        retrieval_result = retriever.retrieve_for_question(
+                            question_id=question.question_id,
+                            dataset=resolved.dataset,
+                        )
+                        audit.event(
+                            AuditEvent(
+                                "dry_run_retrieval_finished",
+                                (
+                                    f"question_id={question.question_id} status={retrieval_result.status} "
+                                    f"chunks={len(retrieval_result.chunks)}"
+                                ),
+                            )
+                        )
+                        if retrieval_result.status == "success":
+                            budgeted_context = _budget_retrieval_for_question(
+                                question=question,
+                                retrieval_result=retrieval_result,
+                                prompt=prompt,
+                                runtime_config=runtime_config,
+                            )
+                            _log_candidate_prompt_budget(
+                                audit=audit,
+                                question=question,
+                                budget=budgeted_context.budget,
+                            )
                     audit.file_event("dry_run_finished", "no candidate_run rows created and no remote candidate calls made")
                     audit.terminal_event("Dry run: no candidate_run rows created and no remote candidate calls made.")
                     return RunCandidatesRagResult(
@@ -375,7 +478,6 @@ class RunCandidatesRagService:
                         ),
                     )
                 )
-                retriever = self._retriever_factory(repository, settings, resolved.dataset)
                 client = None
                 if questions:
                     client_request = request
@@ -386,6 +488,7 @@ class RunCandidatesRagService:
                 successful_answers = 0
                 failed_answers = 0
                 skipped_questions = 0
+                budget_summaries: list[CandidatePromptBudget] = []
 
                 for question in questions:
                     audit.event(
@@ -436,12 +539,12 @@ class RunCandidatesRagService:
                             ),
                         )
                     )
-                    rendered_prompt = _render_prompt(
-                        question=question,
-                        retrieval_result=retrieval_result,
-                        prompt=prompt,
-                    )
                     if retrieval_result.status != "success":
+                        rendered_prompt = _render_prompt(
+                            question=question,
+                            retrieval_result=retrieval_result,
+                            prompt=prompt,
+                        )
                         stored_answer = repository.persist_candidate_answer(
                             answer=CandidateAnswerRecord(
                                 candidate_answer_id=None,
@@ -475,32 +578,29 @@ class RunCandidatesRagService:
                         )
                         continue
 
-                    try:
-                        assert client is not None
-                        raw_response = client.generate(rendered_prompt, model=resolved.model_name)
-                        audit.event(
-                            AuditEvent(
-                                "generation_finished",
-                                (
-                                    f"candidate_run_id={run.candidate_run_id} question_id={question.question_id} "
-                                    f"latency_ms={raw_response.latency_ms}"
-                                ),
-                            )
+                    assert client is not None
+                    outcome = _execute_candidate_generation(
+                        repository=repository,
+                        client=client,
+                        audit=audit,
+                        question=question,
+                        retrieval_result=retrieval_result,
+                        prompt=prompt,
+                        resolved=resolved,
+                        request=request,
+                        runtime_config=runtime_config,
+                        candidate_run_id=int(run.candidate_run_id),
+                    )
+                    runtime_config = outcome.runtime_config
+                    if outcome.budget is not None:
+                        budget_summaries.append(outcome.budget)
+                        _log_candidate_prompt_budget(
+                            audit=audit,
+                            question=question,
+                            budget=outcome.budget,
                         )
-                        stored_answer = repository.persist_candidate_answer(
-                            answer=CandidateAnswerRecord(
-                                candidate_answer_id=None,
-                                candidate_run_id=int(run.candidate_run_id),
-                                question_id=question.question_id,
-                                model_name=resolved.model_name,
-                                rendered_prompt=rendered_prompt,
-                                status="success",
-                                answer_text=raw_response.text,
-                                final_choice=_extract_final_choice(raw_response.text, dataset=resolved.dataset),
-                                latency_ms=raw_response.latency_ms,
-                                raw_response=raw_response.raw_response if request.save_raw_response else None,
-                            )
-                        )
+                    stored_answer = outcome.answer
+                    if stored_answer.status == "success":
                         successful_answers += 1
                         question_results.append(
                             CandidateQuestionRunResult(
@@ -522,18 +622,7 @@ class RunCandidatesRagService:
                                 ),
                             )
                         )
-                    except Exception as error:
-                        stored_answer = repository.persist_candidate_answer(
-                            answer=CandidateAnswerRecord(
-                                candidate_answer_id=None,
-                                candidate_run_id=int(run.candidate_run_id),
-                                question_id=question.question_id,
-                                model_name=resolved.model_name,
-                                rendered_prompt=rendered_prompt,
-                                status="failed",
-                                error_message=str(error),
-                            )
-                        )
+                    else:
                         failed_answers += 1
                         question_results.append(
                             CandidateQuestionRunResult(
@@ -543,15 +632,6 @@ class RunCandidatesRagService:
                                 retrieval_status=retrieval_result.status,
                                 candidate_answer_id=stored_answer.candidate_answer_id,
                                 error_message=stored_answer.error_message,
-                            )
-                        )
-                        audit.event(
-                            AuditEvent(
-                                "generation_failed",
-                                (
-                                    f"candidate_run_id={run.candidate_run_id} question_id={question.question_id} "
-                                    f"error={error}"
-                                ),
                             )
                         )
                         audit.event(
@@ -567,7 +647,7 @@ class RunCandidatesRagService:
                     assert stored_answer.candidate_answer_id is not None
                     snapshot_rows = snapshot_service.persist_retrieval_snapshot(
                         candidate_answer_id=stored_answer.candidate_answer_id,
-                        retrieval_result=retrieval_result,
+                        retrieval_result=outcome.retrieval_result_for_prompt,
                     )
                     audit.event(
                         AuditEvent(
@@ -587,17 +667,25 @@ class RunCandidatesRagService:
                     skipped_questions=skipped_questions,
                     question_results=question_results,
                 )
+                completion_metadata: dict[str, Any] = {
+                    "selected_questions": summary.selected_questions,
+                    "processed_questions": summary.processed_questions,
+                    "successful_answers": summary.successful_answers,
+                    "failed_answers": summary.failed_answers,
+                    "skipped_questions": summary.skipped_questions,
+                    "candidate_runtime_profile": _candidate_runtime_profile_metadata(runtime_config),
+                }
+                candidate_budget_metadata = aggregate_budget_metadata(
+                    budgets=budget_summaries,
+                    requested_max_tokens=runtime_config.requested_max_tokens,
+                )
+                if candidate_budget_metadata:
+                    completion_metadata["candidate_budget"] = candidate_budget_metadata
                 repository.update_candidate_run_status(
                     candidate_run_id=int(run.candidate_run_id),
                     run_status="completed",
                     finished_at=_utcnow_iso(),
-                    metadata={
-                        "selected_questions": summary.selected_questions,
-                        "processed_questions": summary.processed_questions,
-                        "successful_answers": summary.successful_answers,
-                        "failed_answers": summary.failed_answers,
-                        "skipped_questions": summary.skipped_questions,
-                    },
+                    metadata=completion_metadata,
                 )
                 audit.event(
                     AuditEvent(
@@ -714,8 +802,19 @@ def _run_metadata(
             "api_key": "<set>" if runtime_config.api_key else "<missing>",
             "temperature": runtime_config.temperature,
             "top_p": runtime_config.top_p,
+            "default_max_output_tokens": runtime_config.default_max_output_tokens,
+            "max_output_tokens_cap": runtime_config.max_output_tokens_cap,
+            "requested_max_tokens": runtime_config.requested_max_tokens,
             "max_tokens": runtime_config.max_tokens,
+            "context_window_tokens": runtime_config.context_window_tokens,
+            "safety_margin_tokens": runtime_config.safety_margin_tokens,
+            "chars_per_token_estimate": runtime_config.chars_per_token_estimate,
+            "prompt_budget_utilization": runtime_config.prompt_budget_utilization,
+            "model_profile_source": runtime_config.model_profile_source,
         },
+        "candidate_runtime_profile": None
+        if runtime_config is None
+        else _candidate_runtime_profile_metadata(runtime_config),
     }
 
 
@@ -774,9 +873,9 @@ def _default_client_factory(request: RunCandidatesRagRequest, _settings: Any) ->
             api_key=(request.remote_candidate_api_key or "").strip(),
             provider=request.provider,
             timeout_seconds=request.remote_candidate_timeout_seconds,
-            temperature=float(request.remote_candidate_temperature or 0.0),
+            temperature=float(request.remote_candidate_temperature if request.remote_candidate_temperature is not None else 0.2),
             max_tokens=int(request.remote_candidate_max_tokens or 1024),
-            top_p=float(request.remote_candidate_top_p or 1.0),
+            top_p=float(request.remote_candidate_top_p if request.remote_candidate_top_p is not None else 0.9),
             openai_compatible=request.remote_candidate_openai_compatible,
             save_raw_response=request.save_raw_response,
         )
@@ -809,6 +908,9 @@ def _with_remote_candidate_config(
         remote_candidate_temperature=runtime_config.temperature,
         remote_candidate_max_tokens=runtime_config.max_tokens,
         remote_candidate_top_p=runtime_config.top_p,
+        remote_candidate_context_safety_margin_tokens=runtime_config.safety_margin_tokens,
+        remote_candidate_context_window_tokens=runtime_config.context_window_tokens,
+        remote_candidate_retry_on_context_window=runtime_config.retry_on_context_window,
         remote_candidate_openai_compatible=request.remote_candidate_openai_compatible,
     )
 
@@ -869,35 +971,54 @@ def _resolve_candidate_runtime_config(
         assignment=assignment,
         require_api_key=require_api_key,
     )
-    max_tokens = resolve_candidate_max_tokens(
-        model_name=resolved.model_name,
+    safety_margin_tokens = _resolve_candidate_context_safety_margin_tokens(settings=settings, request=request)
+    persisted_profile = repository.get_candidate_model_runtime_profile(
         av3_provider=provider_config.av3_provider,
-        requested_max_tokens=_resolve_requested_candidate_max_tokens(settings=settings, request=request),
+        provider_model_id=resolved.model_name,
+    )
+    profile = resolve_candidate_model_runtime_profile(
+        provider=provider_config.av3_provider,
+        model_name=resolved.model_name,
+        safety_margin_tokens=safety_margin_tokens,
+        context_window_tokens_override=_resolve_candidate_context_window_tokens(settings=settings, request=request),
+        persisted_profile=persisted_profile,
+    )
+    raw_requested_max_tokens = _resolve_requested_candidate_max_tokens(settings=settings, request=request)
+    requested_max_tokens = (
+        int(raw_requested_max_tokens)
+        if raw_requested_max_tokens is not None
+        else int(profile.default_max_output_tokens)
+    )
+    max_tokens = resolve_candidate_max_output_tokens(
+        profile=profile,
+        requested_max_tokens=raw_requested_max_tokens,
     )
     temperature = _resolve_candidate_temperature(settings=settings, request=request)
     top_p = _resolve_candidate_top_p(settings=settings, request=request)
-
     if questions:
-        sample_prompt = _render_prompt(
-            question=questions[0],
-            retrieval_result=RagRetrievalResult(
-                question_id=questions[0].question_id,
-                dataset=resolved.dataset,
-                retrieval_run_id=None,
-                retrieval_name=None,
-                embedding_model=None,
-                top_k=0,
-                status="success",
-                chunks=[],
-            ),
-            prompt=repository.get_or_create_candidate_prompt(dataset=resolved.dataset, prompt_id=resolved.prompt_id),
-        )
-        max_tokens = _apply_context_budget_guard(
-            prompt_text=sample_prompt,
-            model_name=resolved.model_name,
-            av3_provider=provider_config.av3_provider,
-            max_tokens=max_tokens,
-        )
+        prompt = repository.get_or_create_candidate_prompt(dataset=resolved.dataset, prompt_id=resolved.prompt_id)
+        for question in questions:
+            budget_candidate_retrieval_context(
+                question=question,
+                retrieval_result=RagRetrievalResult(
+                    question_id=question.question_id,
+                    dataset=resolved.dataset,
+                    retrieval_run_id=None,
+                    retrieval_name=None,
+                    embedding_model=None,
+                    top_k=0,
+                    status="success",
+                    chunks=[],
+                ),
+                prompt=prompt,
+                model_name=resolved.model_name,
+                av3_provider=provider_config.av3_provider,
+                max_tokens=max_tokens,
+                safety_margin_tokens=profile.safety_margin_tokens,
+                context_window_tokens=profile.context_window_tokens,
+                chars_per_token_estimate=profile.chars_per_token_estimate,
+                prompt_budget_utilization=profile.prompt_budget_utilization,
+            )
 
     return ResolvedCandidateRuntimeConfig(
         model_name=resolved.model_name,
@@ -907,8 +1028,18 @@ def _resolve_candidate_runtime_config(
         api_key=provider_config.api_key,
         temperature=temperature,
         top_p=top_p,
+        default_max_output_tokens=profile.default_max_output_tokens,
+        max_output_tokens_cap=profile.max_output_tokens_cap,
+        requested_max_tokens=requested_max_tokens,
         max_tokens=max_tokens,
+        context_window_tokens=profile.context_window_tokens,
+        safety_margin_tokens=profile.safety_margin_tokens,
+        chars_per_token_estimate=profile.chars_per_token_estimate,
+        prompt_budget_utilization=profile.prompt_budget_utilization,
+        model_profile_source=profile.source,
+        model_profile_confidence=profile.confidence,
         save_raw_response=request.save_raw_response,
+        retry_on_context_window=_resolve_candidate_retry_on_context_window(settings=settings, request=request),
     )
 
 
@@ -963,29 +1094,27 @@ def resolve_candidate_max_tokens(
     av3_provider: str,
     requested_max_tokens: int | None,
 ) -> int:
-    if requested_max_tokens is not None:
-        return int(requested_max_tokens)
-
-    upper_name = model_name.upper()
-    if any(token in upper_name for token in ("1.5B", "1B", "2B", "3B")):
-        return 1024
-    if any(token in upper_name for token in ("7B", "8B")):
-        return 1500
-    if av3_provider == "openrouter":
-        return 3000
-    return 1024
+    profile = resolve_candidate_model_runtime_profile(
+        provider=av3_provider,
+        model_name=model_name,
+        safety_margin_tokens=512,
+    )
+    return resolve_candidate_max_output_tokens(
+        profile=profile,
+        requested_max_tokens=requested_max_tokens,
+    )
 
 
 def _resolve_candidate_temperature(*, settings: Any, request: RunCandidatesRagRequest) -> float:
     if request.remote_candidate_temperature is not None:
         return float(request.remote_candidate_temperature)
-    return float(getattr(settings, "remote_candidate_temperature", 0.0))
+    return float(getattr(settings, "remote_candidate_temperature", 0.2))
 
 
 def _resolve_candidate_top_p(*, settings: Any, request: RunCandidatesRagRequest) -> float:
     if request.remote_candidate_top_p is not None:
         return float(request.remote_candidate_top_p)
-    return float(getattr(settings, "remote_candidate_top_p", 1.0))
+    return float(getattr(settings, "remote_candidate_top_p", 0.9))
 
 
 def _resolve_requested_candidate_max_tokens(*, settings: Any, request: RunCandidatesRagRequest) -> int | None:
@@ -995,35 +1124,23 @@ def _resolve_requested_candidate_max_tokens(*, settings: Any, request: RunCandid
     return None if value is None else int(value)
 
 
-KNOWN_CONTEXT_WINDOWS = {
-    "google/gemma-2-2b-it": 8192,
-    "qwen/qwen2.5-3b-instruct": 32768,
-    "qwen/qwen2.5-7b-instruct": 32768,
-}
+def _resolve_candidate_context_safety_margin_tokens(*, settings: Any, request: RunCandidatesRagRequest) -> int:
+    if request.remote_candidate_context_safety_margin_tokens is not None:
+        return int(request.remote_candidate_context_safety_margin_tokens)
+    return int(getattr(settings, "remote_candidate_context_safety_margin_tokens", 512))
 
 
-def _apply_context_budget_guard(
-    *,
-    prompt_text: str,
-    model_name: str,
-    av3_provider: str,
-    max_tokens: int,
-) -> int:
-    context_window = KNOWN_CONTEXT_WINDOWS.get(model_name.strip().casefold())
-    if context_window is None:
-        return max_tokens
-    estimated_prompt_tokens = ceil(len(prompt_text) / 4)
-    remaining_budget = context_window - estimated_prompt_tokens
-    if remaining_budget <= 0:
-        raise ValueError(
-            f"Estimated prompt exceeds the known context window for {model_name}. "
-            f"estimated_prompt_tokens={estimated_prompt_tokens} context_window={context_window}."
-        )
-    if estimated_prompt_tokens + max_tokens <= context_window:
-        return max_tokens
-    if av3_provider == "openrouter":
-        return max(1, min(max_tokens, remaining_budget))
-    return max(1, min(max_tokens, remaining_budget))
+def _resolve_candidate_context_window_tokens(*, settings: Any, request: RunCandidatesRagRequest) -> int | None:
+    if request.remote_candidate_context_window_tokens is not None:
+        return int(request.remote_candidate_context_window_tokens)
+    value = getattr(settings, "remote_candidate_context_window_tokens", None)
+    return None if value is None else int(value)
+
+
+def _resolve_candidate_retry_on_context_window(*, settings: Any, request: RunCandidatesRagRequest) -> bool:
+    if request.remote_candidate_retry_on_context_window is not None:
+        return bool(request.remote_candidate_retry_on_context_window)
+    return bool(getattr(settings, "remote_candidate_retry_on_context_window", False))
 
 
 def _format_candidate_runtime_config(
@@ -1031,8 +1148,13 @@ def _format_candidate_runtime_config(
     *,
     api_key_state: str,
 ) -> str:
+    context_window = (
+        str(runtime_config.context_window_tokens)
+        if runtime_config.context_window_tokens is not None
+        else "unknown"
+    )
     return (
-        "Candidate runtime config:\n"
+        "Candidate runtime preflight:\n"
         f"  model: {runtime_config.model_name}\n"
         f"  technical provider: {runtime_config.technical_provider}\n"
         f"  av3 provider: {runtime_config.av3_provider}\n"
@@ -1040,9 +1162,369 @@ def _format_candidate_runtime_config(
         f"  api_key: {api_key_state}\n"
         f"  temperature: {runtime_config.temperature}\n"
         f"  top_p: {runtime_config.top_p}\n"
-        f"  max_tokens: {runtime_config.max_tokens}\n"
+        f"  default_max_output_tokens: {runtime_config.default_max_output_tokens}\n"
+        f"  max_output_tokens_cap: {runtime_config.max_output_tokens_cap or 'none'}\n"
+        f"  requested_max_tokens: {runtime_config.requested_max_tokens}\n"
+        f"  final_max_tokens: {runtime_config.max_tokens}\n"
+        f"  context_window_tokens: {context_window}\n"
+        f"  safety_margin_tokens: {runtime_config.safety_margin_tokens}\n"
+        f"  chars_per_token_estimate: {runtime_config.chars_per_token_estimate:g}\n"
+        f"  prompt_budget_utilization: {runtime_config.prompt_budget_utilization:g}\n"
+        f"  model_profile_source: {runtime_config.model_profile_source}\n"
         f"  save_raw_response: {str(runtime_config.save_raw_response).lower()}"
     )
+
+
+def _candidate_runtime_profile_metadata(
+    runtime_config: ResolvedCandidateRuntimeConfig,
+) -> dict[str, Any]:
+    return {
+        "av3_provider": runtime_config.av3_provider,
+        "provider_model_id": runtime_config.model_name,
+        "context_window_tokens": runtime_config.context_window_tokens,
+        "default_max_output_tokens": runtime_config.default_max_output_tokens,
+        "max_output_tokens_cap": runtime_config.max_output_tokens_cap,
+        "safety_margin_tokens": runtime_config.safety_margin_tokens,
+        "chars_per_token_estimate": runtime_config.chars_per_token_estimate,
+        "prompt_budget_utilization": runtime_config.prompt_budget_utilization,
+        "source": runtime_config.model_profile_source,
+        "confidence": runtime_config.model_profile_confidence,
+    }
+
+
+def _execute_candidate_generation(
+    *,
+    repository: CandidateRunRepositoryProtocol,
+    client: CandidateClient,
+    audit: AuditLogger,
+    question: CandidateQuestionRecord,
+    retrieval_result: RagRetrievalResult,
+    prompt: CandidatePromptRecord,
+    resolved: ResolvedRunCandidatesRag,
+    request: RunCandidatesRagRequest,
+    runtime_config: ResolvedCandidateRuntimeConfig,
+    candidate_run_id: int,
+) -> CandidateGenerationOutcome:
+    initial_budget = _budget_retrieval_for_question(
+        question=question,
+        retrieval_result=retrieval_result,
+        prompt=prompt,
+        runtime_config=runtime_config,
+    )
+    rendered_prompt = _render_prompt(
+        question=question,
+        retrieval_result=initial_budget.retrieval_result_for_prompt,
+        prompt=prompt,
+    )
+    candidate_budget_metadata = budget_to_metadata(
+        budget=initial_budget.budget,
+        requested_max_tokens=runtime_config.requested_max_tokens,
+    )
+    try:
+        raw_response = client.generate(rendered_prompt, model=resolved.model_name)
+        audit.event(
+            AuditEvent(
+                "generation_finished",
+                (
+                    f"candidate_run_id={candidate_run_id} question_id={question.question_id} "
+                    f"latency_ms={raw_response.latency_ms}"
+                ),
+            )
+        )
+        stored_answer = repository.persist_candidate_answer(
+            answer=CandidateAnswerRecord(
+                candidate_answer_id=None,
+                candidate_run_id=candidate_run_id,
+                question_id=question.question_id,
+                model_name=resolved.model_name,
+                rendered_prompt=rendered_prompt,
+                status="success",
+                answer_text=raw_response.text,
+                final_choice=_extract_final_choice(raw_response.text, dataset=resolved.dataset),
+                latency_ms=raw_response.latency_ms,
+                raw_response=_build_candidate_answer_raw_response(
+                    raw_response=raw_response.raw_response if request.save_raw_response else None,
+                    retry_metadata=None,
+                    candidate_budget_metadata=candidate_budget_metadata,
+                ),
+            )
+        )
+        audit.event(
+            AuditEvent(
+                "answer_persisted",
+                (
+                    f"candidate_answer_id={stored_answer.candidate_answer_id} "
+                    f"question_id={question.question_id} status=success"
+                ),
+            )
+        )
+        return CandidateGenerationOutcome(
+            answer=stored_answer,
+            retrieval_result_for_prompt=initial_budget.retrieval_result_for_prompt,
+            budget=initial_budget.budget,
+            runtime_config=runtime_config,
+        )
+    except Exception as error:
+        observation = parse_candidate_runtime_observation(str(error))
+        updated_runtime_config = runtime_config
+        retry_metadata: dict[str, Any] | None = None
+        if observation is not None:
+            repository.record_candidate_model_runtime_observation(
+                av3_provider=runtime_config.av3_provider,
+                provider_model_id=resolved.model_name,
+                observed_context_window_tokens=observation.observed_context_window_tokens,
+                observed_prompt_tokens=observation.observed_prompt_tokens,
+                observed_requested_max_tokens=observation.observed_requested_max_tokens,
+                observed_total_tokens=observation.observed_total_tokens,
+                error_class=observation.error_class,
+                error_message=observation.error_message,
+                candidate_run_id=candidate_run_id,
+                metadata={
+                    "question_id": question.question_id,
+                    "status_code": getattr(error, "status_code", None),
+                },
+            )
+            profile_record = repository.upsert_candidate_model_runtime_profile(
+                av3_provider=runtime_config.av3_provider,
+                provider_model_id=resolved.model_name,
+                context_window_tokens=observation.observed_context_window_tokens,
+                default_max_output_tokens=runtime_config.default_max_output_tokens,
+                safety_margin_tokens=runtime_config.safety_margin_tokens,
+                source="db_observed",
+                confidence="observed_error",
+                metadata={
+                    "error_class": observation.error_class,
+                    "question_id": question.question_id,
+                },
+            )
+            updated_runtime_config = _runtime_config_from_profile(
+                runtime_config=runtime_config,
+                profile=resolve_candidate_model_runtime_profile(
+                    provider=runtime_config.av3_provider,
+                    model_name=resolved.model_name,
+                    safety_margin_tokens=runtime_config.safety_margin_tokens,
+                    persisted_profile=profile_record,
+                ),
+                question=question,
+                prompt=prompt,
+                resolved=resolved,
+            )
+            _set_client_max_tokens_if_supported(client, updated_runtime_config.max_tokens)
+            retry_metadata = {
+                "enabled": runtime_config.retry_on_context_window,
+                "attempted": False,
+                "observed_context_window_tokens": observation.observed_context_window_tokens,
+                "first_error_class": observation.error_class,
+            }
+            audit.event(
+                AuditEvent(
+                    "runtime_observation_recorded",
+                    (
+                        f"candidate_run_id={candidate_run_id} question_id={question.question_id} "
+                        f"context_window_tokens={observation.observed_context_window_tokens}"
+                    ),
+                )
+            )
+            if runtime_config.retry_on_context_window and observation.observed_context_window_tokens is not None:
+                retry_metadata["attempted"] = True
+                try:
+                    retried_budget = _budget_retrieval_for_question(
+                        question=question,
+                        retrieval_result=retrieval_result,
+                        prompt=prompt,
+                        runtime_config=updated_runtime_config,
+                    )
+                    retried_prompt = _render_prompt(
+                        question=question,
+                        retrieval_result=retried_budget.retrieval_result_for_prompt,
+                        prompt=prompt,
+                    )
+                    candidate_budget_metadata = budget_to_metadata(
+                        budget=retried_budget.budget,
+                        requested_max_tokens=updated_runtime_config.requested_max_tokens,
+                    )
+                    retried_response = client.generate(retried_prompt, model=resolved.model_name)
+                    audit.event(
+                        AuditEvent(
+                            "context_window_retry_succeeded",
+                            (
+                                f"candidate_run_id={candidate_run_id} question_id={question.question_id} "
+                                f"latency_ms={retried_response.latency_ms}"
+                            ),
+                        )
+                    )
+                    stored_answer = repository.persist_candidate_answer(
+                        answer=CandidateAnswerRecord(
+                            candidate_answer_id=None,
+                            candidate_run_id=candidate_run_id,
+                            question_id=question.question_id,
+                            model_name=resolved.model_name,
+                            rendered_prompt=retried_prompt,
+                            status="success",
+                            answer_text=retried_response.text,
+                            final_choice=_extract_final_choice(retried_response.text, dataset=resolved.dataset),
+                            latency_ms=retried_response.latency_ms,
+                            raw_response=_build_candidate_answer_raw_response(
+                                raw_response=retried_response.raw_response if request.save_raw_response else None,
+                                retry_metadata=retry_metadata,
+                                candidate_budget_metadata=candidate_budget_metadata,
+                            ),
+                        )
+                    )
+                    audit.event(
+                        AuditEvent(
+                            "answer_persisted",
+                            (
+                                f"candidate_answer_id={stored_answer.candidate_answer_id} "
+                                f"question_id={question.question_id} status=success"
+                            ),
+                        )
+                    )
+                    return CandidateGenerationOutcome(
+                        answer=stored_answer,
+                        retrieval_result_for_prompt=retried_budget.retrieval_result_for_prompt,
+                        budget=retried_budget.budget,
+                        runtime_config=updated_runtime_config,
+                    )
+                except Exception as retry_error:
+                    error = retry_error
+                    if "retried_prompt" in locals():
+                        rendered_prompt = retried_prompt
+                    if "retried_budget" in locals():
+                        initial_budget = retried_budget
+
+        audit.event(
+            AuditEvent(
+                "generation_failed",
+                (
+                    f"candidate_run_id={candidate_run_id} question_id={question.question_id} "
+                    f"error={error}"
+                ),
+            )
+        )
+        stored_answer = repository.persist_candidate_answer(
+            answer=CandidateAnswerRecord(
+                candidate_answer_id=None,
+                candidate_run_id=candidate_run_id,
+                question_id=question.question_id,
+                model_name=resolved.model_name,
+                rendered_prompt=rendered_prompt,
+                status="failed",
+                error_message=str(error),
+                raw_response=_build_candidate_answer_raw_response(
+                    raw_response=None,
+                    retry_metadata=retry_metadata,
+                    candidate_budget_metadata=candidate_budget_metadata,
+                ),
+            )
+        )
+        return CandidateGenerationOutcome(
+            answer=stored_answer,
+            retrieval_result_for_prompt=initial_budget.retrieval_result_for_prompt,
+            budget=initial_budget.budget,
+            runtime_config=updated_runtime_config,
+        )
+
+
+def _build_candidate_answer_raw_response(
+    *,
+    raw_response: dict[str, Any] | None,
+    retry_metadata: dict[str, Any] | None,
+    candidate_budget_metadata: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    if raw_response is None and retry_metadata is None and candidate_budget_metadata is None:
+        return None
+    payload: dict[str, Any] = {}
+    if raw_response is not None:
+        payload.update(raw_response)
+    if retry_metadata is not None:
+        payload["context_window_retry"] = retry_metadata
+    if candidate_budget_metadata is not None:
+        payload["candidate_budget"] = candidate_budget_metadata
+    return payload
+
+
+def _runtime_config_from_profile(
+    *,
+    runtime_config: ResolvedCandidateRuntimeConfig,
+    profile: CandidateModelRuntimeProfile,
+    question: CandidateQuestionRecord,
+    prompt: CandidatePromptRecord,
+    resolved: ResolvedRunCandidatesRag,
+) -> ResolvedCandidateRuntimeConfig:
+    requested_max_tokens = int(runtime_config.requested_max_tokens)
+    max_tokens = resolve_candidate_max_output_tokens(
+        profile=profile,
+        requested_max_tokens=requested_max_tokens,
+    )
+    return replace(
+        runtime_config,
+        default_max_output_tokens=profile.default_max_output_tokens,
+        max_output_tokens_cap=profile.max_output_tokens_cap,
+        requested_max_tokens=requested_max_tokens,
+        max_tokens=max_tokens,
+        context_window_tokens=profile.context_window_tokens,
+        safety_margin_tokens=profile.safety_margin_tokens,
+        chars_per_token_estimate=profile.chars_per_token_estimate,
+        prompt_budget_utilization=profile.prompt_budget_utilization,
+        model_profile_source=profile.source,
+        model_profile_confidence=profile.confidence,
+    )
+
+
+def _set_client_max_tokens_if_supported(client: CandidateClient, max_tokens: int) -> None:
+    config = getattr(client, "config", None)
+    if config is None or not hasattr(config, "max_tokens"):
+        return
+    setattr(client, "config", replace(config, max_tokens=int(max_tokens)))
+
+
+def _budget_retrieval_for_question(
+    *,
+    question: CandidateQuestionRecord,
+    retrieval_result: RagRetrievalResult,
+    prompt: CandidatePromptRecord,
+    runtime_config: ResolvedCandidateRuntimeConfig,
+) -> BudgetedCandidateRetrievalContext:
+    return budget_candidate_retrieval_context(
+        question=question,
+        retrieval_result=retrieval_result,
+        prompt=prompt,
+        model_name=runtime_config.model_name,
+        av3_provider=runtime_config.av3_provider,
+        max_tokens=runtime_config.max_tokens,
+        safety_margin_tokens=runtime_config.safety_margin_tokens,
+        context_window_tokens=runtime_config.context_window_tokens,
+        chars_per_token_estimate=runtime_config.chars_per_token_estimate,
+        prompt_budget_utilization=runtime_config.prompt_budget_utilization,
+    )
+
+
+def _format_candidate_prompt_budget(*, question: CandidateQuestionRecord, budget: CandidatePromptBudget) -> str:
+    return (
+        "Candidate prompt budget:\n"
+        f"  question_id: {question.question_id}\n"
+        f"  estimated_prompt_tokens_before_budget: {budget.estimated_prompt_tokens_before_budget}\n"
+        f"  estimated_prompt_tokens_after_budget: {budget.estimated_prompt_tokens_after_budget}\n"
+        f"  target_prompt_budget: {budget.target_prompt_budget or 'unknown'}\n"
+        f"  chars_per_token_estimate: {budget.chars_per_token_estimate:g}\n"
+        f"  prompt_budget_utilization: {budget.prompt_budget_utilization:g}\n"
+        f"  retrieved_chunks: {budget.retrieved_chunks}\n"
+        f"  included_chunks: {budget.included_chunks}\n"
+        f"  truncated_chunks: {budget.truncated_chunks}\n"
+        f"  dropped_chunks: {budget.dropped_chunks}"
+    )
+
+
+def _log_candidate_prompt_budget(
+    *,
+    audit: AuditLogger,
+    question: CandidateQuestionRecord,
+    budget: CandidatePromptBudget,
+) -> None:
+    budget_summary = _format_candidate_prompt_budget(question=question, budget=budget)
+    audit.file_event("candidate_prompt_budget", budget_summary.replace("\n", " | "))
+    audit.terminal_event(budget_summary)
 
 
 def _default_retriever_factory(

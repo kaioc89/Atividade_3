@@ -13,6 +13,8 @@ from .contracts import (
     CandidateAnswerRecord,
     CandidateModelAssignment,
     CandidateModelAssignmentRange,
+    CandidateModelRuntimeObservationRecord,
+    CandidateModelRuntimeProfileRecord,
     CandidatePromptRecord,
     CandidateQuestionRecord,
     CandidateRunRecord,
@@ -36,6 +38,7 @@ from .contracts import (
     RagVectorRunRecord,
     StoredJudgeRole,
 )
+from .candidate_runtime_learning import normalize_provider_model_key
 from .evaluation_details import EvaluationDetails, jsonb_dumps
 
 DATASET_ALIASES = {
@@ -244,14 +247,20 @@ def _default_candidate_model_assignments() -> tuple[CandidateModelAssignment, ..
             owner="Diego",
             original_provider_model_id="llama323b",
             original_runtime="AV1 repository/local inference",
-            av3_provider="featherless",
-            av3_provider_model_id="meta-llama/Llama-3.2-3B-Instruct",
+            av3_provider="openrouter",
+            av3_provider_model_id="meta-llama/llama-3.2-3b-instruct",
             hf_model_id="meta-llama/Llama-3.2-3B-Instruct",
             artifact_format="safetensors",
             original_quantization="FP16",
             av3_quantization="provider_default",
             match_type="same_model_different_quantization",
             validation_status="confirmed_from_av2_artifacts",
+            notes=(
+                "AV3 runtime adjustment: Featherless returned a provider chat-template "
+                "error for meta-llama/Llama-3.2-3B-Instruct. Using the same model "
+                "identity through OpenRouter as meta-llama/llama-3.2-3b-instruct for "
+                "execution compatibility."
+            ),
             ranges=diego_ranges,
         ),
         CandidateModelAssignment(
@@ -292,14 +301,20 @@ def _default_candidate_model_assignments() -> tuple[CandidateModelAssignment, ..
             owner="Kaio",
             original_provider_model_id="Llama-3.2-3B-Instruct",
             original_runtime="AV1 repository/local inference",
-            av3_provider="featherless",
-            av3_provider_model_id="meta-llama/Llama-3.2-3B-Instruct",
+            av3_provider="openrouter",
+            av3_provider_model_id="meta-llama/llama-3.2-3b-instruct",
             hf_model_id="meta-llama/Llama-3.2-3B-Instruct",
             artifact_format="safetensors",
             original_quantization="FP32",
             av3_quantization="provider_default",
             match_type="same_model_different_quantization",
             validation_status="confirmed_from_av2_artifacts",
+            notes=(
+                "AV3 runtime adjustment: Featherless returned a provider chat-template "
+                "error for meta-llama/Llama-3.2-3B-Instruct. Using the same model "
+                "identity through OpenRouter as meta-llama/llama-3.2-3b-instruct for "
+                "execution compatibility."
+            ),
             ranges=kaio_ranges,
         ),
         CandidateModelAssignment(
@@ -453,13 +468,18 @@ def _default_candidate_model_assignments() -> tuple[CandidateModelAssignment, ..
             original_provider_model_id="GPT-5",
             original_runtime="ChatGPT UI",
             av3_provider="openrouter",
-            av3_provider_model_id="openai/gpt-5",
+            av3_provider_model_id="openai/gpt-5-chat",
             hf_model_id=None,
             artifact_format="api",
             original_quantization=None,
             av3_quantization="proprietary_api",
             match_type="same_model_api_reproduction",
             validation_status="confirmed_by_owner",
+            notes=(
+                "AV3 runtime adjustment: using openai/gpt-5-chat because the original "
+                "AV1 runtime was ChatGPT UI and openai/gpt-5 returned empty/unparsed "
+                "model text through OpenRouter."
+            ),
             ranges=jose_bruno_ranges,
         ),
         CandidateModelAssignment(
@@ -1338,6 +1358,57 @@ class JudgeRepository:
         )
         cursor.execute(
             """
+            CREATE TABLE IF NOT EXISTS av3.candidate_model_runtime_profiles (
+                id_runtime_profile SERIAL PRIMARY KEY,
+                av3_provider VARCHAR NOT NULL,
+                provider_model_id VARCHAR NOT NULL,
+                provider_model_key VARCHAR NOT NULL,
+                context_window_tokens INTEGER NULL
+                    CHECK (context_window_tokens IS NULL OR context_window_tokens >= 1024),
+                default_max_output_tokens INTEGER NULL
+                    CHECK (default_max_output_tokens IS NULL OR default_max_output_tokens > 0),
+                safety_margin_tokens INTEGER NOT NULL DEFAULT 512
+                    CHECK (safety_margin_tokens > 0),
+                source VARCHAR NOT NULL,
+                confidence VARCHAR NOT NULL,
+                active BOOLEAN NOT NULL DEFAULT TRUE,
+                first_observed_at TIMESTAMP NULL,
+                last_observed_at TIMESTAMP NULL,
+                observation_count INTEGER NOT NULL DEFAULT 0
+                    CHECK (observation_count >= 0),
+                metadata_jsonb JSONB,
+                created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+                updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+                UNIQUE (av3_provider, provider_model_key)
+            );
+            """
+        )
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS av3.candidate_model_runtime_observations (
+                id_runtime_observation SERIAL PRIMARY KEY,
+                av3_provider VARCHAR NOT NULL,
+                provider_model_id VARCHAR NOT NULL,
+                provider_model_key VARCHAR NOT NULL,
+                observed_context_window_tokens INTEGER NULL
+                    CHECK (observed_context_window_tokens IS NULL OR observed_context_window_tokens >= 1024),
+                observed_prompt_tokens INTEGER NULL
+                    CHECK (observed_prompt_tokens IS NULL OR observed_prompt_tokens > 0),
+                observed_requested_max_tokens INTEGER NULL
+                    CHECK (observed_requested_max_tokens IS NULL OR observed_requested_max_tokens > 0),
+                observed_total_tokens INTEGER NULL
+                    CHECK (observed_total_tokens IS NULL OR observed_total_tokens > 0),
+                error_class VARCHAR NOT NULL,
+                error_message TEXT NOT NULL,
+                id_candidate_run INTEGER NULL,
+                id_candidate_answer INTEGER NULL,
+                metadata_jsonb JSONB,
+                observed_at TIMESTAMP NOT NULL DEFAULT NOW()
+            );
+            """
+        )
+        cursor.execute(
+            """
             CREATE UNIQUE INDEX IF NOT EXISTS idx_prompt_candidatos_active_dataset
             ON av3.prompt_candidatos (dataset_code)
             WHERE ativo;
@@ -1378,6 +1449,59 @@ class JudgeRepository:
             """
             CREATE INDEX IF NOT EXISTS idx_candidate_answer_context_chunks_answer_rank
             ON av3.candidate_answer_context_chunks (id_candidate_answer, rank);
+            """
+        )
+        cursor.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_candidate_model_runtime_profiles_provider_model
+            ON av3.candidate_model_runtime_profiles (av3_provider, provider_model_key);
+            """
+        )
+        cursor.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_candidate_model_runtime_observations_provider_model
+            ON av3.candidate_model_runtime_observations (av3_provider, provider_model_key, observed_at DESC);
+            """
+        )
+        cursor.execute(
+            """
+            ALTER TABLE av3.candidate_model_runtime_profiles
+            DROP CONSTRAINT IF EXISTS candidate_model_runtime_profiles_context_window_tokens_check;
+            """
+        )
+        cursor.execute(
+            """
+            ALTER TABLE av3.candidate_model_runtime_profiles
+            DROP CONSTRAINT IF EXISTS candidate_model_runtime_profiles_context_window_min_1024_check;
+            """
+        )
+        cursor.execute(
+            """
+            ALTER TABLE av3.candidate_model_runtime_profiles
+            ADD CONSTRAINT candidate_model_runtime_profiles_context_window_min_1024_check
+            CHECK (context_window_tokens IS NULL OR context_window_tokens >= 1024) NOT VALID;
+            """
+        )
+        cursor.execute(
+            """
+            ALTER TABLE av3.candidate_model_runtime_observations
+            DROP CONSTRAINT IF EXISTS candidate_model_runtime_obse_observed_context_window_toke_check;
+            """
+        )
+        cursor.execute(
+            """
+            ALTER TABLE av3.candidate_model_runtime_observations
+            DROP CONSTRAINT IF EXISTS candidate_model_runtime_observations_context_window_min_1024_check;
+            """
+        )
+        cursor.execute(
+            """
+            ALTER TABLE av3.candidate_model_runtime_observations
+            ADD CONSTRAINT candidate_model_runtime_observations_context_window_min_1024_check
+            CHECK (
+                observed_context_window_tokens IS NULL
+                OR observed_context_window_tokens >= 1024
+            ) NOT VALID;
             """
         )
 
@@ -3146,6 +3270,238 @@ class JudgeRepository:
                 )
                 row = cursor.fetchone()
         return _row_to_candidate_answer(row)
+
+    def get_candidate_model_runtime_profile(
+        self,
+        *,
+        av3_provider: str,
+        provider_model_id: str,
+    ) -> CandidateModelRuntimeProfileRecord | None:
+        """Return the active runtime profile for one provider/model pair, if present."""
+        provider_key = av3_provider.strip().casefold()
+        model_key = normalize_provider_model_key(provider_model_id)
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT
+                    id_runtime_profile,
+                    av3_provider,
+                    provider_model_id,
+                    provider_model_key,
+                    context_window_tokens,
+                    default_max_output_tokens,
+                    safety_margin_tokens,
+                    source,
+                    confidence,
+                    active,
+                    first_observed_at,
+                    last_observed_at,
+                    observation_count,
+                    metadata_jsonb,
+                    created_at,
+                    updated_at
+                FROM av3.candidate_model_runtime_profiles
+                WHERE av3_provider = %s
+                  AND provider_model_key = %s
+                  AND active = TRUE
+                LIMIT 1;
+                """,
+                (provider_key, model_key),
+            )
+            row = cursor.fetchone()
+        return None if row is None else _row_to_candidate_model_runtime_profile(row)
+
+    def upsert_candidate_model_runtime_profile(
+        self,
+        *,
+        av3_provider: str,
+        provider_model_id: str,
+        context_window_tokens: int | None,
+        default_max_output_tokens: int | None,
+        safety_margin_tokens: int,
+        source: str,
+        confidence: str,
+        metadata: dict[str, Any] | None = None,
+    ) -> CandidateModelRuntimeProfileRecord:
+        """Insert or update one runtime profile, preserving the smallest observed context window."""
+        provider_key = av3_provider.strip().casefold()
+        model_id = provider_model_id.strip()
+        model_key = normalize_provider_model_key(provider_model_id)
+        with self.connection:
+            with self.connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    INSERT INTO av3.candidate_model_runtime_profiles
+                        (
+                            av3_provider,
+                            provider_model_id,
+                            provider_model_key,
+                            context_window_tokens,
+                            default_max_output_tokens,
+                            safety_margin_tokens,
+                            source,
+                            confidence,
+                            active,
+                            first_observed_at,
+                            last_observed_at,
+                            observation_count,
+                            metadata_jsonb,
+                            updated_at
+                        )
+                    VALUES (
+                        %s, %s, %s, %s, %s, %s, %s, %s, TRUE,
+                        CASE WHEN %s IS NULL THEN NULL ELSE NOW() END,
+                        CASE WHEN %s IS NULL THEN NULL ELSE NOW() END,
+                        CASE WHEN %s IS NULL THEN 0 ELSE 1 END,
+                        %s::jsonb,
+                        NOW()
+                    )
+                    ON CONFLICT (av3_provider, provider_model_key) DO UPDATE
+                    SET
+                        provider_model_id = EXCLUDED.provider_model_id,
+                        context_window_tokens = CASE
+                            WHEN EXCLUDED.context_window_tokens IS NULL THEN av3.candidate_model_runtime_profiles.context_window_tokens
+                            WHEN av3.candidate_model_runtime_profiles.context_window_tokens IS NULL THEN EXCLUDED.context_window_tokens
+                            ELSE LEAST(
+                                av3.candidate_model_runtime_profiles.context_window_tokens,
+                                EXCLUDED.context_window_tokens
+                            )
+                        END,
+                        default_max_output_tokens = COALESCE(
+                            EXCLUDED.default_max_output_tokens,
+                            av3.candidate_model_runtime_profiles.default_max_output_tokens
+                        ),
+                        safety_margin_tokens = EXCLUDED.safety_margin_tokens,
+                        source = EXCLUDED.source,
+                        confidence = EXCLUDED.confidence,
+                        active = TRUE,
+                        first_observed_at = CASE
+                            WHEN av3.candidate_model_runtime_profiles.first_observed_at IS NOT NULL
+                                THEN av3.candidate_model_runtime_profiles.first_observed_at
+                            WHEN EXCLUDED.context_window_tokens IS NULL THEN NULL
+                            ELSE NOW()
+                        END,
+                        last_observed_at = CASE
+                            WHEN EXCLUDED.context_window_tokens IS NULL
+                                THEN av3.candidate_model_runtime_profiles.last_observed_at
+                            ELSE NOW()
+                        END,
+                        observation_count = av3.candidate_model_runtime_profiles.observation_count
+                            + CASE WHEN EXCLUDED.context_window_tokens IS NULL THEN 0 ELSE 1 END,
+                        metadata_jsonb = CASE
+                            WHEN EXCLUDED.metadata_jsonb IS NULL THEN av3.candidate_model_runtime_profiles.metadata_jsonb
+                            WHEN av3.candidate_model_runtime_profiles.metadata_jsonb IS NULL THEN EXCLUDED.metadata_jsonb
+                            ELSE av3.candidate_model_runtime_profiles.metadata_jsonb || EXCLUDED.metadata_jsonb
+                        END,
+                        updated_at = NOW()
+                    RETURNING
+                        id_runtime_profile,
+                        av3_provider,
+                        provider_model_id,
+                        provider_model_key,
+                        context_window_tokens,
+                        default_max_output_tokens,
+                        safety_margin_tokens,
+                        source,
+                        confidence,
+                        active,
+                        first_observed_at,
+                        last_observed_at,
+                        observation_count,
+                        metadata_jsonb,
+                        created_at,
+                        updated_at;
+                    """,
+                    (
+                        provider_key,
+                        model_id,
+                        model_key,
+                        context_window_tokens,
+                        default_max_output_tokens,
+                        safety_margin_tokens,
+                        source,
+                        confidence,
+                        context_window_tokens,
+                        context_window_tokens,
+                        context_window_tokens,
+                        jsonb_dumps(metadata),
+                    ),
+                )
+                row = cursor.fetchone()
+        return _row_to_candidate_model_runtime_profile(row)
+
+    def record_candidate_model_runtime_observation(
+        self,
+        *,
+        av3_provider: str,
+        provider_model_id: str,
+        observed_context_window_tokens: int | None,
+        observed_prompt_tokens: int | None,
+        observed_requested_max_tokens: int | None,
+        observed_total_tokens: int | None,
+        error_class: str,
+        error_message: str,
+        candidate_run_id: int | None = None,
+        candidate_answer_id: int | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> CandidateModelRuntimeObservationRecord:
+        """Insert one immutable runtime observation row."""
+        provider_key = av3_provider.strip().casefold()
+        model_id = provider_model_id.strip()
+        model_key = normalize_provider_model_key(provider_model_id)
+        with self.connection:
+            with self.connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    INSERT INTO av3.candidate_model_runtime_observations
+                        (
+                            av3_provider,
+                            provider_model_id,
+                            provider_model_key,
+                            observed_context_window_tokens,
+                            observed_prompt_tokens,
+                            observed_requested_max_tokens,
+                            observed_total_tokens,
+                            error_class,
+                            error_message,
+                            id_candidate_run,
+                            id_candidate_answer,
+                            metadata_jsonb
+                        )
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb)
+                    RETURNING
+                        id_runtime_observation,
+                        av3_provider,
+                        provider_model_id,
+                        provider_model_key,
+                        observed_context_window_tokens,
+                        observed_prompt_tokens,
+                        observed_requested_max_tokens,
+                        observed_total_tokens,
+                        error_class,
+                        error_message,
+                        id_candidate_run,
+                        id_candidate_answer,
+                        metadata_jsonb,
+                        observed_at;
+                    """,
+                    (
+                        provider_key,
+                        model_id,
+                        model_key,
+                        observed_context_window_tokens,
+                        observed_prompt_tokens,
+                        observed_requested_max_tokens,
+                        observed_total_tokens,
+                        error_class,
+                        error_message,
+                        candidate_run_id,
+                        candidate_answer_id,
+                        jsonb_dumps(metadata),
+                    ),
+                )
+                row = cursor.fetchone()
+        return _row_to_candidate_model_runtime_observation(row)
 
     def persist_candidate_answer_context_chunks(
         self,
@@ -5457,6 +5813,46 @@ def _row_to_candidate_answer_context_chunk(row: Any) -> CandidateAnswerContextCh
         source_url=row[6],
         metadata=_normalize_metadata(row[7]),
         created_at=row[8].isoformat() if row[8] is not None else None,
+    )
+
+
+def _row_to_candidate_model_runtime_profile(row: Any) -> CandidateModelRuntimeProfileRecord:
+    return CandidateModelRuntimeProfileRecord(
+        runtime_profile_id=int(row[0]),
+        av3_provider=row[1],
+        provider_model_id=row[2],
+        provider_model_key=row[3],
+        context_window_tokens=int(row[4]) if row[4] is not None else None,
+        default_max_output_tokens=int(row[5]) if row[5] is not None else None,
+        safety_margin_tokens=int(row[6]),
+        source=row[7],
+        confidence=row[8],
+        active=bool(row[9]),
+        first_observed_at=row[10].isoformat() if row[10] is not None else None,
+        last_observed_at=row[11].isoformat() if row[11] is not None else None,
+        observation_count=int(row[12]),
+        metadata=_normalize_metadata(row[13]),
+        created_at=row[14].isoformat() if row[14] is not None else None,
+        updated_at=row[15].isoformat() if row[15] is not None else None,
+    )
+
+
+def _row_to_candidate_model_runtime_observation(row: Any) -> CandidateModelRuntimeObservationRecord:
+    return CandidateModelRuntimeObservationRecord(
+        runtime_observation_id=int(row[0]),
+        av3_provider=row[1],
+        provider_model_id=row[2],
+        provider_model_key=row[3],
+        observed_context_window_tokens=int(row[4]) if row[4] is not None else None,
+        observed_prompt_tokens=int(row[5]) if row[5] is not None else None,
+        observed_requested_max_tokens=int(row[6]) if row[6] is not None else None,
+        observed_total_tokens=int(row[7]) if row[7] is not None else None,
+        error_class=row[8],
+        error_message=row[9],
+        candidate_run_id=int(row[10]) if row[10] is not None else None,
+        candidate_answer_id=int(row[11]) if row[11] is not None else None,
+        metadata=_normalize_metadata(row[12]),
+        observed_at=row[13].isoformat() if row[13] is not None else None,
     )
 
 

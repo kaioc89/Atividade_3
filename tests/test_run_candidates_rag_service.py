@@ -8,6 +8,7 @@ from atividade_2.contracts import (
     CandidateAnswerRecord,
     CandidateModelAssignment,
     CandidateModelAssignmentRange,
+    CandidateModelRuntimeProfileRecord,
     CandidatePromptRecord,
     CandidateQuestionRecord,
     CandidateRawResponse,
@@ -16,6 +17,7 @@ from atividade_2.contracts import (
     RagVectorBaseSummary,
     RetrievedRagChunk,
 )
+from atividade_2.candidate_runtime_learning import parse_candidate_runtime_observation
 from atividade_2.run_candidates_rag_service import (
     RunCandidatesRagRequest,
     RunCandidatesRagService,
@@ -40,6 +42,9 @@ class FakeSettings:
     remote_candidate_temperature: float = 0.2
     remote_candidate_max_tokens: int | None = 1024
     remote_candidate_top_p: float = 0.9
+    remote_candidate_context_safety_margin_tokens: int = 512
+    remote_candidate_context_window_tokens: int | None = None
+    remote_candidate_retry_on_context_window: bool = False
 
 
 class FakeConnection:
@@ -58,8 +63,11 @@ class FakeRepository:
         self.created_runs: list[CandidateRunRecord] = []
         self.updated_runs: list[dict[str, object]] = []
         self.persisted_answers: list[CandidateAnswerRecord] = []
+        self.runtime_profiles: dict[tuple[str, str], CandidateModelRuntimeProfileRecord] = {}
+        self.runtime_observations: list[dict[str, object]] = []
         self.next_candidate_run_id = 501
         self.next_candidate_answer_id = 801
+        self.next_runtime_profile_id = 901
         self.vector_base = RagVectorBaseSummary(
             dataset="J1",
             dataset_name="OAB_Bench",
@@ -168,6 +176,24 @@ class FakeRepository:
                 ranges=(
                     CandidateModelAssignmentRange(None, None, "J1", 1, 2000),
                     CandidateModelAssignmentRange(None, None, "J2", 1, 2000),
+                ),
+            ),
+            CandidateModelAssignment(
+                assignment_id=None,
+                id_modelo_av2=1004,
+                owner="Tests",
+                original_provider_model_id="google/gemma-2-2b-it",
+                original_runtime="tests",
+                av3_provider="featherless",
+                artifact_format="api",
+                match_type="same_model_api_reproduction",
+                validation_status="confirmed_by_owner",
+                av3_provider_model_id="google/gemma-2-2b-it",
+                hf_model_id="google/gemma-2-2b-it",
+                original_quantization="provider_default",
+                av3_quantization="provider_default",
+                ranges=(
+                    CandidateModelAssignmentRange(None, None, "J1", 1, 2000),
                 ),
             ),
         )
@@ -326,6 +352,92 @@ class FakeRepository:
         self.next_candidate_answer_id += 1
         return stored
 
+    def get_candidate_model_runtime_profile(
+        self,
+        *,
+        av3_provider: str,
+        provider_model_id: str,
+    ) -> CandidateModelRuntimeProfileRecord | None:
+        return self.runtime_profiles.get((av3_provider, provider_model_id.strip().casefold()))
+
+    def upsert_candidate_model_runtime_profile(
+        self,
+        *,
+        av3_provider: str,
+        provider_model_id: str,
+        context_window_tokens: int | None,
+        default_max_output_tokens: int | None,
+        safety_margin_tokens: int,
+        source: str,
+        confidence: str,
+        metadata: dict[str, object] | None = None,
+    ) -> CandidateModelRuntimeProfileRecord:
+        key = (av3_provider, provider_model_id.strip().casefold())
+        existing = self.runtime_profiles.get(key)
+        if existing is not None and existing.context_window_tokens is not None and context_window_tokens is not None:
+            context_window_tokens = min(existing.context_window_tokens, context_window_tokens)
+        observation_count = 1 if context_window_tokens is not None else 0
+        if existing is not None:
+            observation_count = existing.observation_count + (1 if context_window_tokens is not None else 0)
+        record = CandidateModelRuntimeProfileRecord(
+            runtime_profile_id=existing.runtime_profile_id if existing is not None else self.next_runtime_profile_id,
+            av3_provider=av3_provider,
+            provider_model_id=provider_model_id,
+            provider_model_key=provider_model_id.strip().casefold(),
+            context_window_tokens=context_window_tokens if context_window_tokens is not None else (existing.context_window_tokens if existing else None),
+            default_max_output_tokens=(
+                default_max_output_tokens
+                if default_max_output_tokens is not None
+                else (existing.default_max_output_tokens if existing else None)
+            ),
+            safety_margin_tokens=safety_margin_tokens,
+            source=source,
+            confidence=confidence,
+            active=True,
+            first_observed_at="2026-06-05T10:00:00" if context_window_tokens is not None else None,
+            last_observed_at="2026-06-05T10:00:00" if context_window_tokens is not None else None,
+            observation_count=observation_count,
+            metadata=dict(metadata or {}),
+            created_at="2026-06-05T10:00:00",
+            updated_at="2026-06-05T10:00:00",
+        )
+        self.runtime_profiles[key] = record
+        if existing is None:
+            self.next_runtime_profile_id += 1
+        return record
+
+    def record_candidate_model_runtime_observation(
+        self,
+        *,
+        av3_provider: str,
+        provider_model_id: str,
+        observed_context_window_tokens: int | None,
+        observed_prompt_tokens: int | None,
+        observed_requested_max_tokens: int | None,
+        observed_total_tokens: int | None,
+        error_class: str,
+        error_message: str,
+        candidate_run_id: int | None = None,
+        candidate_answer_id: int | None = None,
+        metadata: dict[str, object] | None = None,
+    ):
+        self.runtime_observations.append(
+            {
+                "av3_provider": av3_provider,
+                "provider_model_id": provider_model_id,
+                "observed_context_window_tokens": observed_context_window_tokens,
+                "observed_prompt_tokens": observed_prompt_tokens,
+                "observed_requested_max_tokens": observed_requested_max_tokens,
+                "observed_total_tokens": observed_total_tokens,
+                "error_class": error_class,
+                "error_message": error_message,
+                "candidate_run_id": candidate_run_id,
+                "candidate_answer_id": candidate_answer_id,
+                "metadata": dict(metadata or {}),
+            }
+        )
+        return self.runtime_observations[-1]
+
 
 class FakeRetriever:
     def __init__(self) -> None:
@@ -454,6 +566,7 @@ def test_dry_run_resolves_configuration_without_db_writes_or_client_calls(tmp_pa
     repository.questions_by_dataset["J1"] = [
         CandidateQuestionRecord(101, "J1", "OAB_Bench", 71, "Questao J1 101.", None)
     ]
+    retriever.results[("J1", 101)] = _success_result(dataset="J1", question_id=101)
     service = _service(repository=repository, retriever=retriever, client=client)
 
     result = service.run(
@@ -475,11 +588,12 @@ def test_dry_run_resolves_configuration_without_db_writes_or_client_calls(tmp_pa
     assert result.summary is None
     assert result.runtime_config_summary is not None
     assert "av3 provider: featherless" in result.runtime_config_summary
-    assert "api_key: <set>" in result.runtime_config_summary
-    assert "max_tokens: 1024" in result.runtime_config_summary
+    assert "api_key: <not required in dry-run>" in result.runtime_config_summary
+    assert "final_max_tokens: 1024" in result.runtime_config_summary
+    assert "context_window_tokens: 8192" in result.runtime_config_summary
     assert repository.ensure_schema_calls == 1
     assert repository.created_runs == []
-    assert retriever.calls == []
+    assert retriever.calls == [(101, "J1", None)]
     assert client.calls == []
 
 
@@ -490,6 +604,7 @@ def test_dry_run_does_not_require_openrouter_or_featherless_keys(tmp_path) -> No
     repository.questions_by_dataset["J1"] = [
         CandidateQuestionRecord(101, "J1", "OAB_Bench", 119, "Questao J1 101.", None)
     ]
+    retriever.results[("J1", 101)] = _success_result(dataset="J1", question_id=101)
 
     @dataclass
     class MissingProviderKeysSettings:
@@ -527,6 +642,7 @@ def test_dry_run_does_not_require_openrouter_or_featherless_keys(tmp_path) -> No
     assert result.runtime_config_summary is not None
     assert "av3 provider: openrouter" in result.runtime_config_summary
     assert "api_key: <not required in dry-run>" in result.runtime_config_summary
+    assert retriever.calls == [(101, "J1", None)]
     assert client.calls == []
 
 
@@ -551,6 +667,7 @@ def test_real_run_creates_a_candidate_run(tmp_path) -> None:
     assert repository.created_runs[0].dataset == "J1"
     assert repository.created_runs[0].retrieval_run_id == 21
     assert repository.created_runs[0].prompt_id == 7
+    assert repository.created_runs[0].metadata["candidate_runtime_profile"]["av3_provider"] == "openrouter"
     assert repository.updated_runs[-1]["run_status"] == "completed"
 
 
@@ -773,12 +890,28 @@ def test_resolve_candidate_max_tokens_uses_requested_override_for_gemma() -> Non
     ) == 1024
 
 
-def test_resolve_candidate_max_tokens_defaults_gemma_to_1024() -> None:
+def test_resolve_candidate_max_tokens_defaults_gemma_to_profile_default() -> None:
     assert resolve_candidate_max_tokens(
         model_name="google/gemma-2-2b-it",
         av3_provider="featherless",
         requested_max_tokens=None,
-    ) == 1024
+    ) == 768
+
+
+def test_resolve_candidate_max_tokens_caps_phi3_requested_tokens() -> None:
+    assert resolve_candidate_max_tokens(
+        model_name="microsoft/Phi-3-mini-4k-instruct",
+        av3_provider="featherless",
+        requested_max_tokens=768,
+    ) == 512
+
+
+def test_resolve_candidate_max_tokens_caps_tinyllama_requested_tokens() -> None:
+    assert resolve_candidate_max_tokens(
+        model_name="TinyLlama/TinyLlama-1.1B-Chat-v1.0",
+        av3_provider="featherless",
+        requested_max_tokens=768,
+    ) == 512
 
 
 def test_resolve_candidate_max_tokens_defaults_openrouter_grok_to_3000() -> None:
@@ -787,6 +920,116 @@ def test_resolve_candidate_max_tokens_defaults_openrouter_grok_to_3000() -> None
         av3_provider="openrouter",
         requested_max_tokens=None,
     ) == 3000
+
+
+def test_runtime_observation_parser_extracts_platform_records_context_length() -> None:
+    observation = parse_candidate_runtime_observation(
+        "Remote candidate returned HTTP 400: Platform records context_length as 4096."
+    )
+
+    assert observation is not None
+    assert observation.error_class == "context_window_exceeded"
+    assert observation.observed_context_window_tokens == 4096
+
+
+def test_runtime_observation_parser_extracts_context_size_of_pattern() -> None:
+    observation = parse_candidate_runtime_observation("Requested prompt exceeds context size of 8192 tokens.")
+
+    assert observation is not None
+    assert observation.observed_context_window_tokens == 8192
+
+
+def test_runtime_observation_parser_ignores_non_context_errors() -> None:
+    assert parse_candidate_runtime_observation("Provider model is gated for this API key.") is None
+
+
+def test_runtime_config_uses_db_profile_before_static_fallback() -> None:
+    repository = FakeRepository()
+    repository.runtime_profiles[("featherless", "google/gemma-2-2b-it")] = CandidateModelRuntimeProfileRecord(
+        runtime_profile_id=1,
+        av3_provider="featherless",
+        provider_model_id="google/gemma-2-2b-it",
+        provider_model_key="google/gemma-2-2b-it",
+        context_window_tokens=4096,
+        default_max_output_tokens=900,
+        safety_margin_tokens=256,
+        source="db_observed",
+        confidence="observed_error",
+        active=True,
+        first_observed_at="2026-06-05T10:00:00",
+        last_observed_at="2026-06-05T10:00:00",
+        observation_count=2,
+        metadata={},
+        created_at="2026-06-05T10:00:00",
+        updated_at="2026-06-05T10:00:00",
+    )
+    service = _service(repository=repository)
+    request = RunCandidatesRagRequest(
+        dataset="J1",
+        model_name="google/gemma-2-2b-it",
+        provider="remote_http",
+        batch_size=1,
+        question_sequence_start=71,
+        question_sequence_end=71,
+    )
+
+    runtime_config = _resolve_candidate_runtime_config(
+        repository=repository,
+        settings=FakeSettings(),
+        request=request,
+        resolved=service.resolve(request),
+        questions=[CandidateQuestionRecord(101, "J1", "OAB_Bench", 71, "Q", None)],
+        require_api_key=True,
+    )
+
+    assert runtime_config.context_window_tokens == 4096
+    assert runtime_config.default_max_output_tokens == 900
+    assert runtime_config.safety_margin_tokens == 256
+    assert runtime_config.model_profile_source == "db_observed"
+
+
+def test_runtime_config_uses_env_override_before_db_profile() -> None:
+    repository = FakeRepository()
+    repository.runtime_profiles[("featherless", "google/gemma-2-2b-it")] = CandidateModelRuntimeProfileRecord(
+        runtime_profile_id=1,
+        av3_provider="featherless",
+        provider_model_id="google/gemma-2-2b-it",
+        provider_model_key="google/gemma-2-2b-it",
+        context_window_tokens=4096,
+        default_max_output_tokens=900,
+        safety_margin_tokens=256,
+        source="db_observed",
+        confidence="observed_error",
+        active=True,
+        first_observed_at="2026-06-05T10:00:00",
+        last_observed_at="2026-06-05T10:00:00",
+        observation_count=2,
+        metadata={},
+        created_at="2026-06-05T10:00:00",
+        updated_at="2026-06-05T10:00:00",
+    )
+    service = _service(repository=repository)
+    request = RunCandidatesRagRequest(
+        dataset="J1",
+        model_name="google/gemma-2-2b-it",
+        provider="remote_http",
+        batch_size=1,
+        question_sequence_start=71,
+        question_sequence_end=71,
+        remote_candidate_context_window_tokens=2048,
+    )
+
+    runtime_config = _resolve_candidate_runtime_config(
+        repository=repository,
+        settings=FakeSettings(),
+        request=request,
+        resolved=service.resolve(request),
+        questions=[CandidateQuestionRecord(101, "J1", "OAB_Bench", 71, "Q", None)],
+        require_api_key=True,
+    )
+
+    assert runtime_config.context_window_tokens == 2048
+    assert runtime_config.model_profile_source == "env_override"
 
 
 def test_runtime_config_uses_explicit_candidate_max_tokens_for_gemma() -> None:
@@ -812,6 +1055,23 @@ def test_runtime_config_uses_explicit_candidate_max_tokens_for_gemma() -> None:
     )
 
     assert runtime_config.max_tokens == 1024
+
+
+def test_explicit_candidate_max_tokens_reaches_remote_http_client_config() -> None:
+    request = RunCandidatesRagRequest(
+        dataset="J1",
+        model_name="google/gemma-2-2b-it",
+        provider="remote_http",
+        remote_candidate_base_url="https://api.featherless.ai/v1",
+        remote_candidate_api_key="candidate-secret",
+        remote_candidate_temperature=0.2,
+        remote_candidate_max_tokens=1024,
+        remote_candidate_top_p=0.9,
+    )
+
+    client = _default_client_factory(request, FakeSettings())
+
+    assert client.config.max_tokens == 1024
 
 
 def test_provider_keys_are_not_logged_in_audit_file(tmp_path) -> None:
@@ -841,6 +1101,120 @@ def test_provider_keys_are_not_logged_in_audit_file(tmp_path) -> None:
     assert "openrouter-test-key" not in audit_text
     assert "featherless-test-key" not in audit_text
     assert "api_key: <set>" in audit_text
+
+
+def test_context_window_failure_records_observation_and_upserts_profile(tmp_path) -> None:
+    repository = FakeRepository()
+    retriever = FakeRetriever()
+    retriever.results[("J1", 101)] = _success_result(dataset="J1", question_id=101, chunk_text="A" * 800)
+    client = FakeClient(
+        failures={
+            0: RuntimeError("Platform records context_length as 4096; prompt contains 3900 tokens; max_tokens 1024.")
+        }
+    )
+    service = _service(repository=repository, retriever=retriever, client=client)
+
+    result = service.run(
+        RunCandidatesRagRequest(
+            dataset="J1",
+            model_name="google/gemma-2-2b-it",
+            provider="remote_http",
+            batch_size=1,
+            audit_log=str(tmp_path / "context-window-learning.log"),
+            no_audit_animation=True,
+        )
+    )
+
+    assert result.summary is not None
+    assert result.summary.failed_answers == 1
+    assert repository.runtime_observations[0]["observed_context_window_tokens"] == 4096
+    profile = repository.runtime_profiles[("featherless", "google/gemma-2-2b-it")]
+    assert profile.context_window_tokens == 4096
+    assert profile.source == "db_observed"
+    assert repository.persisted_answers[0].raw_response["context_window_retry"]["attempted"] is False
+
+
+def test_context_window_failure_retries_once_when_enabled(tmp_path) -> None:
+    repository = FakeRepository()
+    retriever = FakeRetriever()
+    retriever.results[("J1", 101)] = _success_result(dataset="J1", question_id=101, chunk_text="A" * 800)
+    client = FakeClient(
+        failures={0: RuntimeError("Platform records context_length as 4096; context size of 4096.")},
+        responses={
+            1: CandidateRawResponse(
+                text="Resposta final apos retry.",
+                provider="fake",
+                model="google/gemma-2-2b-it",
+                latency_ms=11,
+            )
+        },
+    )
+    service = _service(repository=repository, retriever=retriever, client=client)
+
+    result = service.run(
+        RunCandidatesRagRequest(
+            dataset="J1",
+            model_name="google/gemma-2-2b-it",
+            provider="remote_http",
+            batch_size=1,
+            remote_candidate_retry_on_context_window=True,
+            audit_log=str(tmp_path / "context-window-retry.log"),
+            no_audit_animation=True,
+        )
+    )
+
+    assert result.summary is not None
+    assert result.summary.successful_answers == 1
+    assert len(client.calls) == 2
+    assert repository.persisted_answers[0].status == "success"
+    assert repository.persisted_answers[0].raw_response["context_window_retry"]["attempted"] is True
+    assert repository.updated_runs[-1]["metadata"]["candidate_runtime_profile"]["context_window_tokens"] == 4096
+
+
+def test_context_window_failure_does_not_retry_when_disabled(tmp_path) -> None:
+    repository = FakeRepository()
+    retriever = FakeRetriever()
+    retriever.results[("J1", 101)] = _success_result(dataset="J1", question_id=101, chunk_text="A" * 800)
+    client = FakeClient(
+        failures={0: RuntimeError("Platform records context_length as 4096; context size of 4096.")}
+    )
+    service = _service(repository=repository, retriever=retriever, client=client)
+
+    service.run(
+        RunCandidatesRagRequest(
+            dataset="J1",
+            model_name="google/gemma-2-2b-it",
+            provider="remote_http",
+            batch_size=1,
+            audit_log=str(tmp_path / "context-window-no-retry.log"),
+            no_audit_animation=True,
+        )
+    )
+
+    assert len(client.calls) == 1
+
+
+def test_non_context_error_does_not_retry(tmp_path) -> None:
+    repository = FakeRepository()
+    retriever = FakeRetriever()
+    retriever.results[("J1", 101)] = _success_result(dataset="J1", question_id=101)
+    client = FakeClient(failures={0: RuntimeError("Provider model is gated for this API key.")})
+    service = _service(repository=repository, retriever=retriever, client=client)
+
+    service.run(
+        RunCandidatesRagRequest(
+            dataset="J1",
+            model_name="google/gemma-2-2b-it",
+            provider="remote_http",
+            batch_size=1,
+            remote_candidate_retry_on_context_window=True,
+            audit_log=str(tmp_path / "non-context-error.log"),
+            no_audit_animation=True,
+        )
+    )
+
+    assert len(client.calls) == 1
+    assert repository.runtime_observations == []
 
 
 def test_runtime_config_formatter_redacts_missing_key_in_dry_run() -> None:
@@ -1109,7 +1483,9 @@ def test_persists_successful_candidate_answer(tmp_path) -> None:
     assert answer.status == "success"
     assert answer.answer_text == "Justificativa breve.\nAlternativa final: B"
     assert answer.final_choice == "B"
-    assert answer.raw_response == {"text": "Justificativa breve.\nAlternativa final: B"}
+    assert answer.raw_response is not None
+    assert answer.raw_response["text"] == "Justificativa breve.\nAlternativa final: B"
+    assert "candidate_budget" in answer.raw_response
 
 
 def test_persists_context_snapshot(tmp_path) -> None:
@@ -1134,6 +1510,142 @@ def test_persists_context_snapshot(tmp_path) -> None:
     candidate_answer_id, retrieval_result = snapshot_service.calls[0]
     assert candidate_answer_id == 801
     assert retrieval_result.status == "success"
+
+
+def test_budgeted_context_snapshot_uses_included_text_and_metadata(tmp_path) -> None:
+    repository = FakeRepository()
+    retriever = FakeRetriever()
+    repository.questions_by_dataset["J1"] = [
+        CandidateQuestionRecord(101, "J1", "OAB_Bench", 71, "Questao J1 101.", None)
+    ]
+    retriever.results[("J1", 101)] = _success_result(dataset="J1", question_id=101, chunk_text="A" * 2000)
+    snapshot_service = FakeSnapshotService()
+    service = _service(repository=repository, retriever=retriever, snapshot_service=snapshot_service)
+
+    service.run(
+        RunCandidatesRagRequest(
+            dataset="J1",
+            model_name="google/gemma-2-2b-it",
+            provider="remote_http",
+            batch_size=1,
+            remote_candidate_max_tokens=1024,
+            remote_candidate_context_window_tokens=2400,
+            remote_candidate_context_safety_margin_tokens=128,
+            audit_log=str(tmp_path / "budgeted-snapshot.log"),
+            no_audit_animation=True,
+        )
+    )
+
+    _candidate_answer_id, retrieval_result = snapshot_service.calls[0]
+    chunk = retrieval_result.chunks[0]
+    budget_metadata = chunk.metadata["candidate_budget"]
+    assert len(chunk.chunk_text) < 2000
+    assert budget_metadata["included_in_prompt"] is True
+    assert budget_metadata["was_truncated"] is True
+    assert budget_metadata["truncation_reason"] == "context_budget"
+
+
+def test_run_metadata_records_candidate_budget(tmp_path) -> None:
+    repository = FakeRepository()
+    retriever = FakeRetriever()
+    repository.questions_by_dataset["J1"] = [
+        CandidateQuestionRecord(101, "J1", "OAB_Bench", 71, "Questao J1 101.", None)
+    ]
+    retriever.results[("J1", 101)] = _success_result(dataset="J1", question_id=101, chunk_text="A" * 2000)
+    service = _service(repository=repository, retriever=retriever)
+
+    service.run(
+        RunCandidatesRagRequest(
+            dataset="J1",
+            model_name="google/gemma-2-2b-it",
+            provider="remote_http",
+            batch_size=1,
+            remote_candidate_max_tokens=1024,
+            remote_candidate_context_window_tokens=2400,
+            remote_candidate_context_safety_margin_tokens=128,
+            audit_log=str(tmp_path / "budgeted-run-metadata.log"),
+            no_audit_animation=True,
+        )
+    )
+
+    metadata = repository.updated_runs[-1]["metadata"]
+    candidate_budget = metadata["candidate_budget"]
+    assert candidate_budget["context_window_tokens"] == 2400
+    assert candidate_budget["requested_max_tokens"] == 1024
+    assert candidate_budget["final_max_tokens"] == 1024
+    assert candidate_budget["safety_margin_tokens"] == 512
+    assert candidate_budget["chars_per_token_estimate"] == 3
+    assert candidate_budget["prompt_budget_utilization"] == 0.85
+    assert candidate_budget["safe_prompt_budget"] == 864
+    assert candidate_budget["target_prompt_budget"] == 734
+    assert candidate_budget["estimated_prompt_tokens_after_budget"] <= candidate_budget["target_prompt_budget"]
+    assert candidate_budget["retrieved_chunks"] == 1
+    assert candidate_budget["included_chunks"] == 1
+    assert candidate_budget["truncated_chunks"] == 1
+
+
+def test_dry_run_logs_preflight_and_prompt_budget_without_creating_run(tmp_path) -> None:
+    repository = FakeRepository()
+    retriever = FakeRetriever()
+    repository.questions_by_dataset["J1"] = [
+        CandidateQuestionRecord(101, "J1", "OAB_Bench", 71, "Questao J1 101.", None)
+    ]
+    retriever.results[("J1", 101)] = _success_result(dataset="J1", question_id=101, chunk_text="A" * 2000)
+    audit_path = tmp_path / "gemma-dry-run-budget.log"
+    service = _service(repository=repository, retriever=retriever)
+
+    service.run(
+        RunCandidatesRagRequest(
+            dataset="J1",
+            model_name="google/gemma-2-2b-it",
+            provider="remote_http",
+            batch_size=1,
+            question_sequence_start=71,
+            question_sequence_end=71,
+            dry_run=True,
+            audit_log=str(audit_path),
+            no_audit_animation=True,
+        )
+    )
+
+    audit_text = audit_path.read_text(encoding="utf-8")
+    assert "Candidate runtime preflight:" in audit_text
+    assert "api_key: <not required in dry-run>" in audit_text
+    assert "final_max_tokens: 1024" in audit_text
+    assert "context_window_tokens: 8192" in audit_text
+    assert "Candidate prompt budget:" in audit_text
+    assert "question_id: 101" in audit_text
+    assert repository.created_runs == []
+
+
+def test_budget_failure_fails_before_creating_run_or_provider_call(tmp_path) -> None:
+    repository = FakeRepository()
+    retriever = FakeRetriever()
+    repository.questions_by_dataset["J1"] = [
+        CandidateQuestionRecord(101, "J1", "OAB_Bench", 71, "Q" * 2000, None)
+    ]
+    retriever.results[("J1", 101)] = _success_result(dataset="J1", question_id=101, chunk_text="A" * 2000)
+    client = FakeClient()
+    service = _service(repository=repository, retriever=retriever, client=client)
+
+    with pytest.raises(ValueError, match="Fixed candidate prompt without retrieved context exceeds"):
+        service.run(
+            RunCandidatesRagRequest(
+                dataset="J1",
+                model_name="google/gemma-2-2b-it",
+                provider="remote_http",
+                batch_size=1,
+                remote_candidate_max_tokens=80,
+                remote_candidate_context_window_tokens=900,
+                remote_candidate_context_safety_margin_tokens=20,
+                audit_log=str(tmp_path / "budget-failure.log"),
+                no_audit_animation=True,
+            )
+        )
+
+    assert client.calls == []
+    assert repository.created_runs == []
+    assert repository.updated_runs == []
 
 
 def test_records_failure_status_when_retrieval_has_no_chunks(tmp_path) -> None:

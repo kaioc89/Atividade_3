@@ -9,6 +9,7 @@ __pycache__/
 outputs/backup/*.sql
 outputs/audit/*.log
 backup_atividade_2.sql
+logs/candidate-rag*
 !outputs/audit/judge_run_20260502_011939.log
 !outputs/audit/judge_run_20260502_012032.log
 !outputs/audit/judge_run_20260502_012849.log
@@ -55,3 +56,6 @@ backup_atividade_2.sql
 !outputs/audit/judge_run_20260503_222934.log
 !outputs/audit/judge_run_20260503_223751.log
 !outputs/audit/judge_run_20260503_224237.log
+
+# AV3 generated smoke outputs
+outputs/av3/*.json
