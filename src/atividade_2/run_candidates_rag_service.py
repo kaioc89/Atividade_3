@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
@@ -74,6 +75,8 @@ class RunCandidatesRagRequest:
     remote_candidate_context_window_tokens: int | None = None
     remote_candidate_retry_on_context_window: bool | None = None
     remote_candidate_openai_compatible: bool = True
+    candidate_execution_strategy: str | None = None
+    candidate_parallel_max_workers: int | None = None
 
 
 @dataclass(frozen=True)
@@ -155,11 +158,28 @@ class ResolvedCandidateRuntimeConfig:
 
 
 @dataclass(frozen=True)
+class ResolvedCandidateExecutionConfig:
+    """Resolved candidate execution strategy and bounded parallelism."""
+
+    strategy: str
+    parallel_max_workers: int
+
+
+@dataclass(frozen=True)
 class CandidateGenerationOutcome:
     """Final per-question execution outcome after optional retry handling."""
 
     answer: CandidateAnswerRecord
     retrieval_result_for_prompt: RagRetrievalResult
+    budget: CandidatePromptBudget | None
+    runtime_config: ResolvedCandidateRuntimeConfig
+
+
+@dataclass(frozen=True)
+class CandidateQuestionTaskResult:
+    """Internal per-question task result plus metadata needed for run aggregation."""
+
+    question_result: CandidateQuestionRunResult
     budget: CandidatePromptBudget | None
     runtime_config: ResolvedCandidateRuntimeConfig
 
@@ -360,6 +380,8 @@ class RunCandidatesRagService:
                 question_sequence_start=start,
                 question_sequence_end=end,
                 question_id=request.question_id,
+                candidate_execution_strategy=request.candidate_execution_strategy or "sequential",
+                candidate_parallel_max_workers=request.candidate_parallel_max_workers or 2,
             ),
         )
 
@@ -370,7 +392,19 @@ class RunCandidatesRagService:
         with AuditLogger(file_path=resolved.audit_path, animate=animate) as audit:
             with audit.step("Loading configuration"):
                 settings = self._settings_loader()
-            audit.file_event("execution_summary", resolved.execution_summary.replace("\n", " | "))
+            execution_config = _resolve_candidate_execution_config(settings=settings, request=request)
+            execution_summary = _build_execution_summary(
+                dataset=resolved.dataset,
+                batch_size=resolved.batch_size,
+                model_name=resolved.model_name,
+                provider=resolved.provider,
+                question_sequence_start=resolved.question_sequence_start,
+                question_sequence_end=resolved.question_sequence_end,
+                question_id=resolved.question_id,
+                candidate_execution_strategy=execution_config.strategy,
+                candidate_parallel_max_workers=execution_config.parallel_max_workers,
+            )
+            audit.file_event("execution_summary", execution_summary.replace("\n", " | "))
             with audit.step("Connecting to local PostgreSQL", detail="DATABASE_URL=<redacted>"):
                 connection = self._connect(settings.database_url)
             repository: CandidateRunRepositoryProtocol | None = None
@@ -424,6 +458,7 @@ class RunCandidatesRagService:
                 )
                 runtime_summary = _format_candidate_runtime_config(
                     runtime_config,
+                    execution_config=execution_config,
                     api_key_state="<not required in dry-run>"
                     if request.dry_run
                     else ("<set>" if runtime_config.api_key else "<missing>"),
@@ -463,7 +498,7 @@ class RunCandidatesRagService:
                     return RunCandidatesRagResult(
                         dry_run=True,
                         audit_log=str(resolved.audit_path),
-                        execution_summary=resolved.execution_summary,
+                        execution_summary=execution_summary,
                         runtime_config_summary=runtime_summary,
                         batch_size=resolved.batch_size,
                         dataset=resolved.dataset,
@@ -487,7 +522,7 @@ class RunCandidatesRagService:
                         top_p=runtime_config.top_p,
                         started_at=started_at,
                         created_by=request.created_by,
-                        metadata=_run_metadata(resolved, vector_base, prompt, request, runtime_config),
+                        metadata=_run_metadata(resolved, vector_base, prompt, request, runtime_config, execution_config),
                     )
                 )
                 audit.event(
@@ -500,186 +535,60 @@ class RunCandidatesRagService:
                         ),
                     )
                 )
-                client = None
-                if questions:
-                    client_request = request
-                    if self._client_factory is _default_client_factory:
-                        client_request = _with_remote_candidate_config(request, runtime_config)
-                    client = self._client_factory(client_request, settings)
-                question_results: list[CandidateQuestionRunResult] = []
-                successful_answers = 0
-                failed_answers = 0
-                skipped_questions = 0
-                budget_summaries: list[CandidatePromptBudget] = []
-
-                for question in questions:
-                    audit.event(
-                        AuditEvent(
-                            "question_started",
-                            (
-                                f"candidate_run_id={run.candidate_run_id} question_id={question.question_id} "
-                                f"sequence={question.question_sequence} dataset={question.dataset}"
-                            ),
-                        )
-                    )
-                    if resolved.skip_existing_successful and repository.successful_candidate_answer_exists(
-                        dataset=resolved.dataset,
-                        model_name=resolved.model_name,
-                        question_id=question.question_id,
-                        exclude_candidate_run_id=run.candidate_run_id,
-                    ):
-                        skipped_questions += 1
-                        question_results.append(
-                            CandidateQuestionRunResult(
-                                question_id=question.question_id,
-                                question_sequence=question.question_sequence,
-                                status="skipped",
-                                error_message="existing_successful_answer",
-                            )
-                        )
-                        audit.event(
-                            AuditEvent(
-                                "question_skipped",
-                                (
-                                    f"candidate_run_id={run.candidate_run_id} question_id={question.question_id} "
-                                    "reason=existing_successful_answer"
-                                ),
-                            )
-                        )
-                        continue
-
-                    retrieval_result = retriever.retrieve_for_question(
-                        question_id=question.question_id,
-                        dataset=resolved.dataset,
-                    )
-                    audit.event(
-                        AuditEvent(
-                            "retrieval_finished",
-                            (
-                                f"candidate_run_id={run.candidate_run_id} question_id={question.question_id} "
-                                f"status={retrieval_result.status} chunks={len(retrieval_result.chunks)}"
-                            ),
-                        )
-                    )
-                    if retrieval_result.status != "success":
-                        rendered_prompt = _render_prompt(
-                            question=question,
-                            retrieval_result=retrieval_result,
-                            prompt=prompt,
-                        )
-                        stored_answer = repository.persist_candidate_answer(
-                            answer=CandidateAnswerRecord(
-                                candidate_answer_id=None,
-                                candidate_run_id=int(run.candidate_run_id),
-                                question_id=question.question_id,
-                                model_name=resolved.model_name,
-                                rendered_prompt=rendered_prompt,
-                                status="failed",
-                                error_message=f"Retrieval failed: {retrieval_result.status}",
-                            )
-                        )
-                        failed_answers += 1
-                        question_results.append(
-                            CandidateQuestionRunResult(
-                                question_id=question.question_id,
-                                question_sequence=question.question_sequence,
-                                status="failed",
-                                retrieval_status=retrieval_result.status,
-                                candidate_answer_id=stored_answer.candidate_answer_id,
-                                error_message=stored_answer.error_message,
-                            )
-                        )
-                        audit.event(
-                            AuditEvent(
-                                "answer_persisted",
-                                (
-                                    f"candidate_answer_id={stored_answer.candidate_answer_id} "
-                                    f"question_id={question.question_id} status=failed"
-                                ),
-                            )
-                        )
-                        continue
-
-                    assert client is not None
-                    outcome = _execute_candidate_generation(
-                        repository=repository,
-                        client=client,
-                        audit=audit,
-                        question=question,
-                        retrieval_result=retrieval_result,
-                        prompt=prompt,
-                        resolved=resolved,
+                client_request = request
+                if self._client_factory is _default_client_factory:
+                    client_request = _with_remote_candidate_config(request, runtime_config)
+                if execution_config.strategy == "parallel":
+                    task_results = self._run_candidate_questions_parallel(
+                        settings=settings,
                         request=request,
+                        client_request=client_request,
+                        resolved=resolved,
+                        prompt=prompt,
+                        questions=questions,
                         runtime_config=runtime_config,
                         candidate_run_id=int(run.candidate_run_id),
+                        execution_config=execution_config,
+                        audit=audit,
                     )
-                    runtime_config = outcome.runtime_config
-                    if outcome.budget is not None:
-                        budget_summaries.append(outcome.budget)
-                        _log_candidate_prompt_budget(
-                            audit=audit,
-                            question=question,
-                            budget=outcome.budget,
-                        )
-                    stored_answer = outcome.answer
-                    if stored_answer.status == "success":
-                        successful_answers += 1
-                        question_results.append(
-                            CandidateQuestionRunResult(
-                                question_id=question.question_id,
-                                question_sequence=question.question_sequence,
-                                status="success",
-                                retrieval_status=retrieval_result.status,
-                                candidate_answer_id=stored_answer.candidate_answer_id,
-                                final_choice=stored_answer.final_choice,
-                                latency_ms=stored_answer.latency_ms,
+                else:
+                    client = self._client_factory(client_request, settings) if questions else None
+                    task_results = []
+                    for question in questions:
+                        assert client is not None
+                        task_results.append(
+                            _execute_candidate_question_task(
+                                repository=repository,
+                                retriever=retriever,
+                                client=client,
+                                snapshot_service=snapshot_service,
+                                audit=audit,
+                                question=question,
+                                prompt=prompt,
+                                resolved=resolved,
+                                request=request,
+                                runtime_config=runtime_config,
+                                candidate_run_id=int(run.candidate_run_id),
+                                isolate_unhandled_errors=False,
+                                parallel_audit=False,
                             )
                         )
-                        audit.event(
-                            AuditEvent(
-                                "answer_persisted",
-                                (
-                                    f"candidate_answer_id={stored_answer.candidate_answer_id} "
-                                    f"question_id={question.question_id} status=success"
-                                ),
-                            )
-                        )
-                    else:
-                        failed_answers += 1
-                        question_results.append(
-                            CandidateQuestionRunResult(
-                                question_id=question.question_id,
-                                question_sequence=question.question_sequence,
-                                status="failed",
-                                retrieval_status=retrieval_result.status,
-                                candidate_answer_id=stored_answer.candidate_answer_id,
-                                error_message=stored_answer.error_message,
-                            )
-                        )
-                        audit.event(
-                            AuditEvent(
-                                "answer_persisted",
-                                (
-                                    f"candidate_answer_id={stored_answer.candidate_answer_id} "
-                                    f"question_id={question.question_id} status=failed"
-                                ),
-                            )
-                        )
+                        runtime_config = task_results[-1].runtime_config
 
-                    assert stored_answer.candidate_answer_id is not None
-                    snapshot_rows = snapshot_service.persist_retrieval_snapshot(
-                        candidate_answer_id=stored_answer.candidate_answer_id,
-                        retrieval_result=outcome.retrieval_result_for_prompt,
-                    )
-                    audit.event(
-                        AuditEvent(
-                            "snapshot_persisted",
-                            (
-                                f"candidate_answer_id={stored_answer.candidate_answer_id} "
-                                f"question_id={question.question_id} count={len(snapshot_rows)}"
-                            ),
-                        )
-                    )
+                task_results = sorted(
+                    task_results,
+                    key=lambda item: (
+                        item.question_result.question_sequence,
+                        item.question_result.question_id,
+                    ),
+                )
+                question_results = [item.question_result for item in task_results]
+                successful_answers = sum(1 for item in question_results if item.status == "success")
+                failed_answers = sum(1 for item in question_results if item.status == "failed")
+                skipped_questions = sum(1 for item in question_results if item.status == "skipped")
+                budget_summaries = [item.budget for item in task_results if item.budget is not None]
+                if task_results:
+                    runtime_config = task_results[-1].runtime_config
 
                 summary = CandidateRunSummary(
                     selected_questions=len(questions),
@@ -695,6 +604,10 @@ class RunCandidatesRagService:
                     "successful_answers": summary.successful_answers,
                     "failed_answers": summary.failed_answers,
                     "skipped_questions": summary.skipped_questions,
+                    "candidate_execution": {
+                        "strategy": execution_config.strategy,
+                        "parallel_max_workers": execution_config.parallel_max_workers,
+                    },
                     "candidate_runtime_profile": _candidate_runtime_profile_metadata(runtime_config),
                 }
                 candidate_budget_metadata = aggregate_budget_metadata(
@@ -722,7 +635,7 @@ class RunCandidatesRagService:
                 return RunCandidatesRagResult(
                     dry_run=False,
                     audit_log=str(resolved.audit_path),
-                    execution_summary=resolved.execution_summary,
+                    execution_summary=execution_summary,
                     runtime_config_summary=runtime_summary,
                     batch_size=resolved.batch_size,
                     dataset=resolved.dataset,
@@ -758,6 +671,104 @@ class RunCandidatesRagService:
                 with audit.step("Closing PostgreSQL connection"):
                     connection.close()
 
+    def _run_candidate_questions_parallel(
+        self,
+        *,
+        settings: Any,
+        request: RunCandidatesRagRequest,
+        client_request: RunCandidatesRagRequest,
+        resolved: ResolvedRunCandidatesRag,
+        prompt: CandidatePromptRecord,
+        questions: list[CandidateQuestionRecord],
+        runtime_config: ResolvedCandidateRuntimeConfig,
+        candidate_run_id: int,
+        execution_config: ResolvedCandidateExecutionConfig,
+        audit: AuditLogger,
+    ) -> list[CandidateQuestionTaskResult]:
+        if not questions:
+            return []
+
+        worker_count = min(execution_config.parallel_max_workers, len(questions))
+        audit.event(
+            AuditEvent(
+                "candidate_parallel_started",
+                (
+                    f"candidate_run_id={candidate_run_id} model={resolved.model_name} "
+                    f"workers={worker_count} selected={len(questions)}"
+                ),
+            )
+        )
+        task_results: list[CandidateQuestionTaskResult] = []
+        with ThreadPoolExecutor(max_workers=worker_count) as executor:
+            futures = [
+                executor.submit(
+                    self._run_candidate_question_worker,
+                    settings=settings,
+                    request=request,
+                    client_request=client_request,
+                    resolved=resolved,
+                    prompt=prompt,
+                    question=question,
+                    runtime_config=runtime_config,
+                    candidate_run_id=candidate_run_id,
+                    audit=audit,
+                )
+                for question in questions
+            ]
+            for future in as_completed(futures):
+                task_results.append(future.result())
+
+        successful_answers = sum(1 for item in task_results if item.question_result.status == "success")
+        failed_answers = sum(1 for item in task_results if item.question_result.status == "failed")
+        skipped_questions = sum(1 for item in task_results if item.question_result.status == "skipped")
+        audit.event(
+            AuditEvent(
+                "candidate_parallel_finished",
+                (
+                    f"candidate_run_id={candidate_run_id} workers={worker_count} "
+                    f"success={successful_answers} failed={failed_answers} skipped={skipped_questions}"
+                ),
+            )
+        )
+        return task_results
+
+    def _run_candidate_question_worker(
+        self,
+        *,
+        settings: Any,
+        request: RunCandidatesRagRequest,
+        client_request: RunCandidatesRagRequest,
+        resolved: ResolvedRunCandidatesRag,
+        prompt: CandidatePromptRecord,
+        question: CandidateQuestionRecord,
+        runtime_config: ResolvedCandidateRuntimeConfig,
+        candidate_run_id: int,
+        audit: AuditLogger,
+    ) -> CandidateQuestionTaskResult:
+        connection = self._connect(settings.database_url)
+        try:
+            repository = self._repository_factory(connection)
+            retriever = self._retriever_factory(repository, settings, resolved.dataset)
+            snapshot_service = self._snapshot_service_factory(repository)
+            client = self._client_factory(client_request, settings)
+            return _execute_candidate_question_task(
+                repository=repository,
+                retriever=retriever,
+                client=client,
+                snapshot_service=snapshot_service,
+                audit=audit,
+                question=question,
+                prompt=prompt,
+                resolved=resolved,
+                request=request,
+                runtime_config=runtime_config,
+                candidate_run_id=candidate_run_id,
+                isolate_unhandled_errors=True,
+                parallel_audit=True,
+            )
+        finally:
+            connection.close()
+
 
 def _resolve_audit_path(value: str | None) -> Path:
     if value:
@@ -775,6 +786,8 @@ def _build_execution_summary(
     question_sequence_start: int | None,
     question_sequence_end: int | None,
     question_id: int | None,
+    candidate_execution_strategy: str = "sequential",
+    candidate_parallel_max_workers: int = 2,
 ) -> str:
     return (
         f"Dataset: {dataset}\n"
@@ -782,7 +795,9 @@ def _build_execution_summary(
         f"Provider: {provider}\n"
         f"Batch size: {batch_size}\n"
         f"Question id: {question_id or '-'}\n"
-        f"Question range: {_format_question_range(question_sequence_start, question_sequence_end)}"
+        f"Question range: {_format_question_range(question_sequence_start, question_sequence_end)}\n"
+        f"Candidate execution strategy: {candidate_execution_strategy}\n"
+        f"Candidate parallel max workers: {candidate_parallel_max_workers}"
     )
 
 
@@ -802,6 +817,7 @@ def _run_metadata(
     prompt: CandidatePromptRecord,
     request: RunCandidatesRagRequest,
     runtime_config: ResolvedCandidateRuntimeConfig | None = None,
+    execution_config: ResolvedCandidateExecutionConfig | None = None,
 ) -> dict[str, Any]:
     return {
         "retrieval_name": getattr(vector_base, "retrieval_name", None),
@@ -815,6 +831,12 @@ def _run_metadata(
         },
         "skip_existing_successful": resolved.skip_existing_successful,
         "save_raw_response": request.save_raw_response,
+        "candidate_execution": None
+        if execution_config is None
+        else {
+            "strategy": execution_config.strategy,
+            "parallel_max_workers": execution_config.parallel_max_workers,
+        },
         "candidate_runtime": None
         if runtime_config is None
         else {
@@ -858,6 +880,305 @@ def _render_prompt(
             top_k=retrieval_result.top_k,
         ),
         template=prompt,
+    )
+
+
+def _execute_candidate_question_task(
+    *,
+    repository: CandidateRunRepositoryProtocol,
+    retriever: Any,
+    client: CandidateClient,
+    snapshot_service: RagContextSnapshotService,
+    audit: AuditLogger,
+    question: CandidateQuestionRecord,
+    prompt: CandidatePromptRecord,
+    resolved: ResolvedRunCandidatesRag,
+    request: RunCandidatesRagRequest,
+    runtime_config: ResolvedCandidateRuntimeConfig,
+    candidate_run_id: int,
+    isolate_unhandled_errors: bool,
+    parallel_audit: bool,
+) -> CandidateQuestionTaskResult:
+    if parallel_audit:
+        audit.event(
+            AuditEvent(
+                "candidate_parallel_task_started",
+                (
+                    f"candidate_run_id={candidate_run_id} question_id={question.question_id} "
+                    f"question_sequence={question.question_sequence} model={resolved.model_name}"
+                ),
+            )
+        )
+    try:
+        result = _execute_candidate_question_task_inner(
+            repository=repository,
+            retriever=retriever,
+            client=client,
+            snapshot_service=snapshot_service,
+            audit=audit,
+            question=question,
+            prompt=prompt,
+            resolved=resolved,
+            request=request,
+            runtime_config=runtime_config,
+            candidate_run_id=candidate_run_id,
+        )
+    except Exception as error:
+        if not isolate_unhandled_errors:
+            raise
+        result = _persist_unhandled_candidate_question_failure(
+            repository=repository,
+            audit=audit,
+            question=question,
+            prompt=prompt,
+            resolved=resolved,
+            runtime_config=runtime_config,
+            candidate_run_id=candidate_run_id,
+            error=error,
+        )
+
+    if parallel_audit:
+        question_result = result.question_result
+        if question_result.status == "failed":
+            audit.event(
+                AuditEvent(
+                    "candidate_parallel_task_failed",
+                    (
+                        f"candidate_run_id={candidate_run_id} question_id={question.question_id} "
+                        f"question_sequence={question.question_sequence} model={resolved.model_name} "
+                        "status=failed"
+                    ),
+                )
+            )
+        audit.event(
+            AuditEvent(
+                "candidate_parallel_task_finished",
+                (
+                    f"candidate_run_id={candidate_run_id} question_id={question.question_id} "
+                    f"question_sequence={question.question_sequence} model={resolved.model_name} "
+                    f"status={question_result.status} latency_ms={question_result.latency_ms}"
+                ),
+            )
+        )
+    return result
+
+
+def _execute_candidate_question_task_inner(
+    *,
+    repository: CandidateRunRepositoryProtocol,
+    retriever: Any,
+    client: CandidateClient,
+    snapshot_service: RagContextSnapshotService,
+    audit: AuditLogger,
+    question: CandidateQuestionRecord,
+    prompt: CandidatePromptRecord,
+    resolved: ResolvedRunCandidatesRag,
+    request: RunCandidatesRagRequest,
+    runtime_config: ResolvedCandidateRuntimeConfig,
+    candidate_run_id: int,
+) -> CandidateQuestionTaskResult:
+    audit.event(
+        AuditEvent(
+            "question_started",
+            (
+                f"candidate_run_id={candidate_run_id} question_id={question.question_id} "
+                f"sequence={question.question_sequence} dataset={question.dataset}"
+            ),
+        )
+    )
+    if resolved.skip_existing_successful and repository.successful_candidate_answer_exists(
+        dataset=resolved.dataset,
+        model_name=resolved.model_name,
+        question_id=question.question_id,
+        exclude_candidate_run_id=candidate_run_id,
+    ):
+        audit.event(
+            AuditEvent(
+                "question_skipped",
+                (
+                    f"candidate_run_id={candidate_run_id} question_id={question.question_id} "
+                    "reason=existing_successful_answer"
+                ),
+            )
+        )
+        return CandidateQuestionTaskResult(
+            question_result=CandidateQuestionRunResult(
+                question_id=question.question_id,
+                question_sequence=question.question_sequence,
+                status="skipped",
+                error_message="existing_successful_answer",
+            ),
+            budget=None,
+            runtime_config=runtime_config,
+        )
+
+    retrieval_result = retriever.retrieve_for_question(
+        question_id=question.question_id,
+        dataset=resolved.dataset,
+    )
+    audit.event(
+        AuditEvent(
+            "retrieval_finished",
+            (
+                f"candidate_run_id={candidate_run_id} question_id={question.question_id} "
+                f"status={retrieval_result.status} chunks={len(retrieval_result.chunks)}"
+            ),
+        )
+    )
+    if retrieval_result.status != "success":
+        rendered_prompt = _render_prompt(
+            question=question,
+            retrieval_result=retrieval_result,
+            prompt=prompt,
+        )
+        stored_answer = repository.persist_candidate_answer(
+            answer=CandidateAnswerRecord(
+                candidate_answer_id=None,
+                candidate_run_id=candidate_run_id,
+                question_id=question.question_id,
+                model_name=resolved.model_name,
+                rendered_prompt=rendered_prompt,
+                status="failed",
+                error_message=f"Retrieval failed: {retrieval_result.status}",
+            )
+        )
+        audit.event(
+            AuditEvent(
+                "answer_persisted",
+                (
+                    f"candidate_answer_id={stored_answer.candidate_answer_id} "
+                    f"question_id={question.question_id} status=failed"
+                ),
+            )
+        )
+        return CandidateQuestionTaskResult(
+            question_result=CandidateQuestionRunResult(
+                question_id=question.question_id,
+                question_sequence=question.question_sequence,
+                status="failed",
+                retrieval_status=retrieval_result.status,
+                candidate_answer_id=stored_answer.candidate_answer_id,
+                error_message=stored_answer.error_message,
+            ),
+            budget=None,
+            runtime_config=runtime_config,
+        )
+
+    outcome = _execute_candidate_generation(
+        repository=repository,
+        client=client,
+        audit=audit,
+        question=question,
+        retrieval_result=retrieval_result,
+        prompt=prompt,
+        resolved=resolved,
+        request=request,
+        runtime_config=runtime_config,
+        candidate_run_id=candidate_run_id,
+    )
+    if outcome.budget is not None:
+        _log_candidate_prompt_budget(
+            audit=audit,
+            question=question,
+            budget=outcome.budget,
+        )
+    stored_answer = outcome.answer
+    assert stored_answer.candidate_answer_id is not None
+    snapshot_rows = snapshot_service.persist_retrieval_snapshot(
+        candidate_answer_id=stored_answer.candidate_answer_id,
+        retrieval_result=outcome.retrieval_result_for_prompt,
+    )
+    audit.event(
+        AuditEvent(
+            "snapshot_persisted",
+            (
+                f"candidate_answer_id={stored_answer.candidate_answer_id} "
+                f"question_id={question.question_id} count={len(snapshot_rows)}"
+            ),
+        )
+    )
+    if stored_answer.status == "success":
+        question_result = CandidateQuestionRunResult(
+            question_id=question.question_id,
+            question_sequence=question.question_sequence,
+            status="success",
+            retrieval_status=retrieval_result.status,
+            candidate_answer_id=stored_answer.candidate_answer_id,
+            final_choice=stored_answer.final_choice,
+            latency_ms=stored_answer.latency_ms,
+        )
+    else:
+        question_result = CandidateQuestionRunResult(
+            question_id=question.question_id,
+            question_sequence=question.question_sequence,
+            status="failed",
+            retrieval_status=retrieval_result.status,
+            candidate_answer_id=stored_answer.candidate_answer_id,
+            error_message=stored_answer.error_message,
+        )
+    return CandidateQuestionTaskResult(
+        question_result=question_result,
+        budget=outcome.budget,
+        runtime_config=outcome.runtime_config,
+    )
+
+
+def _persist_unhandled_candidate_question_failure(
+    *,
+    repository: CandidateRunRepositoryProtocol,
+    audit: AuditLogger,
+    question: CandidateQuestionRecord,
+    prompt: CandidatePromptRecord,
+    resolved: ResolvedRunCandidatesRag,
+    runtime_config: ResolvedCandidateRuntimeConfig,
+    candidate_run_id: int,
+    error: Exception,
+) -> CandidateQuestionTaskResult:
+    retrieval_result = RagRetrievalResult(
+        question_id=question.question_id,
+        dataset=resolved.dataset,
+        retrieval_run_id=None,
+        retrieval_name=None,
+        embedding_model=None,
+        top_k=0,
+        status="no_chunks_found",
+        chunks=[],
+    )
+    stored_answer = repository.persist_candidate_answer(
+        answer=CandidateAnswerRecord(
+            candidate_answer_id=None,
+            candidate_run_id=candidate_run_id,
+            question_id=question.question_id,
+            model_name=resolved.model_name,
+            rendered_prompt=_render_prompt(
+                question=question,
+                retrieval_result=retrieval_result,
+                prompt=prompt,
+            ),
+            status="failed",
+            error_message=str(error),
+        )
+    )
+    audit.event(
+        AuditEvent(
+            "answer_persisted",
+            (
+                f"candidate_answer_id={stored_answer.candidate_answer_id} "
+                f"question_id={question.question_id} status=failed"
+            ),
+        )
+    )
+    return CandidateQuestionTaskResult(
+        question_result=CandidateQuestionRunResult(
+            question_id=question.question_id,
+            question_sequence=question.question_sequence,
+            status="failed",
+            retrieval_status=None,
+            candidate_answer_id=stored_answer.candidate_answer_id,
+            error_message=stored_answer.error_message,
+        ),
+        budget=None,
+        runtime_config=runtime_config,
     )
 
 
@@ -934,6 +1255,8 @@ def _with_remote_candidate_config(
         remote_candidate_context_window_tokens=runtime_config.context_window_tokens,
         remote_candidate_retry_on_context_window=runtime_config.retry_on_context_window,
         remote_candidate_openai_compatible=request.remote_candidate_openai_compatible,
+        candidate_execution_strategy=request.candidate_execution_strategy,
+        candidate_parallel_max_workers=request.candidate_parallel_max_workers,
     )
 
 
@@ -1165,6 +1488,37 @@ def _resolve_candidate_retry_on_context_window(*, settings: Any, request: RunCan
     return bool(getattr(settings, "remote_candidate_retry_on_context_window", False))
 
 
+def _resolve_candidate_execution_config(
+    *,
+    settings: Any,
+    request: RunCandidatesRagRequest,
+) -> ResolvedCandidateExecutionConfig:
+    strategy = (
+        request.candidate_execution_strategy
+        if request.candidate_execution_strategy is not None
+        else getattr(settings, "candidate_execution_strategy", "sequential")
+    )
+    normalized_strategy = str(strategy).strip().casefold()
+    if normalized_strategy not in {"sequential", "parallel"}:
+        raise ValueError(
+            "candidate_execution_strategy must be one of: parallel, sequential."
+        )
+
+    raw_max_workers = (
+        request.candidate_parallel_max_workers
+        if request.candidate_parallel_max_workers is not None
+        else getattr(settings, "candidate_parallel_max_workers", 2)
+    )
+    parallel_max_workers = int(raw_max_workers)
+    if parallel_max_workers < 1:
+        raise ValueError("candidate_parallel_max_workers must be >= 1.")
+
+    return ResolvedCandidateExecutionConfig(
+        strategy=normalized_strategy,
+        parallel_max_workers=parallel_max_workers,
+    )
+
+
 def _format_candidate_question_selection(summary: CandidateQuestionSelectionSummary) -> str:
     lines = [
         "Candidate question selection:",
@@ -1186,6 +1540,7 @@ def _format_candidate_question_selection(summary: CandidateQuestionSelectionSumm
 def _format_candidate_runtime_config(
     runtime_config: ResolvedCandidateRuntimeConfig,
     *,
+    execution_config: ResolvedCandidateExecutionConfig | None = None,
     api_key_state: str,
 ) -> str:
     context_window = (
@@ -1212,6 +1567,18 @@ def _format_candidate_runtime_config(
         f"  prompt_budget_utilization: {runtime_config.prompt_budget_utilization:g}\n"
         f"  model_profile_source: {runtime_config.model_profile_source}\n"
         f"  save_raw_response: {str(runtime_config.save_raw_response).lower()}"
+        f"{_format_candidate_execution_preflight(execution_config)}"
+    )
+
+
+def _format_candidate_execution_preflight(
+    execution_config: ResolvedCandidateExecutionConfig | None,
+) -> str:
+    if execution_config is None:
+        return ""
+    return (
+        f"\n  Candidate execution strategy: {execution_config.strategy}"
+        f"\n  Candidate parallel max workers: {execution_config.parallel_max_workers}"
     )
 
 
@@ -1438,7 +1805,7 @@ def _execute_candidate_generation(
                 "generation_failed",
                 (
                     f"candidate_run_id={candidate_run_id} question_id={question.question_id} "
-                    f"error={error}"
+                    f"error_type={type(error).__name__}"
                 ),
             )
         )

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import threading
+import time
 from dataclasses import dataclass, field
 
 import pytest
@@ -50,7 +52,8 @@ class FakeSettings:
 
 
 class FakeConnection:
-    def __init__(self) -> None:
+    def __init__(self, label: str | None = None) -> None:
+        self.label = label
         self.closed = False
 
     def close(self) -> None:
@@ -125,6 +128,7 @@ class FakeRepository:
         }
         self.existing_successes: set[tuple[str, str, int]] = set()
         self.existing_failures: set[tuple[str, str, int]] = set()
+        self._lock = threading.Lock()
         self.assignments = _default_candidate_model_assignments()
         self.assignments += (
             CandidateModelAssignment(
@@ -415,22 +419,23 @@ class FakeRepository:
         return (dataset, model_name, question_id) in self.existing_successes
 
     def persist_candidate_answer(self, *, answer: CandidateAnswerRecord) -> CandidateAnswerRecord:
-        stored = CandidateAnswerRecord(
-            candidate_answer_id=self.next_candidate_answer_id,
-            candidate_run_id=answer.candidate_run_id,
-            question_id=answer.question_id,
-            model_name=answer.model_name,
-            rendered_prompt=answer.rendered_prompt,
-            status=answer.status,
-            answer_text=answer.answer_text,
-            final_choice=answer.final_choice,
-            error_message=answer.error_message,
-            latency_ms=answer.latency_ms,
-            raw_response=answer.raw_response,
-            created_at="2026-06-04T13:05:00",
-        )
-        self.persisted_answers.append(stored)
-        self.next_candidate_answer_id += 1
+        with self._lock:
+            stored = CandidateAnswerRecord(
+                candidate_answer_id=self.next_candidate_answer_id,
+                candidate_run_id=answer.candidate_run_id,
+                question_id=answer.question_id,
+                model_name=answer.model_name,
+                rendered_prompt=answer.rendered_prompt,
+                status=answer.status,
+                answer_text=answer.answer_text,
+                final_choice=answer.final_choice,
+                error_message=answer.error_message,
+                latency_ms=answer.latency_ms,
+                raw_response=answer.raw_response,
+                created_at="2026-06-04T13:05:00",
+            )
+            self.persisted_answers.append(stored)
+            self.next_candidate_answer_id += 1
         return stored
 
     def get_candidate_model_runtime_profile(
@@ -560,6 +565,34 @@ class FakeClient:
         )
 
 
+class ThreadCountingClient:
+    def __init__(self, *, fail_on_question_text: str | None = None) -> None:
+        self.fail_on_question_text = fail_on_question_text
+        self.calls: list[tuple[str, str]] = []
+        self.active = 0
+        self.max_active = 0
+        self._lock = threading.Lock()
+
+    def generate(self, prompt: str, *, model: str) -> CandidateRawResponse:
+        with self._lock:
+            self.calls.append((prompt, model))
+            self.active += 1
+            self.max_active = max(self.max_active, self.active)
+        try:
+            time.sleep(0.02)
+            if self.fail_on_question_text and self.fail_on_question_text in prompt:
+                raise RuntimeError("candidate timeout for selected question")
+            return CandidateRawResponse(
+                text=f"Resposta para {model}.",
+                provider="fake",
+                model=model,
+                latency_ms=23,
+            )
+        finally:
+            with self._lock:
+                self.active -= 1
+
+
 class FakeSnapshotService:
     def __init__(self) -> None:
         self.calls: list[tuple[int, RagRetrievalResult]] = []
@@ -601,6 +634,58 @@ def _service(
         client_factory=client_factory or (lambda _request, _settings: client),
         snapshot_service_factory=lambda _repository: snapshot_service,
     )
+
+
+def _clone_worker_repository(shared: FakeRepository) -> FakeRepository:
+    repository = FakeRepository()
+    repository.questions_by_dataset = shared.questions_by_dataset
+    repository.vector_base = shared.vector_base
+    repository.prompt = shared.prompt
+    repository.assignments = shared.assignments
+    repository.existing_successes = shared.existing_successes
+    repository.existing_failures = shared.existing_failures
+    repository.persisted_answers = shared.persisted_answers
+    repository.runtime_profiles = shared.runtime_profiles
+    repository.runtime_observations = shared.runtime_observations
+    repository.success_exists_calls = shared.success_exists_calls
+    repository.next_candidate_answer_id = shared.next_candidate_answer_id
+    repository._lock = shared._lock
+    return repository
+
+
+def _parallel_service(
+    *,
+    repository: FakeRepository,
+    retriever: FakeRetriever,
+    client,
+    snapshot_service: FakeSnapshotService | None = None,
+) -> tuple[RunCandidatesRagService, list[FakeConnection], list[FakeRepository]]:
+    connections: list[FakeConnection] = []
+    repositories: list[FakeRepository] = []
+    snapshot_service = snapshot_service or FakeSnapshotService()
+
+    def connect_func(_: str) -> FakeConnection:
+        connection = FakeConnection(label=f"connection-{len(connections)}")
+        connections.append(connection)
+        return connection
+
+    def repository_factory(connection: FakeConnection) -> FakeRepository:
+        if len(repositories) == 0:
+            created_repository = repository
+        else:
+            created_repository = _clone_worker_repository(repository)
+        repositories.append(created_repository)
+        return created_repository
+
+    service = RunCandidatesRagService(
+        settings_loader=FakeSettings,
+        connect_func=connect_func,
+        repository_factory=repository_factory,
+        retriever_factory=lambda _repository, _settings, _dataset: retriever,
+        client_factory=lambda _request, _settings: client,
+        snapshot_service_factory=lambda _repository: snapshot_service,
+    )
+    return service, connections, repositories
 
 
 def _success_result(*, dataset: str, question_id: int, chunk_text: str = "Trecho seguro.") -> RagRetrievalResult:
@@ -672,6 +757,8 @@ def test_dry_run_resolves_configuration_without_db_writes_or_client_calls(tmp_pa
     assert "api_key: <not required in dry-run>" in result.runtime_config_summary
     assert "final_max_tokens: 1024" in result.runtime_config_summary
     assert "context_window_tokens: 8192" in result.runtime_config_summary
+    assert "Candidate execution strategy: sequential" in result.runtime_config_summary
+    assert "Candidate execution strategy: sequential" in result.execution_summary
     assert repository.ensure_schema_calls == 1
     assert repository.created_runs == []
     assert retriever.calls == [(101, "J1", None)]
@@ -1895,6 +1982,220 @@ def test_records_failure_status_when_candidate_client_fails(tmp_path) -> None:
     assert result.summary.failed_answers == 1
     assert repository.persisted_answers[0].status == "failed"
     assert "candidate timeout" in str(repository.persisted_answers[0].error_message)
+
+
+def test_parallel_path_uses_bounded_workers_and_worker_owned_connections(tmp_path) -> None:
+    repository = FakeRepository()
+    repository.questions_by_dataset["J1"] = [
+        CandidateQuestionRecord(101, "J1", "OAB_Bench", 1, "Q1", None),
+        CandidateQuestionRecord(102, "J1", "OAB_Bench", 2, "Q2", None),
+        CandidateQuestionRecord(103, "J1", "OAB_Bench", 3, "Q3", None),
+    ]
+    retriever = FakeRetriever()
+    for question in repository.questions_by_dataset["J1"]:
+        retriever.results[("J1", question.question_id)] = _success_result(
+            dataset="J1",
+            question_id=question.question_id,
+        )
+    client = ThreadCountingClient()
+    snapshot_service = FakeSnapshotService()
+    service, connections, repositories = _parallel_service(
+        repository=repository,
+        retriever=retriever,
+        client=client,
+        snapshot_service=snapshot_service,
+    )
+
+    result = service.run(
+        RunCandidatesRagRequest(
+            dataset="J1",
+            model_name="candidate-j1",
+            provider="remote_http",
+            batch_size=3,
+            candidate_execution_strategy="parallel",
+            candidate_parallel_max_workers=2,
+            audit_log=str(tmp_path / "parallel.log"),
+            no_audit_animation=True,
+        )
+    )
+
+    assert result.summary is not None
+    assert result.summary.selected_questions == 3
+    assert result.summary.processed_questions == 3
+    assert result.summary.successful_answers == 3
+    assert result.summary.failed_answers == 0
+    assert result.summary.skipped_questions == 0
+    assert client.max_active <= 2
+    assert client.max_active > 1
+    assert len(connections) == 4
+    assert len(repositories) == 4
+    assert all(connection.closed for connection in connections)
+    assert len(repository.persisted_answers) == 3
+    assert len(snapshot_service.calls) == 3
+
+
+def test_parallel_path_persists_failed_answer_and_continues_other_questions(tmp_path) -> None:
+    repository = FakeRepository()
+    repository.questions_by_dataset["J1"] = [
+        CandidateQuestionRecord(101, "J1", "OAB_Bench", 1, "Q1", None),
+        CandidateQuestionRecord(102, "J1", "OAB_Bench", 2, "Q2", None),
+        CandidateQuestionRecord(103, "J1", "OAB_Bench", 3, "Q3", None),
+    ]
+    retriever = FakeRetriever()
+    for question in repository.questions_by_dataset["J1"]:
+        retriever.results[("J1", question.question_id)] = _success_result(
+            dataset="J1",
+            question_id=question.question_id,
+        )
+    client = ThreadCountingClient(fail_on_question_text="Q2")
+    snapshot_service = FakeSnapshotService()
+    service, _connections, _repositories = _parallel_service(
+        repository=repository,
+        retriever=retriever,
+        client=client,
+        snapshot_service=snapshot_service,
+    )
+
+    result = service.run(
+        RunCandidatesRagRequest(
+            dataset="J1",
+            model_name="candidate-j1",
+            provider="remote_http",
+            batch_size=3,
+            candidate_execution_strategy="parallel",
+            candidate_parallel_max_workers=2,
+            audit_log=str(tmp_path / "parallel-failure.log"),
+            no_audit_animation=True,
+        )
+    )
+
+    assert result.summary is not None
+    assert result.summary.processed_questions == 3
+    assert result.summary.successful_answers == 2
+    assert result.summary.failed_answers == 1
+    assert result.summary.skipped_questions == 0
+    assert repository.updated_runs[-1]["run_status"] == "completed"
+    assert repository.updated_runs[-1]["metadata"]["failed_answers"] == 1
+    assert [answer.status for answer in repository.persisted_answers].count("success") == 2
+    assert [answer.status for answer in repository.persisted_answers].count("failed") == 1
+    assert len(snapshot_service.calls) == 3
+
+
+def test_parallel_defensive_skip_existing_still_works_after_selection(tmp_path) -> None:
+    repository = FakeRepository()
+    repository.pending_selection_result = CandidateQuestionSelectionResult(
+        questions=[
+            CandidateQuestionRecord(101, "J1", "OAB_Bench", 1, "Q1", None),
+            CandidateQuestionRecord(102, "J1", "OAB_Bench", 2, "Q2", None),
+        ],
+        summary=CandidateQuestionSelectionSummary(
+            policy="failed_first_pending_aware",
+            skip_existing_successful=True,
+            selected=2,
+            failed_retry_candidates=0,
+            unanswered_candidates=2,
+            successful_excluded=0,
+        ),
+    )
+    repository.existing_successes.add(("J1", "candidate-j1", 102))
+    retriever = FakeRetriever()
+    retriever.results[("J1", 101)] = _success_result(dataset="J1", question_id=101)
+    client = ThreadCountingClient()
+    service, _connections, _repositories = _parallel_service(
+        repository=repository,
+        retriever=retriever,
+        client=client,
+    )
+
+    result = service.run(
+        RunCandidatesRagRequest(
+            dataset="J1",
+            model_name="candidate-j1",
+            provider="remote_http",
+            batch_size=2,
+            candidate_execution_strategy="parallel",
+            candidate_parallel_max_workers=2,
+            audit_log=str(tmp_path / "parallel-skip.log"),
+            no_audit_animation=True,
+        )
+    )
+
+    assert result.summary is not None
+    assert result.summary.successful_answers == 1
+    assert result.summary.skipped_questions == 1
+    assert retriever.calls == [(101, "J1", None)]
+    assert len(repository.persisted_answers) == 1
+
+
+def test_parallel_audit_events_do_not_leak_secrets(tmp_path) -> None:
+    repository = FakeRepository()
+    repository.questions_by_dataset["J1"] = [
+        CandidateQuestionRecord(101, "J1", "OAB_Bench", 1, "Q1", None),
+    ]
+    retriever = FakeRetriever()
+    retriever.results[("J1", 101)] = _success_result(dataset="J1", question_id=101)
+    client = ThreadCountingClient()
+    service, _connections, _repositories = _parallel_service(
+        repository=repository,
+        retriever=retriever,
+        client=client,
+    )
+    audit_path = tmp_path / "parallel-audit.log"
+
+    service.run(
+        RunCandidatesRagRequest(
+            dataset="J1",
+            model_name="candidate-j1",
+            provider="remote_http",
+            batch_size=1,
+            candidate_execution_strategy="parallel",
+            audit_log=str(audit_path),
+            no_audit_animation=True,
+        )
+    )
+
+    audit_text = audit_path.read_text(encoding="utf-8")
+    assert "candidate_parallel_started" in audit_text
+    assert "candidate_parallel_task_started" in audit_text
+    assert "candidate_parallel_task_finished" in audit_text
+    assert "candidate_parallel_finished" in audit_text
+    assert "featherless-test-key" not in audit_text
+    assert "openrouter-test-key" not in audit_text
+
+
+def test_unexpected_service_exception_after_run_creation_marks_run_failed(tmp_path) -> None:
+    class FailingSnapshotService(FakeSnapshotService):
+        def persist_retrieval_snapshot(
+            self,
+            *,
+            candidate_answer_id: int,
+            retrieval_result: RagRetrievalResult,
+        ) -> list[object]:
+            raise RuntimeError("snapshot persistence unavailable")
+
+    repository = FakeRepository()
+    retriever = FakeRetriever()
+    retriever.results[("J1", 101)] = _success_result(dataset="J1", question_id=101)
+    service = _service(
+        repository=repository,
+        retriever=retriever,
+        snapshot_service=FailingSnapshotService(),
+    )
+
+    with pytest.raises(RuntimeError, match="snapshot persistence unavailable"):
+        service.run(
+            RunCandidatesRagRequest(
+                dataset="J1",
+                model_name="candidate-j1",
+                provider="remote_http",
+                batch_size=1,
+                audit_log=str(tmp_path / "service-level-failure.log"),
+                no_audit_animation=True,
+            )
+        )
+
+    assert repository.updated_runs[-1]["run_status"] == "failed"
+    assert repository.updated_runs[-1]["finished_at"] is not None
 
 
 def test_fails_before_creating_run_when_model_has_no_runnable_assignment(tmp_path) -> None:

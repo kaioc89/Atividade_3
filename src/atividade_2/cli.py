@@ -259,6 +259,16 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Retry one candidate call after learning an observed provider context window.",
     )
+    run_candidates_rag.add_argument(
+        "--candidate-execution-strategy",
+        choices=["sequential", "parallel"],
+        help="Run candidate questions sequentially or with bounded parallel workers.",
+    )
+    run_candidates_rag.add_argument(
+        "--candidate-parallel-max-workers",
+        type=_positive_int,
+        help="Maximum candidate questions to execute concurrently when strategy is parallel.",
+    )
     run_candidates_rag.set_defaults(handler=run_candidates_rag_command)
 
     validate_provider_models = subparsers.add_parser(
@@ -491,6 +501,10 @@ def run_candidates_rag_command(args: argparse.Namespace) -> int:
         remote_candidate_retry_on_context_window=(
             True if args.retry_on_context_window else settings.remote_candidate_retry_on_context_window
         ),
+        candidate_execution_strategy=args.candidate_execution_strategy
+        or getattr(settings, "candidate_execution_strategy", "sequential"),
+        candidate_parallel_max_workers=args.candidate_parallel_max_workers
+        or getattr(settings, "candidate_parallel_max_workers", 2),
     )
     result = RunCandidatesRagService().run(request)
     if result.runtime_config_summary is not None:

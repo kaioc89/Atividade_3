@@ -23,6 +23,7 @@ DEFAULT_OPENROUTER_URL = "https://openrouter.ai/api/v1"
 SUPPORTED_PANEL_MODES: set[str] = {"single", "primary_only", "2plus1"}
 SUPPORTED_PROVIDERS: set[str] = {"remote_http"}
 SUPPORTED_EXECUTION_STRATEGIES: set[str] = {"sequential", "parallel", "adaptive"}
+SUPPORTED_CANDIDATE_EXECUTION_STRATEGIES: set[str] = {"sequential", "parallel"}
 SUPPORTED_APP_ENVS: set[str] = {"dev", "test", "prod"}
 
 
@@ -130,6 +131,18 @@ def load_settings(dotenv_path: str | Path | None = ".env", env: Mapping[str, str
             values,
             "REMOTE_CANDIDATE_RETRY_ON_CONTEXT_WINDOW",
             False,
+        ),
+        candidate_execution_strategy=_get_choice(
+            values,
+            "CANDIDATE_EXECUTION_STRATEGY",
+            "sequential",
+            SUPPORTED_CANDIDATE_EXECUTION_STRATEGIES,
+        ),  # type: ignore[arg-type]
+        candidate_parallel_max_workers=_parse_int(
+            values,
+            "CANDIDATE_PARALLEL_MAX_WORKERS",
+            2,
+            minimum=1,
         ),
         judge_save_raw_response=_parse_bool(values, "JUDGE_SAVE_RAW_RESPONSE", True),
         judge_execution_strategy=execution_strategy,  # type: ignore[arg-type]
