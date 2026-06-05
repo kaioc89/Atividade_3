@@ -32,6 +32,8 @@ from .contracts import (
     CandidatePromptContext,
     CandidatePromptRecord,
     CandidateQuestionRecord,
+    CandidateQuestionSelectionResult,
+    CandidateQuestionSelectionSummary,
     CandidateRunRecord,
     RagRetrievalResult,
 )
@@ -263,6 +265,19 @@ class CandidateRunRepositoryProtocol(Protocol):
     ) -> list[CandidateQuestionRecord]:
         """Select candidate-safe questions for one execution batch."""
 
+    def select_pending_candidate_questions(
+        self,
+        *,
+        dataset: str,
+        model_name: str,
+        batch_size: int,
+        question_sequence_start: int | None,
+        question_sequence_end: int | None,
+        question_id: int | None,
+        skip_existing_successful: bool,
+    ) -> CandidateQuestionSelectionResult:
+        """Select model-aware pending candidate-safe questions for one execution batch."""
+
     def successful_candidate_answer_exists(
         self,
         *,
@@ -381,17 +396,24 @@ class RunCandidatesRagService:
                     f"Selecting candidate questions for {resolved.dataset}",
                     detail=(
                         f"dataset={resolved.dataset} batch_size={resolved.batch_size} "
+                        f"model={resolved.model_name} skip_existing_successful={resolved.skip_existing_successful} "
                         f"question_id={resolved.question_id} start={resolved.question_sequence_start} "
                         f"end={resolved.question_sequence_end}"
                     ),
                 ):
-                    questions = repository.select_candidate_questions(
+                    selection_result = repository.select_pending_candidate_questions(
                         dataset=resolved.dataset,
+                        model_name=resolved.model_name,
                         batch_size=resolved.batch_size,
                         question_sequence_start=resolved.question_sequence_start,
                         question_sequence_end=resolved.question_sequence_end,
                         question_id=resolved.question_id,
+                        skip_existing_successful=resolved.skip_existing_successful,
                     )
+                    questions = selection_result.questions
+                selection_summary = _format_candidate_question_selection(selection_result.summary)
+                audit.file_event("candidate_question_selection", selection_summary.replace("\n", " | "))
+                audit.terminal_event(selection_summary)
                 runtime_config = _resolve_candidate_runtime_config(
                     repository=repository,
                     settings=settings,
@@ -1141,6 +1163,24 @@ def _resolve_candidate_retry_on_context_window(*, settings: Any, request: RunCan
     if request.remote_candidate_retry_on_context_window is not None:
         return bool(request.remote_candidate_retry_on_context_window)
     return bool(getattr(settings, "remote_candidate_retry_on_context_window", False))
+
+
+def _format_candidate_question_selection(summary: CandidateQuestionSelectionSummary) -> str:
+    lines = [
+        "Candidate question selection:",
+        f"  policy: {summary.policy}",
+        f"  skip_existing_successful: {str(summary.skip_existing_successful).lower()}",
+        f"  selected: {summary.selected}",
+    ]
+    if summary.skip_existing_successful:
+        lines.extend(
+            [
+                f"  failed_retry_candidates: {summary.failed_retry_candidates}",
+                f"  unanswered_candidates: {summary.unanswered_candidates}",
+                f"  successful_excluded: {summary.successful_excluded if summary.successful_excluded is not None else 'unknown'}",
+            ]
+        )
+    return "\n".join(lines)
 
 
 def _format_candidate_runtime_config(

@@ -11,6 +11,8 @@ from atividade_2.contracts import (
     CandidateModelRuntimeProfileRecord,
     CandidatePromptRecord,
     CandidateQuestionRecord,
+    CandidateQuestionSelectionResult,
+    CandidateQuestionSelectionSummary,
     CandidateRawResponse,
     CandidateRunRecord,
     RagRetrievalResult,
@@ -65,6 +67,7 @@ class FakeRepository:
         self.persisted_answers: list[CandidateAnswerRecord] = []
         self.runtime_profiles: dict[tuple[str, str], CandidateModelRuntimeProfileRecord] = {}
         self.runtime_observations: list[dict[str, object]] = []
+        self.pending_selection_result: CandidateQuestionSelectionResult | None = None
         self.next_candidate_run_id = 501
         self.next_candidate_answer_id = 801
         self.next_runtime_profile_id = 901
@@ -121,6 +124,7 @@ class FakeRepository:
             ],
         }
         self.existing_successes: set[tuple[str, str, int]] = set()
+        self.existing_failures: set[tuple[str, str, int]] = set()
         self.assignments = _default_candidate_model_assignments()
         self.assignments += (
             CandidateModelAssignment(
@@ -321,6 +325,83 @@ class FakeRepository:
         if question_id is not None:
             questions = [question for question in questions if question.question_id == question_id]
         return questions[:batch_size]
+
+    def select_pending_candidate_questions(
+        self,
+        *,
+        dataset: str,
+        model_name: str,
+        batch_size: int,
+        question_sequence_start: int | None,
+        question_sequence_end: int | None,
+        question_id: int | None,
+        skip_existing_successful: bool,
+    ) -> CandidateQuestionSelectionResult:
+        self.select_calls.append(
+            {
+                "dataset": dataset,
+                "model_name": model_name,
+                "batch_size": batch_size,
+                "question_sequence_start": question_sequence_start,
+                "question_sequence_end": question_sequence_end,
+                "question_id": question_id,
+                "skip_existing_successful": skip_existing_successful,
+            }
+        )
+        if self.pending_selection_result is not None:
+            return self.pending_selection_result
+
+        questions = list(self.questions_by_dataset.get(dataset, []))
+        if question_id is not None:
+            questions = [question for question in questions if question.question_id == question_id]
+        if question_sequence_start is not None:
+            questions = [question for question in questions if question.question_sequence >= question_sequence_start]
+        if question_sequence_end is not None:
+            questions = [question for question in questions if question.question_sequence <= question_sequence_end]
+
+        if not skip_existing_successful:
+            selected = sorted(questions, key=lambda question: (question.question_sequence, question.question_id))[
+                :batch_size
+            ]
+            return CandidateQuestionSelectionResult(
+                questions=selected,
+                summary=CandidateQuestionSelectionSummary(
+                    policy="sequence_order_no_success_filter",
+                    skip_existing_successful=False,
+                    selected=len(selected),
+                ),
+            )
+
+        successful_excluded = 0
+        retry_candidates: list[CandidateQuestionRecord] = []
+        unanswered_candidates: list[CandidateQuestionRecord] = []
+        for question in questions:
+            key = (dataset, model_name, question.question_id)
+            if key in self.existing_successes:
+                successful_excluded += 1
+                continue
+            if key in self.existing_failures:
+                retry_candidates.append(question)
+            else:
+                unanswered_candidates.append(question)
+
+        retry_candidates.sort(key=lambda question: (question.question_sequence, question.question_id))
+        unanswered_candidates.sort(key=lambda question: (question.question_sequence, question.question_id))
+        selected = [*retry_candidates, *unanswered_candidates][:batch_size]
+        failed_selected = sum(
+            1 for question in selected if (dataset, model_name, question.question_id) in self.existing_failures
+        )
+        return CandidateQuestionSelectionResult(
+            questions=selected,
+            summary=CandidateQuestionSelectionSummary(
+                policy="failed_first_pending_aware",
+                skip_existing_successful=True,
+                selected=len(selected),
+                failed_retry_candidates=failed_selected,
+                unanswered_candidates=len(selected) - failed_selected,
+                successful_excluded=successful_excluded,
+            ),
+        )
 
     def successful_candidate_answer_exists(
         self,
@@ -1353,8 +1434,85 @@ def test_respects_question_range(tmp_path) -> None:
     assert repository.select_calls[0]["question_sequence_end"] == 5
 
 
+def test_passes_model_and_skip_flag_to_pending_question_selection(tmp_path) -> None:
+    repository = FakeRepository()
+    retriever = FakeRetriever()
+    retriever.results[("J1", 101)] = _success_result(dataset="J1", question_id=101)
+    service = _service(repository=repository, retriever=retriever)
+
+    service.run(
+        RunCandidatesRagRequest(
+            dataset="J1",
+            model_name="candidate-j1",
+            provider="remote_http",
+            batch_size=1,
+            skip_existing_successful=False,
+            audit_log=str(tmp_path / "selection-args.log"),
+            no_audit_animation=True,
+        )
+    )
+
+    assert repository.select_calls[0]["model_name"] == "candidate-j1"
+    assert repository.select_calls[0]["skip_existing_successful"] is False
+
+
+def test_rerun_selection_processes_later_failed_and_pending_questions(tmp_path) -> None:
+    repository = FakeRepository()
+    repository.questions_by_dataset["J1"] = [
+        CandidateQuestionRecord(101, "J1", "OAB_Bench", 1, "Q1", None),
+        CandidateQuestionRecord(102, "J1", "OAB_Bench", 2, "Q2", None),
+        CandidateQuestionRecord(103, "J1", "OAB_Bench", 3, "Q3", None),
+        CandidateQuestionRecord(104, "J1", "OAB_Bench", 4, "Q4", None),
+        CandidateQuestionRecord(105, "J1", "OAB_Bench", 5, "Q5", None),
+    ]
+    repository.existing_successes.update(
+        {
+            ("J1", "candidate-j1", 101),
+            ("J1", "candidate-j1", 102),
+            ("J1", "candidate-j1", 103),
+        }
+    )
+    repository.existing_failures.add(("J1", "candidate-j1", 104))
+    retriever = FakeRetriever()
+    retriever.results[("J1", 104)] = _success_result(dataset="J1", question_id=104)
+    retriever.results[("J1", 105)] = _success_result(dataset="J1", question_id=105)
+    service = _service(repository=repository, retriever=retriever)
+
+    result = service.run(
+        RunCandidatesRagRequest(
+            dataset="J1",
+            model_name="candidate-j1",
+            provider="remote_http",
+            batch_size=2,
+            question_sequence_start=1,
+            question_sequence_end=5,
+            audit_log=str(tmp_path / "rerun-range.log"),
+            no_audit_animation=True,
+        )
+    )
+
+    assert retriever.calls == [(104, "J1", None), (105, "J1", None)]
+    assert result.summary is not None
+    assert result.summary.selected_questions == 2
+    assert result.summary.processed_questions == 2
+    assert result.summary.successful_answers == 2
+    assert result.summary.failed_answers == 0
+    assert result.summary.skipped_questions == 0
+
+
 def test_skips_existing_successful_answers(tmp_path) -> None:
     repository = FakeRepository()
+    repository.pending_selection_result = CandidateQuestionSelectionResult(
+        questions=[CandidateQuestionRecord(101, "J1", "OAB_Bench", 1, "Q1", None)],
+        summary=CandidateQuestionSelectionSummary(
+            policy="failed_first_pending_aware",
+            skip_existing_successful=True,
+            selected=1,
+            failed_retry_candidates=0,
+            unanswered_candidates=1,
+            successful_excluded=0,
+        ),
+    )
     repository.existing_successes.add(("J1", "candidate-j1", 101))
     retriever = FakeRetriever()
     service = _service(repository=repository, retriever=retriever)
@@ -1374,6 +1532,39 @@ def test_skips_existing_successful_answers(tmp_path) -> None:
     assert result.summary.skipped_questions == 1
     assert retriever.calls == []
     assert repository.persisted_answers == []
+
+
+def test_candidate_question_selection_audit_contains_policy_and_counts(tmp_path) -> None:
+    repository = FakeRepository()
+    repository.questions_by_dataset["J1"] = [
+        CandidateQuestionRecord(101, "J1", "OAB_Bench", 1, "Q1", None),
+        CandidateQuestionRecord(102, "J1", "OAB_Bench", 2, "Q2", None),
+    ]
+    repository.existing_failures.add(("J1", "candidate-j1", 101))
+    retriever = FakeRetriever()
+    retriever.results[("J1", 101)] = _success_result(dataset="J1", question_id=101)
+    retriever.results[("J1", 102)] = _success_result(dataset="J1", question_id=102)
+    audit_path = tmp_path / "selection-audit.log"
+    service = _service(repository=repository, retriever=retriever)
+
+    service.run(
+        RunCandidatesRagRequest(
+            dataset="J1",
+            model_name="candidate-j1",
+            provider="remote_http",
+            batch_size=2,
+            audit_log=str(audit_path),
+            no_audit_animation=True,
+        )
+    )
+
+    audit_text = audit_path.read_text(encoding="utf-8")
+    assert "Candidate question selection:" in audit_text
+    assert "policy: failed_first_pending_aware" in audit_text
+    assert "skip_existing_successful: true" in audit_text
+    assert "selected: 2" in audit_text
+    assert "failed_retry_candidates: 1" in audit_text
+    assert "unanswered_candidates: 1" in audit_text
 
 
 def test_retrieves_context_per_question(tmp_path) -> None:
@@ -1753,6 +1944,20 @@ def test_emits_audit_events_for_run_question_retrieval_generation_persistence_sk
         CandidateQuestionRecord(101, "J1", "OAB_Bench", 1, "Q1", None),
         CandidateQuestionRecord(102, "J1", "OAB_Bench", 2, "Q2", None),
     ]
+    repository.pending_selection_result = CandidateQuestionSelectionResult(
+        questions=[
+            CandidateQuestionRecord(101, "J1", "OAB_Bench", 1, "Q1", None),
+            CandidateQuestionRecord(102, "J1", "OAB_Bench", 2, "Q2", None),
+        ],
+        summary=CandidateQuestionSelectionSummary(
+            policy="failed_first_pending_aware",
+            skip_existing_successful=True,
+            selected=2,
+            failed_retry_candidates=0,
+            unanswered_candidates=2,
+            successful_excluded=0,
+        ),
+    )
     repository.existing_successes.add(("J1", "candidate-j1", 102))
     retriever = FakeRetriever()
     retriever.results[("J1", 101)] = _success_result(dataset="J1", question_id=101)

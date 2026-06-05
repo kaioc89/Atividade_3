@@ -489,6 +489,26 @@ class CandidateQuestionRecord:
 
 
 @dataclass(frozen=True)
+class CandidateQuestionSelectionSummary:
+    """Audit summary for one candidate question selection policy."""
+
+    policy: str
+    skip_existing_successful: bool
+    selected: int
+    failed_retry_candidates: int | None = None
+    unanswered_candidates: int | None = None
+    successful_excluded: int | None = None
+
+
+@dataclass(frozen=True)
+class CandidateQuestionSelectionResult:
+    """Selected candidate-safe questions plus policy-level audit metadata."""
+
+    questions: list[CandidateQuestionRecord]
+    summary: CandidateQuestionSelectionSummary
+
+
+@dataclass(frozen=True)
 class CandidatePromptContext:
     """Candidate-safe input required to render one AV3 generation prompt."""
 
