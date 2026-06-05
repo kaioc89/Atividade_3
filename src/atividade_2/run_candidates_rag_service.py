@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import threading
 import time
-from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, as_completed, wait
+from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
@@ -52,6 +52,9 @@ from .rag_retriever import RagRetrieverService
 from .repositories import JudgeRepository
 
 
+CandidateShouldStop = Callable[[], bool]
+
+
 @dataclass(frozen=True)
 class RunCandidatesRagRequest:
     """Request contract for one candidate RAG generation batch."""
@@ -84,6 +87,7 @@ class RunCandidatesRagRequest:
     candidate_execution_strategy: str | None = None
     candidate_parallel_max_workers: int | None = None
     progress_callback: CandidateProgressCallback | None = None
+    should_stop: CandidateShouldStop | None = None
 
 
 @dataclass(frozen=True)
@@ -301,6 +305,122 @@ class CandidateProgressReporter:
                     f"event_type={event.event_type} error_type={type(error).__name__}",
                 )
             )
+
+
+class CandidateStopState:
+    """Track cooperative stop state and emit secret-safe stop progress."""
+
+    def __init__(
+        self,
+        *,
+        should_stop: CandidateShouldStop | None,
+        audit: AuditLogger,
+        progress: CandidateProgressReporter,
+        execution_strategy: str,
+    ) -> None:
+        self._should_stop = should_stop
+        self._audit = audit
+        self._progress = progress
+        self._execution_strategy = execution_strategy
+        self._requested = False
+        self._not_started_question_ids: set[int] = set()
+        self._lock = threading.Lock()
+
+    @property
+    def requested(self) -> bool:
+        with self._lock:
+            return self._requested
+
+    @property
+    def not_started_due_to_stop(self) -> int:
+        with self._lock:
+            return len(self._not_started_question_ids)
+
+    def check(self) -> bool:
+        with self._lock:
+            if self._requested:
+                return True
+            should_stop = self._should_stop
+        if should_stop is None:
+            return False
+        try:
+            requested = bool(should_stop())
+        except Exception as error:
+            self._audit.event(
+                AuditEvent(
+                    "candidate_should_stop_failed",
+                    f"error_type={type(error).__name__}",
+                )
+            )
+            return False
+        if not requested:
+            return False
+        self._mark_requested()
+        return True
+
+    def mark_not_started(self, questions: list[CandidateQuestionRecord]) -> None:
+        for question in questions:
+            should_emit = False
+            with self._lock:
+                if question.question_id not in self._not_started_question_ids:
+                    self._not_started_question_ids.add(question.question_id)
+                    should_emit = True
+            if should_emit:
+                counts = self._progress.counts()
+                self._progress.emit(
+                    "candidate_task_not_started_due_to_stop",
+                    question=question,
+                    status="cancelled",
+                    metadata={
+                        "selected_questions": counts.selected_questions,
+                        "processed_questions": counts.processed_questions,
+                        "successful_answers": counts.successful_answers,
+                        "failed_answers": counts.failed_answers,
+                        "skipped_questions": counts.skipped_questions,
+                        "not_started_due_to_stop": self.not_started_due_to_stop,
+                        "stop_requested": True,
+                        "stop_reason": "cooperative_stop",
+                        "execution_strategy": self._execution_strategy,
+                    },
+                )
+
+    def metadata(self) -> dict[str, Any]:
+        return {
+            "stop_requested": self.requested,
+            "stop_reason": "cooperative_stop" if self.requested else None,
+            "not_started_due_to_stop": self.not_started_due_to_stop,
+        }
+
+    def _mark_requested(self) -> None:
+        with self._lock:
+            if self._requested:
+                return
+            self._requested = True
+        counts = self._progress.counts()
+        self._audit.event(
+            AuditEvent(
+                "candidate_stop_requested",
+                (
+                    f"selected={counts.selected_questions} processed={counts.processed_questions} "
+                    f"skipped={counts.skipped_questions} strategy={self._execution_strategy}"
+                ),
+            )
+        )
+        self._progress.emit(
+            "candidate_stop_requested",
+            status="cancelling",
+            metadata={
+                "selected_questions": counts.selected_questions,
+                "processed_questions": counts.processed_questions,
+                "successful_answers": counts.successful_answers,
+                "failed_answers": counts.failed_answers,
+                "skipped_questions": counts.skipped_questions,
+                "not_started_due_to_stop": self.not_started_due_to_stop,
+                "stop_requested": True,
+                "stop_reason": "cooperative_stop",
+                "execution_strategy": self._execution_strategy,
+            },
+        )
 
 
 @dataclass(frozen=True)
@@ -754,6 +874,12 @@ class RunCandidatesRagService:
                 client_request = request
                 if self._client_factory is _default_client_factory:
                     client_request = _with_remote_candidate_config(request, runtime_config)
+                stop_state = CandidateStopState(
+                    should_stop=request.should_stop,
+                    audit=audit,
+                    progress=progress,
+                    execution_strategy=execution_config.strategy,
+                )
                 adaptive_metrics: dict[str, Any] | None = None
                 if execution_config.strategy == "adaptive":
                     scheduler = CandidateAdaptiveScheduler(
@@ -761,6 +887,7 @@ class RunCandidatesRagService:
                         execution_config=execution_config,
                         audit=audit,
                         progress=progress,
+                        stop_state=stop_state,
                     )
                     task_results = scheduler.run(
                         settings=settings,
@@ -786,11 +913,17 @@ class RunCandidatesRagService:
                         execution_config=execution_config,
                         audit=audit,
                         progress=progress,
+                        stop_state=stop_state,
                     )
                 else:
-                    client = self._client_factory(client_request, settings) if questions else None
+                    client = None
                     task_results = []
-                    for question in questions:
+                    for index, question in enumerate(questions):
+                        if stop_state.check():
+                            stop_state.mark_not_started(questions[index:])
+                            break
+                        if client is None:
+                            client = self._client_factory(client_request, settings)
                         assert client is not None
                         task_results.append(
                             _execute_candidate_question_task(
@@ -856,29 +989,34 @@ class RunCandidatesRagService:
                 }
                 if adaptive_metrics is not None:
                     completion_metadata["candidate_adaptive"] = adaptive_metrics
+                if stop_state.requested:
+                    completion_metadata.update(stop_state.metadata())
                 candidate_budget_metadata = aggregate_budget_metadata(
                     budgets=budget_summaries,
                     requested_max_tokens=runtime_config.requested_max_tokens,
                 )
                 if candidate_budget_metadata:
                     completion_metadata["candidate_budget"] = candidate_budget_metadata
+                terminal_run_status = "cancelled" if stop_state.requested else "completed"
                 repository.update_candidate_run_status(
                     candidate_run_id=int(run.candidate_run_id),
-                    run_status="completed",
+                    run_status=terminal_run_status,
                     finished_at=_utcnow_iso(),
                     metadata=completion_metadata,
                 )
                 counts = progress.counts()
                 progress.emit(
                     "candidate_run_finished",
-                    status="completed",
+                    status=terminal_run_status,
                     metadata={
-                        "run_status": "completed",
+                        "run_status": terminal_run_status,
                         "selected_questions": counts.selected_questions,
                         "processed_questions": counts.processed_questions,
                         "successful_answers": counts.successful_answers,
                         "failed_answers": counts.failed_answers,
                         "skipped_questions": counts.skipped_questions,
+                        "not_started_due_to_stop": stop_state.not_started_due_to_stop,
+                        "stop_requested": stop_state.requested,
                         "execution_strategy": execution_config.strategy,
                     },
                 )
@@ -960,6 +1098,7 @@ class RunCandidatesRagService:
         execution_config: ResolvedCandidateExecutionConfig,
         audit: AuditLogger,
         progress: CandidateProgressReporter,
+        stop_state: CandidateStopState,
     ) -> list[CandidateQuestionTaskResult]:
         if not questions:
             return []
@@ -976,27 +1115,49 @@ class RunCandidatesRagService:
         )
         task_results: list[CandidateQuestionTaskResult] = []
         with ThreadPoolExecutor(max_workers=worker_count) as executor:
-            futures = [
-                executor.submit(
-                    self._run_candidate_question_worker,
-                    settings=settings,
-                    request=request,
-                    client_request=client_request,
-                    resolved=resolved,
-                    prompt=prompt,
-                    question=question,
-                    runtime_config=runtime_config,
-                    candidate_run_id=candidate_run_id,
-                    audit=audit,
-                    propagate_retryable_generation_errors=False,
-                    progress=progress,
-                )
-                for question in questions
-            ]
-            for future in as_completed(futures):
-                result = future.result()
-                task_results.append(result)
-                progress.emit_question_terminal(result)
+            pending = list(questions)
+            futures: dict[Future[CandidateQuestionTaskResult], CandidateQuestionRecord] = {}
+
+            def submit_next() -> bool:
+                if not pending:
+                    return False
+                if stop_state.check():
+                    stop_state.mark_not_started(pending)
+                    pending.clear()
+                    return False
+                question = pending.pop(0)
+                futures[
+                    executor.submit(
+                        self._run_candidate_question_worker,
+                        settings=settings,
+                        request=request,
+                        client_request=client_request,
+                        resolved=resolved,
+                        prompt=prompt,
+                        question=question,
+                        runtime_config=runtime_config,
+                        candidate_run_id=candidate_run_id,
+                        audit=audit,
+                        propagate_retryable_generation_errors=False,
+                        progress=progress,
+                    )
+                ] = question
+                return True
+
+            while pending and len(futures) < worker_count:
+                if not submit_next():
+                    break
+
+            while futures:
+                done, _ = wait(futures.keys(), return_when=FIRST_COMPLETED)
+                for future in done:
+                    futures.pop(future)
+                    result = future.result()
+                    task_results.append(result)
+                    progress.emit_question_terminal(result)
+                while pending and len(futures) < worker_count:
+                    if not submit_next():
+                        break
 
         successful_answers = sum(1 for item in task_results if item.question_result.status == "success")
         failed_answers = sum(1 for item in task_results if item.question_result.status == "failed")
@@ -1094,11 +1255,13 @@ class CandidateAdaptiveScheduler:
         execution_config: ResolvedCandidateExecutionConfig,
         audit: AuditLogger,
         progress: CandidateProgressReporter,
+        stop_state: CandidateStopState,
     ) -> None:
         self.service = service
         self.execution_config = execution_config
         self.audit = audit
         self.progress = progress
+        self.stop_state = stop_state
         self.groups: dict[CandidateAdaptiveGroupKey, CandidateAdaptiveGroupState] = {}
 
     def run(
@@ -1131,6 +1294,9 @@ class CandidateAdaptiveScheduler:
         futures: dict[Future[CandidateAdaptiveCompletedTask], CandidateAdaptiveQueuedTask] = {}
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             while pending or futures:
+                if self.stop_state.check():
+                    self.stop_state.mark_not_started([queued.question for queued in pending])
+                    pending.clear()
                 if self._submit_ready(
                     pending=pending,
                     futures=futures,
@@ -1263,6 +1429,10 @@ class CandidateAdaptiveScheduler:
         submitted = False
         index = 0
         while index < len(pending):
+            if self.stop_state.check():
+                self.stop_state.mark_not_started([queued.question for queued in pending[index:]])
+                del pending[index:]
+                return submitted
             queued = pending[index]
             state = self.groups[queued.group_key]
             if state.disabled:
@@ -1455,6 +1625,23 @@ class CandidateAdaptiveScheduler:
                     )
                 )
             return terminal_results
+
+        if self.stop_state.check():
+            self.stop_state.mark_not_started([queued.question])
+            self.audit.event(
+                AuditEvent(
+                    "candidate_adaptive_requeue_suppressed_due_to_stop",
+                    self._event_detail(
+                        state=state,
+                        candidate_run_id=candidate_run_id,
+                        question=queued.question,
+                        attempt=queued.attempt + 1,
+                        reason=classification.reason,
+                        backoff_seconds=0,
+                    ),
+                )
+            )
+            return []
 
         self._reduce_concurrency(
             state=state,
