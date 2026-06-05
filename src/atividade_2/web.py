@@ -24,7 +24,7 @@ from .audit_log_service import AuditLogSummaryService
 from .config import ConfigurationError
 from .contracts import BatchProgress, EligibilitySummary, EvaluationProgress, PipelineSummary
 from .dashboard import DashboardService, parse_dashboard_filters
-from .database_dump import DatabaseDumpService, DatabaseResetService, resolve_dump_path
+from .database_dump import DatabaseDumpService, DatabaseResetService, resolve_backup_dir, resolve_dump_path
 from .db import connect
 from .judge_prompt_configs import JudgePromptConfigService
 from .judge_clients.remote_http import RemoteJudgeError
@@ -429,10 +429,11 @@ def create_app(
     assistant_enabled = _env_flag("ENABLE_AI_ASSISTANT", default=False)
     app.state.csrf_token = secrets.token_urlsafe(32)
     app.state.jobs = JobRegistry(service or RunJudgeService())
+    resolved_backup_dir = resolve_backup_dir(getattr(dump_service, "output_dir", backup_dir))
     app.state.audit_dir = Path(audit_dir)
-    app.state.backup_dir = Path(backup_dir)
+    app.state.backup_dir = resolved_backup_dir
     app.state.dashboard = dashboard_service or DashboardService()
-    app.state.dump_service = dump_service or DatabaseDumpService(output_dir=backup_dir)
+    app.state.dump_service = dump_service or DatabaseDumpService(output_dir=resolved_backup_dir)
     app.state.database_reset_service = database_reset_service or DatabaseResetService()
     app.state.judge_prompt_service = judge_prompt_service or JudgePromptConfigService()
     app.state.meta_evaluation_service = meta_evaluation_service or MetaEvaluationService()
@@ -2783,6 +2784,7 @@ _INDEX_HTML = """
     </div>
     <div class="dialog-body">
       <p>O dump do banco foi criado com sucesso.</p>
+      <p><a id="database-dump-download" class="button-link" href="#" download hidden>Baixar arquivo</a></p>
       <table>
         <tbody>
           <tr><th>Arquivo</th><td id="database-dump-filename"></td></tr>
@@ -6587,17 +6589,54 @@ _INDEX_HTML = """
     document.getElementById("audit-log-close").onclick = () => document.getElementById("audit-log-dialog").close();
     document.getElementById("database-dump-dialog-close").onclick = () => document.getElementById("database-dump-dialog").close();
     function showDatabaseDumpDialog(data) {
+      const downloadLink = document.getElementById("database-dump-download");
       setText("database-dump-filename", data.filename || "-");
       setText("database-dump-path", data.path || "-");
       setText("database-dump-size", `${Math.round((data.size_bytes || 0) / 1024)} KB`);
+      if (data.download_url) {
+        downloadLink.href = data.download_url;
+        downloadLink.download = data.filename || "atividade_2_backup.sql";
+        downloadLink.hidden = false;
+      } else {
+        downloadLink.hidden = true;
+        downloadLink.removeAttribute("href");
+        downloadLink.removeAttribute("download");
+      }
       document.getElementById("database-dump-dialog").showModal();
     }
-    function handleDatabaseDumpResult(data) {
-      if (data.delivery === "browser_download" && data.download_url) {
-        window.open(data.download_url, "_blank", "noopener");
-        return;
+    function extractDownloadFilename(response, fallbackFilename) {
+      const disposition = response.headers.get("content-disposition") || "";
+      const match = disposition.match(/filename=\"?([^\";]+)\"?/i);
+      return match?.[1] || fallbackFilename || "atividade_2_backup.sql";
+    }
+    async function downloadDatabaseDump(data) {
+      const response = await fetch(data.download_url, {method: "GET", credentials: "same-origin"});
+      if (!response.ok) {
+        const detail = await response.text();
+        let message = detail || "Falha ao baixar o backup.";
+        try {
+          const parsed = JSON.parse(detail);
+          message = parsed.detail || message;
+        } catch (error) {
+          // Keep the raw response body when the error is not JSON.
+        }
+        throw new Error(message);
       }
+      const blob = await response.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = objectUrl;
+      link.download = extractDownloadFilename(response, data.filename);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
+    }
+    async function handleDatabaseDumpResult(data) {
       showDatabaseDumpDialog(data);
+      if (data.delivery === "browser_download" && data.download_url) {
+        await downloadDatabaseDump(data);
+      }
     }
     function confirmDatabaseClean() {
       const dialog = document.getElementById("database-clean-dialog");
@@ -6754,7 +6793,7 @@ _INDEX_HTML = """
       try {
         status.textContent = "Gerando dump antes de limpar...";
         const dumpData = await postJson("/api/database-dumps", {});
-        handleDatabaseDumpResult(dumpData);
+        await handleDatabaseDumpResult(dumpData);
         status.textContent = "Restaurando banco para o estado inicial...";
         const data = await postJson("/api/database-reset", {});
         status.textContent = data.message || "Banco restaurado para o estado inicial.";
@@ -6799,7 +6838,7 @@ _INDEX_HTML = """
       try {
         const data = await postJson("/api/database-dumps", {});
         status.textContent = "";
-        handleDatabaseDumpResult(data);
+        await handleDatabaseDumpResult(data);
       } catch (error) {
         status.textContent = friendlyErrorMessage(error.message);
       } finally {

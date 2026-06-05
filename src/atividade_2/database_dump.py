@@ -39,7 +39,7 @@ class DatabaseDumpService:
         settings_loader: Callable[[], Any] = load_settings,
         now: Callable[[], datetime] = datetime.now,
     ) -> None:
-        self.output_dir = Path(output_dir)
+        self.output_dir = resolve_backup_dir(output_dir)
         self.root_backup_file = Path(root_backup_file)
         self._settings_loader = settings_loader
         self._now = now
@@ -183,11 +183,16 @@ def resolve_dump_path(output_dir: Path | str, filename: str) -> Path:
     """Resolve a dump filename inside the configured output directory."""
     if not DUMP_FILENAME_PATTERN.fullmatch(filename):
         raise ValueError("Nome de dump inválido.")
-    root = Path(output_dir).resolve()
+    root = resolve_backup_dir(output_dir)
     path = (root / filename).resolve()
     if path.parent != root:
         raise ValueError("Nome de dump inválido.")
     return path
+
+
+def resolve_backup_dir(output_dir: Path | str) -> Path:
+    """Return the resolved runtime directory used for generated backups."""
+    return Path(output_dir).resolve()
 
 
 def _redact(message: str, secret: str) -> str:
