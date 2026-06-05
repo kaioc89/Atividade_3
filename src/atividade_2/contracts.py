@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
@@ -191,6 +192,25 @@ class CandidateAnswerContext:
     candidate_answer: str
     candidate_model: str
     metadata: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class CandidateProgressEvent:
+    """Secret-safe progress event emitted by the AV3 candidate runner."""
+
+    event_type: str
+    candidate_run_id: int | None
+    dataset: str
+    model_name: str
+    provider: str
+    question_id: int | None = None
+    question_sequence: int | None = None
+    status: str | None = None
+    message: str | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+
+CandidateProgressCallback = Callable[[CandidateProgressEvent], None]
 
 
 @dataclass(frozen=True)

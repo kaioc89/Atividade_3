@@ -11,6 +11,7 @@ from atividade_2.contracts import (
     CandidateAnswerRecord,
     CandidateModelAssignment,
     CandidateModelAssignmentRange,
+    CandidateProgressEvent,
     CandidateModelRuntimeProfileRecord,
     CandidatePromptRecord,
     CandidateQuestionRecord,
@@ -736,6 +737,10 @@ def _success_result(*, dataset: str, question_id: int, chunk_text: str = "Trecho
             )
         ],
     )
+
+
+def _event_types(events: list[CandidateProgressEvent]) -> list[str]:
+    return [event.event_type for event in events]
 
 
 def test_dry_run_resolves_configuration_without_db_writes_or_client_calls(tmp_path) -> None:
@@ -2628,6 +2633,281 @@ def test_emits_audit_events_for_run_question_retrieval_generation_persistence_sk
     assert "answer_persisted" in audit_text
     assert "question_skipped" in audit_text
     assert "run_finished" in audit_text
+
+
+def test_progress_callback_is_optional_and_does_not_change_sequential_behavior(tmp_path) -> None:
+    repository = FakeRepository()
+    retriever = FakeRetriever()
+    retriever.results[("J1", 101)] = _success_result(dataset="J1", question_id=101)
+    service = _service(repository=repository, retriever=retriever)
+
+    result = service.run(
+        RunCandidatesRagRequest(
+            dataset="J1",
+            model_name="candidate-j1",
+            provider="remote_http",
+            batch_size=1,
+            audit_log=str(tmp_path / "optional-progress.log"),
+            no_audit_animation=True,
+        )
+    )
+
+    assert result.summary is not None
+    assert result.summary.selected_questions == 1
+    assert result.summary.processed_questions == 1
+    assert result.summary.successful_answers == 1
+    assert result.summary.failed_answers == 0
+    assert result.summary.skipped_questions == 0
+
+
+def test_sequential_progress_events_emit_expected_order_for_one_successful_question(tmp_path) -> None:
+    repository = FakeRepository()
+    retriever = FakeRetriever()
+    retriever.results[("J1", 101)] = _success_result(dataset="J1", question_id=101)
+    service = _service(repository=repository, retriever=retriever)
+    events: list[CandidateProgressEvent] = []
+
+    result = service.run(
+        RunCandidatesRagRequest(
+            dataset="J1",
+            model_name="candidate-j1",
+            provider="remote_http",
+            batch_size=1,
+            audit_log=str(tmp_path / "progress-success.log"),
+            no_audit_animation=True,
+            progress_callback=events.append,
+        )
+    )
+
+    assert result.summary is not None
+    assert _event_types(events) == [
+        "candidate_question_selected",
+        "candidate_run_started",
+        "candidate_question_started",
+        "candidate_retrieval_finished",
+        "candidate_budget_applied",
+        "candidate_generation_started",
+        "candidate_generation_finished",
+        "candidate_answer_persisted",
+        "candidate_batch_progress",
+        "candidate_run_finished",
+    ]
+    assert events[1].candidate_run_id == 501
+    assert events[2].question_id == 101
+    assert events[3].metadata["retrieved_chunk_count"] == 1
+    assert events[4].metadata["final_max_tokens"] == 1024
+    assert events[7].metadata["candidate_answer_id"] == 801
+    assert events[8].metadata == {
+        "selected_questions": 1,
+        "processed_questions": 1,
+        "successful_answers": 1,
+        "failed_answers": 0,
+        "skipped_questions": 0,
+    }
+    assert events[9].metadata["run_status"] == "completed"
+
+
+def test_failed_question_emits_candidate_question_failed_progress_event(tmp_path) -> None:
+    repository = FakeRepository()
+    retriever = FakeRetriever()
+    retriever.results[("J1", 101)] = RagRetrievalResult(
+        question_id=101,
+        dataset="J1",
+        retrieval_run_id=21,
+        retrieval_name="j1_source_urls_v1",
+        embedding_model="text-embedding-3-small",
+        top_k=5,
+        status="no_chunks_found",
+        chunks=[],
+    )
+    service = _service(repository=repository, retriever=retriever)
+    events: list[CandidateProgressEvent] = []
+
+    result = service.run(
+        RunCandidatesRagRequest(
+            dataset="J1",
+            model_name="candidate-j1",
+            provider="remote_http",
+            batch_size=1,
+            audit_log=str(tmp_path / "progress-failed.log"),
+            no_audit_animation=True,
+            progress_callback=events.append,
+        )
+    )
+
+    assert result.summary is not None
+    failed = [event for event in events if event.event_type == "candidate_question_failed"]
+    assert len(failed) == 1
+    assert failed[0].question_id == 101
+    assert failed[0].metadata["error_class"] == "RetrievalError"
+    assert any(event.event_type == "candidate_batch_progress" for event in events)
+    assert events[-1].event_type == "candidate_run_finished"
+
+
+def test_skipped_existing_success_emits_candidate_question_skipped_progress_event(tmp_path) -> None:
+    repository = FakeRepository()
+    repository.pending_selection_result = CandidateQuestionSelectionResult(
+        questions=[CandidateQuestionRecord(101, "J1", "OAB_Bench", 1, "Q1", None)],
+        summary=CandidateQuestionSelectionSummary(
+            policy="failed_first_pending_aware",
+            skip_existing_successful=True,
+            selected=1,
+            failed_retry_candidates=0,
+            unanswered_candidates=1,
+            successful_excluded=0,
+        ),
+    )
+    repository.existing_successes.add(("J1", "candidate-j1", 101))
+    service = _service(repository=repository, retriever=FakeRetriever())
+    events: list[CandidateProgressEvent] = []
+
+    result = service.run(
+        RunCandidatesRagRequest(
+            dataset="J1",
+            model_name="candidate-j1",
+            provider="remote_http",
+            batch_size=1,
+            audit_log=str(tmp_path / "progress-skipped.log"),
+            no_audit_animation=True,
+            progress_callback=events.append,
+        )
+    )
+
+    assert result.summary is not None
+    skipped = [event for event in events if event.event_type == "candidate_question_skipped"]
+    assert len(skipped) == 1
+    assert skipped[0].metadata["reason"] == "existing_successful_answer"
+    assert [event for event in events if event.event_type == "candidate_batch_progress"][-1].metadata == {
+        "selected_questions": 1,
+        "processed_questions": 0,
+        "successful_answers": 0,
+        "failed_answers": 0,
+        "skipped_questions": 1,
+    }
+
+
+def test_progress_event_payloads_do_not_include_api_keys_or_raw_secret_values(tmp_path) -> None:
+    repository = FakeRepository()
+    retriever = FakeRetriever()
+    retriever.results[("J1", 101)] = _success_result(dataset="J1", question_id=101)
+    service = _service(repository=repository, retriever=retriever)
+    events: list[CandidateProgressEvent] = []
+
+    service.run(
+        RunCandidatesRagRequest(
+            dataset="J1",
+            model_name="openai/gpt-5.4",
+            provider="remote_http",
+            batch_size=1,
+            audit_log=str(tmp_path / "progress-secrets.log"),
+            no_audit_animation=True,
+            progress_callback=events.append,
+        )
+    )
+
+    serialized = "\n".join(
+        f"{event.event_type}|{event.message}|{event.metadata}" for event in events
+    )
+    assert "openrouter-test-key" not in serialized
+    assert "featherless-test-key" not in serialized
+    assert "Resposta final" not in serialized
+
+
+def test_progress_callback_exception_does_not_fail_candidate_run(tmp_path) -> None:
+    repository = FakeRepository()
+    retriever = FakeRetriever()
+    retriever.results[("J1", 101)] = _success_result(dataset="J1", question_id=101)
+    audit_path = tmp_path / "progress-callback-failure.log"
+    service = _service(repository=repository, retriever=retriever)
+
+    def fail_callback(_event: CandidateProgressEvent) -> None:
+        raise RuntimeError("ui sink offline")
+
+    result = service.run(
+        RunCandidatesRagRequest(
+            dataset="J1",
+            model_name="candidate-j1",
+            provider="remote_http",
+            batch_size=1,
+            audit_log=str(audit_path),
+            no_audit_animation=True,
+            progress_callback=fail_callback,
+        )
+    )
+
+    assert result.summary is not None
+    assert result.summary.successful_answers == 1
+    audit_text = audit_path.read_text(encoding="utf-8")
+    assert "candidate_progress_callback_failed" in audit_text
+
+
+def test_parallel_progress_events_emit_for_all_selected_questions(tmp_path) -> None:
+    repository = FakeRepository()
+    repository.questions_by_dataset["J1"] = [
+        CandidateQuestionRecord(101, "J1", "OAB_Bench", 1, "Q1", None),
+        CandidateQuestionRecord(102, "J1", "OAB_Bench", 2, "Q2", None),
+        CandidateQuestionRecord(103, "J1", "OAB_Bench", 3, "Q3", None),
+    ]
+    retriever = FakeRetriever()
+    for question in repository.questions_by_dataset["J1"]:
+        retriever.results[("J1", question.question_id)] = _success_result(dataset="J1", question_id=question.question_id)
+    client = ThreadCountingClient()
+    service, _connections, _repositories = _parallel_service(repository=repository, retriever=retriever, client=client)
+    events: list[CandidateProgressEvent] = []
+
+    result = service.run(
+        RunCandidatesRagRequest(
+            dataset="J1",
+            model_name="candidate-j1",
+            provider="remote_http",
+            batch_size=3,
+            candidate_execution_strategy="parallel",
+            candidate_parallel_max_workers=2,
+            audit_log=str(tmp_path / "parallel-progress.log"),
+            no_audit_animation=True,
+            progress_callback=events.append,
+        )
+    )
+
+    assert result.summary is not None
+    assert len([event for event in events if event.event_type == "candidate_question_started"]) == 3
+    assert len([event for event in events if event.event_type == "candidate_answer_persisted"]) == 3
+    assert len([event for event in events if event.event_type == "candidate_batch_progress"]) == 3
+    assert events[-1].event_type == "candidate_run_finished"
+
+
+def test_adaptive_progress_events_emit_for_all_selected_questions(tmp_path) -> None:
+    repository = FakeRepository()
+    repository.questions_by_dataset["J1"] = [
+        CandidateQuestionRecord(101, "J1", "OAB_Bench", 1, "Q1", None),
+        CandidateQuestionRecord(102, "J1", "OAB_Bench", 2, "Q2", None),
+        CandidateQuestionRecord(103, "J1", "OAB_Bench", 3, "Q3", None),
+    ]
+    retriever = FakeRetriever()
+    for question in repository.questions_by_dataset["J1"]:
+        retriever.results[("J1", question.question_id)] = _success_result(dataset="J1", question_id=question.question_id)
+    client = ThreadCountingClient()
+    service, _connections, _repositories = _parallel_service(repository=repository, retriever=retriever, client=client)
+    events: list[CandidateProgressEvent] = []
+
+    result = service.run(
+        RunCandidatesRagRequest(
+            dataset="J1",
+            model_name="candidate-j1",
+            provider="remote_http",
+            batch_size=3,
+            candidate_execution_strategy="adaptive",
+            audit_log=str(tmp_path / "adaptive-progress.log"),
+            no_audit_animation=True,
+            progress_callback=events.append,
+        )
+    )
+
+    assert result.summary is not None
+    assert len([event for event in events if event.event_type == "candidate_question_started"]) == 3
+    assert len([event for event in events if event.event_type == "candidate_answer_persisted"]) == 3
+    assert len([event for event in events if event.event_type == "candidate_batch_progress"]) == 3
+    assert events[-1].event_type == "candidate_run_finished"
 
 
 def test_does_not_leak_answer_key_rubric_or_guideline_into_rendered_prompt(tmp_path) -> None:

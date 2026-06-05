@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import threading
 import time
 from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, as_completed, wait
 from collections.abc import Callable
@@ -31,6 +32,8 @@ from .config import load_settings
 from .contracts import (
     CandidateAnswerRecord,
     CandidateModelAssignment,
+    CandidateProgressCallback,
+    CandidateProgressEvent,
     CandidateModelRuntimeObservationRecord,
     CandidateModelRuntimeProfileRecord,
     CandidatePromptContext,
@@ -80,6 +83,7 @@ class RunCandidatesRagRequest:
     remote_candidate_openai_compatible: bool = True
     candidate_execution_strategy: str | None = None
     candidate_parallel_max_workers: int | None = None
+    progress_callback: CandidateProgressCallback | None = None
 
 
 @dataclass(frozen=True)
@@ -191,6 +195,112 @@ class CandidateQuestionTaskResult:
     question_result: CandidateQuestionRunResult
     budget: CandidatePromptBudget | None
     runtime_config: ResolvedCandidateRuntimeConfig
+
+
+@dataclass(frozen=True)
+class CandidateProgressCounts:
+    """Terminal per-run counters exposed in batch progress events."""
+
+    selected_questions: int
+    processed_questions: int = 0
+    successful_answers: int = 0
+    failed_answers: int = 0
+    skipped_questions: int = 0
+
+
+class CandidateProgressReporter:
+    """Emit typed progress events without affecting candidate execution."""
+
+    def __init__(
+        self,
+        *,
+        audit: AuditLogger,
+        request: RunCandidatesRagRequest,
+        resolved: ResolvedRunCandidatesRag,
+        candidate_run_id: int | None = None,
+        selected_questions: int = 0,
+    ) -> None:
+        self._audit = audit
+        self._callback = request.progress_callback
+        self._resolved = resolved
+        self._candidate_run_id = candidate_run_id
+        self._lock = threading.Lock()
+        self._counts = CandidateProgressCounts(selected_questions=selected_questions)
+
+    def set_run(self, *, candidate_run_id: int, selected_questions: int) -> None:
+        with self._lock:
+            self._candidate_run_id = candidate_run_id
+            self._counts = CandidateProgressCounts(selected_questions=selected_questions)
+
+    def emit(
+        self,
+        event_type: str,
+        *,
+        question: CandidateQuestionRecord | None = None,
+        status: str | None = None,
+        message: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> None:
+        event = CandidateProgressEvent(
+            event_type=event_type,
+            candidate_run_id=self._candidate_run_id,
+            dataset=self._resolved.dataset,
+            model_name=self._resolved.model_name,
+            provider=self._resolved.provider,
+            question_id=None if question is None else question.question_id,
+            question_sequence=None if question is None else question.question_sequence,
+            status=status,
+            message=message,
+            metadata=dict(metadata or {}),
+        )
+        self._dispatch(event)
+
+    def emit_question_terminal(self, result: CandidateQuestionTaskResult) -> None:
+        with self._lock:
+            counts = self._counts
+            if result.question_result.status == "success":
+                counts = replace(
+                    counts,
+                    processed_questions=counts.processed_questions + 1,
+                    successful_answers=counts.successful_answers + 1,
+                )
+            elif result.question_result.status == "failed":
+                counts = replace(
+                    counts,
+                    processed_questions=counts.processed_questions + 1,
+                    failed_answers=counts.failed_answers + 1,
+                )
+            elif result.question_result.status == "skipped":
+                counts = replace(
+                    counts,
+                    skipped_questions=counts.skipped_questions + 1,
+                )
+            self._counts = counts
+            payload = {
+                "selected_questions": counts.selected_questions,
+                "processed_questions": counts.processed_questions,
+                "successful_answers": counts.successful_answers,
+                "failed_answers": counts.failed_answers,
+                "skipped_questions": counts.skipped_questions,
+            }
+        self.emit("candidate_batch_progress", status="running", metadata=payload)
+
+    def counts(self) -> CandidateProgressCounts:
+        with self._lock:
+            return self._counts
+
+    def _dispatch(self, event: CandidateProgressEvent) -> None:
+        if self._callback is None:
+            return
+        try:
+            self._callback(event)
+        except Exception as error:
+            self._audit.event(
+                AuditEvent(
+                    "candidate_progress_callback_failed",
+                    f"event_type={event.event_type} error_type={type(error).__name__}",
+                )
+            )
 
 
 @dataclass(frozen=True)
@@ -468,6 +578,7 @@ class RunCandidatesRagService:
         resolved = self.resolve(request)
         animate = False if request.no_audit_animation else None
         with AuditLogger(file_path=resolved.audit_path, animate=animate) as audit:
+            progress = CandidateProgressReporter(audit=audit, request=request, resolved=resolved)
             with audit.step("Loading configuration"):
                 settings = self._settings_loader()
             execution_config = _resolve_candidate_execution_config(settings=settings, request=request)
@@ -532,6 +643,18 @@ class RunCandidatesRagService:
                 selection_summary = _format_candidate_question_selection(selection_result.summary)
                 audit.file_event("candidate_question_selection", selection_summary.replace("\n", " | "))
                 audit.terminal_event(selection_summary)
+                progress.emit(
+                    "candidate_question_selected",
+                    status="selected",
+                    metadata={
+                        "selected_count": selection_result.summary.selected,
+                        "failed_retry_count": selection_result.summary.failed_retry_candidates,
+                        "unanswered_count": selection_result.summary.unanswered_candidates,
+                        "skipped_success_excluded_count": selection_result.summary.successful_excluded,
+                        "selection_policy": selection_result.summary.policy,
+                        "skip_existing_successful": selection_result.summary.skip_existing_successful,
+                    },
+                )
                 runtime_config = _resolve_candidate_runtime_config(
                     repository=repository,
                     settings=settings,
@@ -619,12 +742,26 @@ class RunCandidatesRagService:
                         ),
                     )
                 )
+                progress.set_run(candidate_run_id=int(run.candidate_run_id), selected_questions=len(questions))
+                progress.emit(
+                    "candidate_run_started",
+                    status="running",
+                    metadata={
+                        "execution_strategy": execution_config.strategy,
+                        "selected_count": len(questions),
+                    },
+                )
                 client_request = request
                 if self._client_factory is _default_client_factory:
                     client_request = _with_remote_candidate_config(request, runtime_config)
                 adaptive_metrics: dict[str, Any] | None = None
                 if execution_config.strategy == "adaptive":
-                    scheduler = CandidateAdaptiveScheduler(service=self, execution_config=execution_config, audit=audit)
+                    scheduler = CandidateAdaptiveScheduler(
+                        service=self,
+                        execution_config=execution_config,
+                        audit=audit,
+                        progress=progress,
+                    )
                     task_results = scheduler.run(
                         settings=settings,
                         request=request,
@@ -648,6 +785,7 @@ class RunCandidatesRagService:
                         candidate_run_id=int(run.candidate_run_id),
                         execution_config=execution_config,
                         audit=audit,
+                        progress=progress,
                     )
                 else:
                     client = self._client_factory(client_request, settings) if questions else None
@@ -669,8 +807,10 @@ class RunCandidatesRagService:
                                 candidate_run_id=int(run.candidate_run_id),
                                 isolate_unhandled_errors=False,
                                 parallel_audit=False,
+                                progress=progress,
                             )
                         )
+                        progress.emit_question_terminal(task_results[-1])
                         runtime_config = task_results[-1].runtime_config
 
                 task_results = sorted(
@@ -728,6 +868,20 @@ class RunCandidatesRagService:
                     finished_at=_utcnow_iso(),
                     metadata=completion_metadata,
                 )
+                counts = progress.counts()
+                progress.emit(
+                    "candidate_run_finished",
+                    status="completed",
+                    metadata={
+                        "run_status": "completed",
+                        "selected_questions": counts.selected_questions,
+                        "processed_questions": counts.processed_questions,
+                        "successful_answers": counts.successful_answers,
+                        "failed_answers": counts.failed_answers,
+                        "skipped_questions": counts.skipped_questions,
+                        "execution_strategy": execution_config.strategy,
+                    },
+                )
                 audit.event(
                     AuditEvent(
                         "run_finished",
@@ -763,6 +917,21 @@ class RunCandidatesRagService:
                             "error_type": type(error).__name__,
                         },
                     )
+                    counts = progress.counts()
+                    progress.emit(
+                        "candidate_run_finished",
+                        status="failed",
+                        message=type(error).__name__,
+                        metadata={
+                            "run_status": "failed",
+                            "selected_questions": counts.selected_questions,
+                            "processed_questions": counts.processed_questions,
+                            "successful_answers": counts.successful_answers,
+                            "failed_answers": counts.failed_answers,
+                            "skipped_questions": counts.skipped_questions,
+                            "execution_strategy": execution_config.strategy,
+                        },
+                    )
                     audit.event(
                         AuditEvent(
                             "run_failed",
@@ -790,6 +959,7 @@ class RunCandidatesRagService:
         candidate_run_id: int,
         execution_config: ResolvedCandidateExecutionConfig,
         audit: AuditLogger,
+        progress: CandidateProgressReporter,
     ) -> list[CandidateQuestionTaskResult]:
         if not questions:
             return []
@@ -819,11 +989,14 @@ class RunCandidatesRagService:
                     candidate_run_id=candidate_run_id,
                     audit=audit,
                     propagate_retryable_generation_errors=False,
+                    progress=progress,
                 )
                 for question in questions
             ]
             for future in as_completed(futures):
-                task_results.append(future.result())
+                result = future.result()
+                task_results.append(result)
+                progress.emit_question_terminal(result)
 
         successful_answers = sum(1 for item in task_results if item.question_result.status == "success")
         failed_answers = sum(1 for item in task_results if item.question_result.status == "failed")
@@ -852,6 +1025,7 @@ class RunCandidatesRagService:
         candidate_run_id: int,
         audit: AuditLogger,
         propagate_retryable_generation_errors: bool = False,
+        progress: CandidateProgressReporter | None = None,
     ) -> CandidateQuestionTaskResult:
         connection = self._connect(settings.database_url)
         try:
@@ -874,6 +1048,7 @@ class RunCandidatesRagService:
                 isolate_unhandled_errors=not propagate_retryable_generation_errors,
                 parallel_audit=True,
                 propagate_retryable_generation_errors=propagate_retryable_generation_errors,
+                progress=progress,
             )
         finally:
             connection.close()
@@ -889,6 +1064,7 @@ class RunCandidatesRagService:
         candidate_run_id: int,
         error: Exception,
         audit: AuditLogger,
+        progress: CandidateProgressReporter | None = None,
     ) -> CandidateQuestionTaskResult:
         connection = self._connect(settings.database_url)
         try:
@@ -902,6 +1078,7 @@ class RunCandidatesRagService:
                 runtime_config=runtime_config,
                 candidate_run_id=candidate_run_id,
                 error=error,
+                progress=progress,
             )
         finally:
             connection.close()
@@ -916,10 +1093,12 @@ class CandidateAdaptiveScheduler:
         service: RunCandidatesRagService,
         execution_config: ResolvedCandidateExecutionConfig,
         audit: AuditLogger,
+        progress: CandidateProgressReporter,
     ) -> None:
         self.service = service
         self.execution_config = execution_config
         self.audit = audit
+        self.progress = progress
         self.groups: dict[CandidateAdaptiveGroupKey, CandidateAdaptiveGroupState] = {}
 
     def run(
@@ -998,20 +1177,23 @@ class CandidateAdaptiveScheduler:
                             candidate_run_id=candidate_run_id,
                         )
                         results.extend(terminal_results)
+                        for item in terminal_results:
+                            self.progress.emit_question_terminal(item)
                     else:
-                        results.extend(
-                            self._handle_result(
-                                completed.result,
-                                queued=queued,
-                                pending=pending,
-                                state=state,
-                                settings=settings,
-                                resolved=resolved,
-                                prompt=prompt,
-                                runtime_config=runtime_config,
-                                candidate_run_id=candidate_run_id,
-                            )
+                        terminal_results = self._handle_result(
+                            completed.result,
+                            queued=queued,
+                            pending=pending,
+                            state=state,
+                            settings=settings,
+                            resolved=resolved,
+                            prompt=prompt,
+                            runtime_config=runtime_config,
+                            candidate_run_id=candidate_run_id,
                         )
+                        results.extend(terminal_results)
+                        for item in terminal_results:
+                            self.progress.emit_question_terminal(item)
         self._audit_final(candidate_run_id)
         return results
 
@@ -1133,6 +1315,7 @@ class CandidateAdaptiveScheduler:
             candidate_run_id=candidate_run_id,
             audit=self.audit,
             propagate_retryable_generation_errors=True,
+            progress=self.progress,
         )
         return CandidateAdaptiveCompletedTask(queued=queued, result=result)
 
@@ -1182,6 +1365,7 @@ class CandidateAdaptiveScheduler:
                         candidate_run_id=candidate_run_id,
                         error=RuntimeError(question_result.error_message or classification.reason),
                         audit=self.audit,
+                        progress=self.progress,
                     )
                 )
             return terminal_results
@@ -1253,6 +1437,7 @@ class CandidateAdaptiveScheduler:
                     candidate_run_id=candidate_run_id,
                     error=error,
                     audit=self.audit,
+                    progress=self.progress,
                 )
             ]
             for discarded_task in discarded:
@@ -1266,6 +1451,7 @@ class CandidateAdaptiveScheduler:
                         candidate_run_id=candidate_run_id,
                         error=error,
                         audit=self.audit,
+                        progress=self.progress,
                     )
                 )
             return terminal_results
@@ -1770,6 +1956,7 @@ def _execute_candidate_question_task(
     isolate_unhandled_errors: bool,
     parallel_audit: bool,
     propagate_retryable_generation_errors: bool = False,
+    progress: CandidateProgressReporter | None = None,
 ) -> CandidateQuestionTaskResult:
     if parallel_audit:
         audit.event(
@@ -1795,6 +1982,7 @@ def _execute_candidate_question_task(
             runtime_config=runtime_config,
             candidate_run_id=candidate_run_id,
             propagate_retryable_generation_errors=propagate_retryable_generation_errors,
+            progress=progress,
         )
     except Exception as error:
         if not isolate_unhandled_errors:
@@ -1808,6 +1996,7 @@ def _execute_candidate_question_task(
             runtime_config=runtime_config,
             candidate_run_id=candidate_run_id,
             error=error,
+            progress=progress,
         )
 
     if parallel_audit:
@@ -1850,6 +2039,7 @@ def _execute_candidate_question_task_inner(
     runtime_config: ResolvedCandidateRuntimeConfig,
     candidate_run_id: int,
     propagate_retryable_generation_errors: bool = False,
+    progress: CandidateProgressReporter | None = None,
 ) -> CandidateQuestionTaskResult:
     audit.event(
         AuditEvent(
@@ -1860,6 +2050,8 @@ def _execute_candidate_question_task_inner(
             ),
         )
     )
+    if progress is not None:
+        progress.emit("candidate_question_started", question=question, status="running")
     if resolved.skip_existing_successful and repository.successful_candidate_answer_exists(
         dataset=resolved.dataset,
         model_name=resolved.model_name,
@@ -1875,6 +2067,13 @@ def _execute_candidate_question_task_inner(
                 ),
             )
         )
+        if progress is not None:
+            progress.emit(
+                "candidate_question_skipped",
+                question=question,
+                status="skipped",
+                metadata={"reason": "existing_successful_answer"},
+            )
         return CandidateQuestionTaskResult(
             question_result=CandidateQuestionRunResult(
                 question_id=question.question_id,
@@ -1899,6 +2098,17 @@ def _execute_candidate_question_task_inner(
             ),
         )
     )
+    if progress is not None:
+        progress.emit(
+            "candidate_retrieval_finished",
+            question=question,
+            status=retrieval_result.status,
+            metadata={
+                "retrieval_status": retrieval_result.status,
+                "retrieved_chunk_count": len(retrieval_result.chunks),
+                "retrieval_run_id": retrieval_result.retrieval_run_id,
+            },
+        )
     if retrieval_result.status != "success":
         rendered_prompt = _render_prompt(
             question=question,
@@ -1925,6 +2135,26 @@ def _execute_candidate_question_task_inner(
                 ),
             )
         )
+        if progress is not None:
+            progress.emit(
+                "candidate_answer_persisted",
+                question=question,
+                status="failed",
+                metadata={
+                    "candidate_answer_id": stored_answer.candidate_answer_id,
+                    "status": "failed",
+                },
+            )
+            progress.emit(
+                "candidate_question_failed",
+                question=question,
+                status="failed",
+                message="Retrieval failed",
+                metadata={
+                    "error_class": "RetrievalError",
+                    "error_message": f"Retrieval failed: {retrieval_result.status}",
+                },
+            )
         return CandidateQuestionTaskResult(
             question_result=CandidateQuestionRunResult(
                 question_id=question.question_id,
@@ -1950,6 +2180,7 @@ def _execute_candidate_question_task_inner(
         runtime_config=runtime_config,
         candidate_run_id=candidate_run_id,
         propagate_retryable_generation_errors=propagate_retryable_generation_errors,
+        progress=progress,
     )
     if outcome.budget is not None:
         _log_candidate_prompt_budget(
@@ -1959,6 +2190,16 @@ def _execute_candidate_question_task_inner(
         )
     stored_answer = outcome.answer
     assert stored_answer.candidate_answer_id is not None
+    if progress is not None:
+        progress.emit(
+            "candidate_answer_persisted",
+            question=question,
+            status=stored_answer.status,
+            metadata={
+                "candidate_answer_id": stored_answer.candidate_answer_id,
+                "status": stored_answer.status,
+            },
+        )
     snapshot_rows = snapshot_service.persist_retrieval_snapshot(
         candidate_answer_id=stored_answer.candidate_answer_id,
         retrieval_result=outcome.retrieval_result_for_prompt,
@@ -1972,6 +2213,18 @@ def _execute_candidate_question_task_inner(
             ),
         )
     )
+    if progress is not None:
+        if stored_answer.status == "failed":
+            progress.emit(
+                "candidate_question_failed",
+                question=question,
+                status="failed",
+                message="Generation failed",
+                metadata={
+                    "error_class": "GenerationError",
+                    "error_message": _safe_error_message(stored_answer.error_message or ""),
+                },
+            )
     if stored_answer.status == "success":
         question_result = CandidateQuestionRunResult(
             question_id=question.question_id,
@@ -2008,6 +2261,7 @@ def _persist_unhandled_candidate_question_failure(
     runtime_config: ResolvedCandidateRuntimeConfig,
     candidate_run_id: int,
     error: Exception,
+    progress: CandidateProgressReporter | None = None,
 ) -> CandidateQuestionTaskResult:
     retrieval_result = RagRetrievalResult(
         question_id=question.question_id,
@@ -2043,6 +2297,26 @@ def _persist_unhandled_candidate_question_failure(
             ),
         )
     )
+    if progress is not None:
+        progress.emit(
+            "candidate_answer_persisted",
+            question=question,
+            status="failed",
+            metadata={
+                "candidate_answer_id": stored_answer.candidate_answer_id,
+                "status": "failed",
+            },
+        )
+        progress.emit(
+            "candidate_question_failed",
+            question=question,
+            status="failed",
+            message=type(error).__name__,
+            metadata={
+                "error_class": type(error).__name__,
+                "error_message": _safe_error_message(str(error)),
+            },
+        )
     return CandidateQuestionTaskResult(
         question_result=CandidateQuestionRunResult(
             question_id=question.question_id,
@@ -2132,6 +2406,7 @@ def _with_remote_candidate_config(
         remote_candidate_openai_compatible=request.remote_candidate_openai_compatible,
         candidate_execution_strategy=request.candidate_execution_strategy,
         candidate_parallel_max_workers=request.candidate_parallel_max_workers,
+        progress_callback=request.progress_callback,
     )
 
 
@@ -2525,6 +2800,7 @@ def _execute_candidate_generation(
     runtime_config: ResolvedCandidateRuntimeConfig,
     candidate_run_id: int,
     propagate_retryable_generation_errors: bool = False,
+    progress: CandidateProgressReporter | None = None,
 ) -> CandidateGenerationOutcome:
     initial_budget = _budget_retrieval_for_question(
         question=question,
@@ -2541,6 +2817,30 @@ def _execute_candidate_generation(
         budget=initial_budget.budget,
         requested_max_tokens=runtime_config.requested_max_tokens,
     )
+    if progress is not None:
+        progress.emit(
+            "candidate_budget_applied",
+            question=question,
+            status="ready",
+            metadata={
+                "final_max_tokens": runtime_config.max_tokens,
+                "context_window_tokens": runtime_config.context_window_tokens,
+                "included_chunks": initial_budget.budget.included_chunks,
+                "truncated_chunks": initial_budget.budget.truncated_chunks,
+                "dropped_chunks": initial_budget.budget.dropped_chunks,
+                "estimated_prompt_tokens": initial_budget.budget.estimated_prompt_tokens_after_budget,
+            },
+        )
+        progress.emit(
+            "candidate_generation_started",
+            question=question,
+            status="running",
+            metadata={
+                "model_name": resolved.model_name,
+                "provider": resolved.provider,
+                "final_max_tokens": runtime_config.max_tokens,
+            },
+        )
     try:
         raw_response = client.generate(rendered_prompt, model=resolved.model_name)
         audit.event(
@@ -2552,6 +2852,13 @@ def _execute_candidate_generation(
                 ),
             )
         )
+        if progress is not None:
+            progress.emit(
+                "candidate_generation_finished",
+                question=question,
+                status="success",
+                metadata={"latency_ms": raw_response.latency_ms},
+            )
         stored_answer = repository.persist_candidate_answer(
             answer=CandidateAnswerRecord(
                 candidate_answer_id=None,
@@ -2664,6 +2971,30 @@ def _execute_candidate_generation(
                         budget=retried_budget.budget,
                         requested_max_tokens=updated_runtime_config.requested_max_tokens,
                     )
+                    if progress is not None:
+                        progress.emit(
+                            "candidate_budget_applied",
+                            question=question,
+                            status="ready",
+                            metadata={
+                                "final_max_tokens": updated_runtime_config.max_tokens,
+                                "context_window_tokens": updated_runtime_config.context_window_tokens,
+                                "included_chunks": retried_budget.budget.included_chunks,
+                                "truncated_chunks": retried_budget.budget.truncated_chunks,
+                                "dropped_chunks": retried_budget.budget.dropped_chunks,
+                                "estimated_prompt_tokens": retried_budget.budget.estimated_prompt_tokens_after_budget,
+                            },
+                        )
+                        progress.emit(
+                            "candidate_generation_started",
+                            question=question,
+                            status="running",
+                            metadata={
+                                "model_name": resolved.model_name,
+                                "provider": resolved.provider,
+                                "final_max_tokens": updated_runtime_config.max_tokens,
+                            },
+                        )
                     retried_response = client.generate(retried_prompt, model=resolved.model_name)
                     audit.event(
                         AuditEvent(
@@ -2674,6 +3005,13 @@ def _execute_candidate_generation(
                             ),
                         )
                     )
+                    if progress is not None:
+                        progress.emit(
+                            "candidate_generation_finished",
+                            question=question,
+                            status="success",
+                            metadata={"latency_ms": retried_response.latency_ms},
+                        )
                     stored_answer = repository.persist_candidate_answer(
                         answer=CandidateAnswerRecord(
                             candidate_answer_id=None,
