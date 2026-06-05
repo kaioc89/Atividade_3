@@ -25,7 +25,7 @@ Este repositório contém a fundação local do projeto e a pipeline inicial de 
 - `outputs/audit/`: logs locais gerados por `run-judge`.
 - `scripts/`: automações locais de banco.
 - `backup_atividade_2_reset.sql`: backup SQL fixo usado para iniciar/resetar o banco AV2.
-- `backup_atividade_2.sql`: última versão compartilhável gerada por `make db-backup` quando `APP_ENV=prod`.
+- `backup_atividade_2.sql`: artefato canônico versionado para restore compartilhável de AV2 + AV3 RAG; só deve ser atualizado por promoção explícita.
 
 ## Setup Python
 
@@ -83,6 +83,23 @@ make db-migrate-or-create
 
 Esse comando usa `backup_atividade_2_reset.sql`. Se o banco já tiver tabelas públicas, o restore é ignorado para evitar sobrescrever dados locais.
 
+Para atualizar apenas a estrutura do banco ativo e os seeds determinísticos de AV3, sem restore nem limpeza:
+
+```bash
+make db-ensure-schema
+```
+
+Esse comando:
+
+- usa `.venv/bin/python`;
+- carrega a configuracao atual de `.env` e do ambiente;
+- conecta no `DATABASE_URL` ativo;
+- executa `JudgeRepository.ensure_schema()`;
+- executa `JudgeRepository.upsert_default_candidate_model_assignments()`;
+- preserva os dados existentes em `public` e `av3`.
+
+Use `db-migrate-or-create` apenas no bootstrap inicial de uma base vazia ou quando voce realmente quiser restaurar o baseline fixo. Use `db-ensure-schema` depois de restaurar um backup existente ou depois de atualizar a branch para aplicar evolucoes de schema com seguranca.
+
 Para forçar o restore sobre um banco já populado, limpando os schemas `public` e `av3` antes de restaurar:
 
 ```bash
@@ -131,13 +148,29 @@ O arquivo gerado segue o formato:
 outputs/backup/atividade_2_YYYYmmdd_HHMMSS.sql
 ```
 
-Cada execução grava um arquivo timestampado em `outputs/backup/`. Para também publicar a última versão compartilhável na raiz, execute:
+Cada execução grava um arquivo timestampado em `outputs/backup/` e nunca sobrescreve `backup_atividade_2.sql`.
+
+`backup_atividade_2.sql` é o backup canônico protegido para restore compartilhável de AV2 + AV3 RAG. Atualize esse arquivo apenas com promoção explícita:
 
 ```bash
-APP_ENV=prod make db-backup
+make db-backup-promote
 ```
 
-Nesse comando, o `APP_ENV=prod` passado na linha de comando prevalece sobre o valor de `.env` apenas para essa execução. Em `dev` e `test`, a raiz não é atualizada. Os arquivos timestampados mantêm o histórico local e são ignorados pelo Git; o arquivo da raiz é único, compartilhável e permanece versionado. O baseline de reset fica separado em `backup_atividade_2_reset.sql` e não é sobrescrito por esse fluxo.
+Alternativamente:
+
+```bash
+PROMOTE_BACKUP=1 make db-backup
+```
+
+Antes de promover, o script valida que estas contagens sejam maiores que zero no banco atual:
+
+- `public.respostas_atividade_1`
+- `public.avaliacoes_juiz`
+- `av3.rag_chunks`
+- `av3.rag_embeddings`
+- `av3.retrieval_runs` com `ativo = TRUE`
+
+Se qualquer contagem for zero, a promoção aborta e `backup_atividade_2.sql` permanece intacto. Os arquivos timestampados mantêm o histórico local e são ignorados pelo Git. O baseline de reset fica separado em `backup_atividade_2_reset.sql` e não é sobrescrito por esse fluxo.
 
 ## Running the LLM-as-a-Judge pipeline with a remote model
 
@@ -260,8 +293,8 @@ O modo `single` usa `REMOTE_JUDGE_MODEL`, o mesmo modelo do juiz 1. Se só a URL
 
 | Variável | Padrão recomendado | Quando mudar |
 |---|---|---|
-| `APP_ENV` | `dev` | Use `APP_ENV=prod make db-backup` para publicar a última versão do backup em `backup_atividade_2.sql`; `dev` e `test` salvam apenas em `outputs/backup/`. |
-| `BACKUP_ROOT_FILE` | `backup_atividade_2.sql` | Caminho do arquivo único de última versão. No container Web, é sobrescrito para `/workspace/backup_atividade_2.sql` para escrever na raiz do repositório host. |
+| `APP_ENV` | `dev` | Ambiente da aplicação. Não controla mais promoção de backup canônico. |
+| `BACKUP_ROOT_FILE` | `backup_atividade_2.sql` | Caminho do artefato canônico protegido, usado somente por promoção explícita. |
 | `DATABASE_URL` | `postgresql://postgres:postgres@localhost:5432/app_dev` | Se seu banco usa outra porta, usuário ou database. |
 | `JUDGE_PROVIDER` | `remote_http` | Não mude por enquanto. |
 | `JUDGE_PANEL_MODE` | `2plus1` | Use `single` para smoke test barato. |
@@ -490,10 +523,10 @@ Depois de uma execução relevante:
 make db-backup
 ```
 
-Para atualizar também o artefato versionado da raiz:
+Para promover também o artefato canônico versionado da raiz:
 
 ```bash
-APP_ENV=prod make db-backup
+make db-backup-promote
 ```
 
 Para restaurar do zero, use o fluxo recomendado do projeto:
@@ -522,8 +555,10 @@ make install
 make test
 make db-up
 make db-migrate-or-create
+make db-ensure-schema
 make db-restore-validate
 make db-backup
+make db-backup-promote
 make db-status
 make db-psql
 make db-logs
@@ -546,6 +581,7 @@ Para validar o projeto do zero:
 make install
 make db-up
 make db-migrate-or-create
+make db-ensure-schema
 make db-restore-validate
 make db-backup
 make test

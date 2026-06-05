@@ -2,8 +2,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+import pytest
+
 from atividade_2.contracts import (
     CandidateAnswerRecord,
+    CandidateModelAssignment,
+    CandidateModelAssignmentRange,
     CandidatePromptRecord,
     CandidateQuestionRecord,
     CandidateRawResponse,
@@ -12,13 +16,30 @@ from atividade_2.contracts import (
     RagVectorBaseSummary,
     RetrievedRagChunk,
 )
-from atividade_2.run_candidates_rag_service import RunCandidatesRagRequest, RunCandidatesRagService
+from atividade_2.run_candidates_rag_service import (
+    RunCandidatesRagRequest,
+    RunCandidatesRagService,
+    _default_client_factory,
+    _format_candidate_runtime_config,
+    _resolve_candidate_provider_config,
+    _resolve_candidate_runtime_config,
+    _with_remote_candidate_config,
+    resolve_candidate_max_tokens,
+)
+from atividade_2.repositories import _default_candidate_model_assignments
 
 
 @dataclass
 class FakeSettings:
     database_url: str = "postgresql://example.invalid/app"
     embedding_api_key: str | None = "embedding-test-key"
+    featherless_url: str | None = "https://api.featherless.ai/v1"
+    featherless_api_key: str | None = "featherless-test-key"
+    openrouter_url: str | None = "https://openrouter.ai/api/v1"
+    openrouter_api_key: str | None = "openrouter-test-key"
+    remote_candidate_temperature: float = 0.2
+    remote_candidate_max_tokens: int | None = 1024
+    remote_candidate_top_p: float = 0.9
 
 
 class FakeConnection:
@@ -92,9 +113,70 @@ class FakeRepository:
             ],
         }
         self.existing_successes: set[tuple[str, str, int]] = set()
+        self.assignments = _default_candidate_model_assignments()
+        self.assignments += (
+            CandidateModelAssignment(
+                assignment_id=None,
+                id_modelo_av2=1001,
+                owner="Tests",
+                original_provider_model_id="candidate-j1",
+                original_runtime="tests",
+                av3_provider="featherless",
+                artifact_format="api",
+                match_type="same_model_api_reproduction",
+                validation_status="confirmed_by_owner",
+                av3_provider_model_id="candidate-j1",
+                hf_model_id="candidate-j1",
+                original_quantization="provider_default",
+                av3_quantization="provider_default",
+                ranges=(
+                    CandidateModelAssignmentRange(None, None, "J1", 1, 2000),
+                ),
+            ),
+            CandidateModelAssignment(
+                assignment_id=None,
+                id_modelo_av2=1002,
+                owner="Tests",
+                original_provider_model_id="candidate-j2",
+                original_runtime="tests",
+                av3_provider="featherless",
+                artifact_format="api",
+                match_type="same_model_api_reproduction",
+                validation_status="confirmed_by_owner",
+                av3_provider_model_id="candidate-j2",
+                hf_model_id="candidate-j2",
+                original_quantization="provider_default",
+                av3_quantization="provider_default",
+                ranges=(
+                    CandidateModelAssignmentRange(None, None, "J2", 1, 2000),
+                ),
+            ),
+            CandidateModelAssignment(
+                assignment_id=None,
+                id_modelo_av2=1003,
+                owner="Tests",
+                original_provider_model_id="openai/gpt-5.4",
+                original_runtime="tests",
+                av3_provider="openrouter",
+                artifact_format="api",
+                match_type="same_model_api_reproduction",
+                validation_status="confirmed_by_owner",
+                av3_provider_model_id="openai/gpt-5.4",
+                hf_model_id="openai/gpt-5.4",
+                original_quantization="provider_default",
+                av3_quantization="provider_default",
+                ranges=(
+                    CandidateModelAssignmentRange(None, None, "J1", 1, 2000),
+                    CandidateModelAssignmentRange(None, None, "J2", 1, 2000),
+                ),
+            ),
+        )
 
     def ensure_schema(self) -> None:
         self.ensure_schema_calls += 1
+
+    def list_candidate_model_assignments(self):
+        return self.assignments
 
     def get_rag_vector_base_summary(self, *, dataset: str) -> RagVectorBaseSummary | None:
         if self.vector_base is None:
@@ -304,6 +386,7 @@ def _service(
     repository: FakeRepository | None = None,
     retriever: FakeRetriever | None = None,
     client: FakeClient | None = None,
+    client_factory=None,
     snapshot_service: FakeSnapshotService | None = None,
     connect_func=None,
 ) -> RunCandidatesRagService:
@@ -322,7 +405,7 @@ def _service(
         connect_func=connect_func,
         repository_factory=lambda _: repository,
         retriever_factory=lambda _repository, _settings, _dataset: retriever,
-        client_factory=lambda _request, _settings: client,
+        client_factory=client_factory or (lambda _request, _settings: client),
         snapshot_service_factory=lambda _repository: snapshot_service,
     )
 
@@ -368,18 +451,19 @@ def test_dry_run_resolves_configuration_without_db_writes_or_client_calls(tmp_pa
     repository = FakeRepository()
     retriever = FakeRetriever()
     client = FakeClient()
-
-    def fail_connect(_: str) -> FakeConnection:
-        raise AssertionError("dry-run must not connect to PostgreSQL")
-
-    service = _service(repository=repository, retriever=retriever, client=client, connect_func=fail_connect)
+    repository.questions_by_dataset["J1"] = [
+        CandidateQuestionRecord(101, "J1", "OAB_Bench", 71, "Questao J1 101.", None)
+    ]
+    service = _service(repository=repository, retriever=retriever, client=client)
 
     result = service.run(
         RunCandidatesRagRequest(
             dataset="J1",
-            model_name="openai/gpt-5.4",
+            model_name="google/gemma-2-2b-it",
             provider="remote_http",
             batch_size=2,
+            question_sequence_start=71,
+            question_sequence_end=71,
             dry_run=True,
             audit_log=str(tmp_path / "candidate-dry-run.log"),
             no_audit_animation=True,
@@ -389,9 +473,60 @@ def test_dry_run_resolves_configuration_without_db_writes_or_client_calls(tmp_pa
     assert result.dry_run is True
     assert result.candidate_run_id is None
     assert result.summary is None
-    assert repository.ensure_schema_calls == 0
+    assert result.runtime_config_summary is not None
+    assert "av3 provider: featherless" in result.runtime_config_summary
+    assert "api_key: <set>" in result.runtime_config_summary
+    assert "max_tokens: 1024" in result.runtime_config_summary
+    assert repository.ensure_schema_calls == 1
     assert repository.created_runs == []
     assert retriever.calls == []
+    assert client.calls == []
+
+
+def test_dry_run_does_not_require_openrouter_or_featherless_keys(tmp_path) -> None:
+    repository = FakeRepository()
+    retriever = FakeRetriever()
+    client = FakeClient()
+    repository.questions_by_dataset["J1"] = [
+        CandidateQuestionRecord(101, "J1", "OAB_Bench", 119, "Questao J1 101.", None)
+    ]
+
+    @dataclass
+    class MissingProviderKeysSettings:
+        database_url: str = "postgresql://example.invalid/app"
+        embedding_api_key: str | None = "embedding-test-key"
+        featherless_url: str | None = "https://api.featherless.ai/v1"
+        featherless_api_key: str | None = None
+        openrouter_url: str | None = "https://openrouter.ai/api/v1"
+        openrouter_api_key: str | None = None
+
+    service = RunCandidatesRagService(
+        settings_loader=MissingProviderKeysSettings,
+        connect_func=lambda _: FakeConnection(),
+        repository_factory=lambda _: repository,
+        retriever_factory=lambda _repository, _settings, _dataset: retriever,
+        client_factory=lambda _request, _settings: client,
+        snapshot_service_factory=lambda _repository: FakeSnapshotService(),
+    )
+
+    result = service.run(
+        RunCandidatesRagRequest(
+            dataset="J1",
+            model_name="x-ai/grok-4.3",
+            provider="remote_http",
+            batch_size=1,
+            question_sequence_start=119,
+            question_sequence_end=119,
+            dry_run=True,
+            audit_log=str(tmp_path / "candidate-dry-run-missing-keys.log"),
+            no_audit_animation=True,
+        )
+    )
+
+    assert result.dry_run is True
+    assert result.runtime_config_summary is not None
+    assert "av3 provider: openrouter" in result.runtime_config_summary
+    assert "api_key: <not required in dry-run>" in result.runtime_config_summary
     assert client.calls == []
 
 
@@ -417,6 +552,340 @@ def test_real_run_creates_a_candidate_run(tmp_path) -> None:
     assert repository.created_runs[0].retrieval_run_id == 21
     assert repository.created_runs[0].prompt_id == 7
     assert repository.updated_runs[-1]["run_status"] == "completed"
+
+
+def test_real_openrouter_candidate_execution_uses_openrouter_env_config(tmp_path) -> None:
+    repository = FakeRepository()
+    service = _service(repository=repository)
+    request = RunCandidatesRagRequest(
+        dataset="J1",
+        model_name="x-ai/grok-4.3",
+        provider="remote_http",
+        batch_size=1,
+        question_sequence_start=119,
+        question_sequence_end=119,
+        audit_log=str(tmp_path / "openrouter.log"),
+        no_audit_animation=True,
+    )
+    provider_config = _resolve_candidate_provider_config(
+        settings=FakeSettings(),
+        assignment=next(
+            assignment
+            for assignment in repository.assignments
+            if assignment.av3_provider_model_id == "x-ai/grok-4.3"
+        ),
+        require_api_key=True,
+    )
+    runtime_config = _resolve_candidate_runtime_config(
+        repository=repository,
+        settings=FakeSettings(),
+        request=request,
+        resolved=service.resolve(request),
+        questions=[CandidateQuestionRecord(101, "J1", "OAB_Bench", 119, "Q", None)],
+        require_api_key=True,
+    )
+    configured_request = _with_remote_candidate_config(request, runtime_config)
+
+    assert configured_request.remote_candidate_base_url == "https://openrouter.ai/api/v1"
+    assert configured_request.remote_candidate_api_key == "openrouter-test-key"
+    assert configured_request.remote_candidate_temperature == 0.2
+    assert configured_request.remote_candidate_top_p == 0.9
+    assert configured_request.remote_candidate_max_tokens == 1024
+
+
+def test_real_featherless_candidate_execution_uses_featherless_env_config(tmp_path) -> None:
+    repository = FakeRepository()
+    service = _service(repository=repository)
+    request = RunCandidatesRagRequest(
+        dataset="J1",
+        model_name="Qwen/Qwen2.5-7B-Instruct",
+        provider="remote_http",
+        batch_size=1,
+        question_sequence_start=95,
+        question_sequence_end=95,
+        audit_log=str(tmp_path / "featherless.log"),
+        no_audit_animation=True,
+    )
+    provider_config = _resolve_candidate_provider_config(
+        settings=FakeSettings(),
+        assignment=next(
+            assignment
+            for assignment in repository.assignments
+            if assignment.av3_provider_model_id == "Qwen/Qwen2.5-7B-Instruct"
+        ),
+        require_api_key=True,
+    )
+    runtime_config = _resolve_candidate_runtime_config(
+        repository=repository,
+        settings=FakeSettings(),
+        request=request,
+        resolved=service.resolve(request),
+        questions=[CandidateQuestionRecord(101, "J1", "OAB_Bench", 95, "Q", None)],
+        require_api_key=True,
+    )
+    configured_request = _with_remote_candidate_config(request, runtime_config)
+
+    assert configured_request.remote_candidate_base_url == "https://api.featherless.ai/v1"
+    assert configured_request.remote_candidate_api_key == "featherless-test-key"
+    assert configured_request.remote_candidate_temperature == 0.2
+    assert configured_request.remote_candidate_top_p == 0.9
+    assert configured_request.remote_candidate_max_tokens == 1024
+
+
+def test_missing_openrouter_key_produces_clear_error(tmp_path) -> None:
+    repository = FakeRepository()
+    service = _service(repository=repository)
+
+    @dataclass
+    class MissingOpenRouterKeySettings(FakeSettings):
+        openrouter_api_key: str | None = None
+
+    with pytest.raises(ValueError, match="OPENROUTER_KEY is required for openrouter candidate execution"):
+        _resolve_candidate_provider_config(
+            settings=MissingOpenRouterKeySettings(),
+            assignment=next(
+                assignment
+                for assignment in repository.assignments
+                if assignment.av3_provider_model_id == "x-ai/grok-4.3"
+            ),
+            require_api_key=True,
+        )
+
+
+def test_real_run_missing_openrouter_key_fails_before_creating_candidate_run(tmp_path) -> None:
+    repository = FakeRepository()
+    repository.questions_by_dataset["J1"] = [
+        CandidateQuestionRecord(101, "J1", "OAB_Bench", 119, "Q", None)
+    ]
+    retriever = FakeRetriever()
+
+    @dataclass
+    class MissingOpenRouterKeySettings(FakeSettings):
+        openrouter_api_key: str | None = None
+
+    service = RunCandidatesRagService(
+        settings_loader=MissingOpenRouterKeySettings,
+        connect_func=lambda _: FakeConnection(),
+        repository_factory=lambda _: repository,
+        retriever_factory=lambda _repository, _settings, _dataset: retriever,
+        client_factory=lambda _request, _settings: FakeClient(),
+        snapshot_service_factory=lambda _repository: FakeSnapshotService(),
+    )
+
+    with pytest.raises(ValueError, match="OPENROUTER_KEY is required for openrouter candidate execution"):
+        service.run(
+            RunCandidatesRagRequest(
+                dataset="J1",
+                model_name="x-ai/grok-4.3",
+                provider="remote_http",
+                batch_size=1,
+                question_sequence_start=119,
+                question_sequence_end=119,
+                audit_log=str(tmp_path / "missing-openrouter-key.log"),
+                no_audit_animation=True,
+            )
+        )
+
+    assert repository.created_runs == []
+    assert repository.updated_runs == []
+
+
+def test_missing_featherless_key_produces_clear_error(tmp_path) -> None:
+    repository = FakeRepository()
+    service = _service(repository=repository)
+
+    @dataclass
+    class MissingFeatherlessKeySettings(FakeSettings):
+        featherless_api_key: str | None = None
+
+    with pytest.raises(ValueError, match="FEATHERLESS_API is required for featherless candidate execution"):
+        _resolve_candidate_provider_config(
+            settings=MissingFeatherlessKeySettings(),
+            assignment=next(
+                assignment
+                for assignment in repository.assignments
+                if assignment.av3_provider_model_id == "Qwen/Qwen2.5-7B-Instruct"
+            ),
+            require_api_key=True,
+        )
+
+
+def test_real_run_missing_featherless_key_fails_before_creating_candidate_run(tmp_path) -> None:
+    repository = FakeRepository()
+    repository.questions_by_dataset["J1"] = [
+        CandidateQuestionRecord(101, "J1", "OAB_Bench", 95, "Q", None)
+    ]
+    retriever = FakeRetriever()
+
+    @dataclass
+    class MissingFeatherlessKeySettings(FakeSettings):
+        featherless_api_key: str | None = None
+
+    service = RunCandidatesRagService(
+        settings_loader=MissingFeatherlessKeySettings,
+        connect_func=lambda _: FakeConnection(),
+        repository_factory=lambda _: repository,
+        retriever_factory=lambda _repository, _settings, _dataset: retriever,
+        client_factory=lambda _request, _settings: FakeClient(),
+        snapshot_service_factory=lambda _repository: FakeSnapshotService(),
+    )
+
+    with pytest.raises(ValueError, match="FEATHERLESS_API is required for featherless candidate execution"):
+        service.run(
+            RunCandidatesRagRequest(
+                dataset="J1",
+                model_name="Qwen/Qwen2.5-7B-Instruct",
+                provider="remote_http",
+                batch_size=1,
+                question_sequence_start=95,
+                question_sequence_end=95,
+                audit_log=str(tmp_path / "missing-featherless-key.log"),
+                no_audit_animation=True,
+            )
+        )
+
+    assert repository.created_runs == []
+    assert repository.updated_runs == []
+
+
+def test_provider_resolution_matches_assignment_registry_for_grok_and_qwen() -> None:
+    repository = FakeRepository()
+    grok_assignment = next(
+        assignment
+        for assignment in repository.assignments
+        if assignment.av3_provider_model_id == "x-ai/grok-4.3"
+    )
+    qwen_assignment = next(
+        assignment
+        for assignment in repository.assignments
+        if assignment.av3_provider_model_id == "Qwen/Qwen2.5-7B-Instruct"
+    )
+
+    assert grok_assignment.av3_provider == "openrouter"
+    assert qwen_assignment.av3_provider == "featherless"
+
+
+def test_resolve_candidate_max_tokens_uses_requested_override_for_gemma() -> None:
+    assert resolve_candidate_max_tokens(
+        model_name="google/gemma-2-2b-it",
+        av3_provider="featherless",
+        requested_max_tokens=1024,
+    ) == 1024
+
+
+def test_resolve_candidate_max_tokens_defaults_gemma_to_1024() -> None:
+    assert resolve_candidate_max_tokens(
+        model_name="google/gemma-2-2b-it",
+        av3_provider="featherless",
+        requested_max_tokens=None,
+    ) == 1024
+
+
+def test_resolve_candidate_max_tokens_defaults_openrouter_grok_to_3000() -> None:
+    assert resolve_candidate_max_tokens(
+        model_name="x-ai/grok-4.3",
+        av3_provider="openrouter",
+        requested_max_tokens=None,
+    ) == 3000
+
+
+def test_runtime_config_uses_explicit_candidate_max_tokens_for_gemma() -> None:
+    repository = FakeRepository()
+    service = _service(repository=repository)
+    request = RunCandidatesRagRequest(
+        dataset="J1",
+        model_name="google/gemma-2-2b-it",
+        provider="remote_http",
+        batch_size=1,
+        question_sequence_start=71,
+        question_sequence_end=71,
+        remote_candidate_max_tokens=1024,
+    )
+
+    runtime_config = _resolve_candidate_runtime_config(
+        repository=repository,
+        settings=FakeSettings(),
+        request=request,
+        resolved=service.resolve(request),
+        questions=[CandidateQuestionRecord(101, "J1", "OAB_Bench", 71, "Q", None)],
+        require_api_key=True,
+    )
+
+    assert runtime_config.max_tokens == 1024
+
+
+def test_provider_keys_are_not_logged_in_audit_file(tmp_path) -> None:
+    repository = FakeRepository()
+    repository.questions_by_dataset["J1"] = [
+        CandidateQuestionRecord(101, "J1", "OAB_Bench", 119, "Questao J1 101.", None)
+    ]
+    retriever = FakeRetriever()
+    retriever.results[("J1", 101)] = _success_result(dataset="J1", question_id=101)
+    service = _service(repository=repository, retriever=retriever)
+    audit_path = tmp_path / "candidate-run.log"
+
+    service.run(
+        RunCandidatesRagRequest(
+            dataset="J1",
+            model_name="x-ai/grok-4.3",
+            provider="remote_http",
+            batch_size=1,
+            question_sequence_start=119,
+            question_sequence_end=119,
+            audit_log=str(audit_path),
+            no_audit_animation=True,
+        )
+    )
+
+    audit_text = audit_path.read_text(encoding="utf-8")
+    assert "openrouter-test-key" not in audit_text
+    assert "featherless-test-key" not in audit_text
+    assert "api_key: <set>" in audit_text
+
+
+def test_runtime_config_formatter_redacts_missing_key_in_dry_run() -> None:
+    summary = _format_candidate_runtime_config(
+        _resolve_candidate_runtime_config(
+            repository=FakeRepository(),
+            settings=type(
+                "MissingKeysSettings",
+                (),
+                {
+                    "openrouter_url": "https://openrouter.ai/api/v1",
+                    "openrouter_api_key": None,
+                    "featherless_url": "https://api.featherless.ai/v1",
+                    "featherless_api_key": None,
+                    "remote_candidate_temperature": 0.2,
+                    "remote_candidate_max_tokens": 1024,
+                    "remote_candidate_top_p": 0.9,
+                },
+            )(),
+            request=RunCandidatesRagRequest(
+                dataset="J1",
+                model_name="x-ai/grok-4.3",
+                provider="remote_http",
+                batch_size=1,
+                question_sequence_start=119,
+                question_sequence_end=119,
+            ),
+            resolved=RunCandidatesRagService().resolve(
+                RunCandidatesRagRequest(
+                    dataset="J1",
+                    model_name="x-ai/grok-4.3",
+                    provider="remote_http",
+                    batch_size=1,
+                    question_sequence_start=119,
+                    question_sequence_end=119,
+                )
+            ),
+            questions=[CandidateQuestionRecord(101, "J1", "OAB_Bench", 119, "Q", None)],
+            require_api_key=False,
+        ),
+        api_key_state="<not required in dry-run>",
+    )
+
+    assert "api_key: <not required in dry-run>" in summary
+    assert "openrouter-test-key" not in summary
 
 
 def test_selects_j1_questions(tmp_path) -> None:
@@ -723,6 +1192,47 @@ def test_records_failure_status_when_candidate_client_fails(tmp_path) -> None:
     assert result.summary.failed_answers == 1
     assert repository.persisted_answers[0].status == "failed"
     assert "candidate timeout" in str(repository.persisted_answers[0].error_message)
+
+
+def test_fails_before_creating_run_when_model_has_no_runnable_assignment(tmp_path) -> None:
+    repository = FakeRepository()
+    repository.questions_by_dataset["J1"] = [
+        CandidateQuestionRecord(
+            question_id=119,
+            dataset="J1",
+            dataset_name="OAB_Bench",
+            question_sequence=119,
+            question_text="Questao J1 119.",
+            alternatives=None,
+        )
+    ]
+    retriever = FakeRetriever()
+    retriever.results[("J1", 119)] = _success_result(dataset="J1", question_id=119)
+    audit_path = tmp_path / "no-runnable-assignment.log"
+    service = _service(
+        repository=repository,
+        retriever=retriever,
+        client_factory=_default_client_factory,
+    )
+
+    with pytest.raises(
+        ValueError,
+        match=r"Candidate model google/gemini-3.5-flash has no runnable AV3 assignment for dataset=J1\.",
+    ):
+        service.run(
+            RunCandidatesRagRequest(
+                dataset="J1",
+                model_name="google/gemini-3.5-flash",
+                provider="remote_http",
+                batch_size=1,
+                audit_log=str(audit_path),
+                no_audit_animation=True,
+            )
+        )
+
+    assert repository.created_runs == []
+    assert repository.updated_runs == []
+    assert repository.persisted_answers == []
 
 
 def test_emits_audit_events_for_run_question_retrieval_generation_persistence_skip_and_finish(tmp_path) -> None:

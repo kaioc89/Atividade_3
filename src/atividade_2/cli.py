@@ -463,6 +463,7 @@ def generate_rag_embeddings_command(args: argparse.Namespace) -> int:
 
 def run_candidates_rag_command(args: argparse.Namespace) -> int:
     """Run or dry-run the AV3 candidate RAG generation pipeline."""
+    settings = load_settings()
     request = RunCandidatesRagRequest(
         model_name=args.candidate_model,
         provider=args.provider,
@@ -477,8 +478,14 @@ def run_candidates_rag_command(args: argparse.Namespace) -> int:
         dry_run=args.dry_run,
         audit_log=args.audit_log,
         no_audit_animation=args.no_audit_animation,
+        remote_candidate_temperature=settings.remote_candidate_temperature,
+        remote_candidate_max_tokens=settings.remote_candidate_max_tokens,
+        remote_candidate_top_p=settings.remote_candidate_top_p,
     )
     result = RunCandidatesRagService().run(request)
+    if result.runtime_config_summary is not None:
+        print(result.runtime_config_summary)
+        print()
     print(result.execution_summary)
     print(f"Batch size: {result.batch_size}")
     print(f"Audit log: {result.audit_log}")
