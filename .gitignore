@@ -56,3 +56,6 @@ logs/candidate-rag*
 !outputs/audit/judge_run_20260503_222934.log
 !outputs/audit/judge_run_20260503_223751.log
 !outputs/audit/judge_run_20260503_224237.log
+
+# AV3 generated smoke outputs
+outputs/av3/*.json
