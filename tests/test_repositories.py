@@ -414,7 +414,11 @@ def test_candidate_rag_schema_creates_run_answer_and_chunk_constraints() -> None
     assert "UNIQUE (av3_provider, provider_model_key)" in sql_statements
     assert "CHECK (observation_count >= 0)" in sql_statements
     assert "CREATE TABLE IF NOT EXISTS av3.candidate_model_runtime_observations" in sql_statements
-    assert "CHECK (observed_context_window_tokens IS NULL OR observed_context_window_tokens > 0)" in sql_statements
+    assert "CHECK (context_window_tokens IS NULL OR context_window_tokens >= 1024)" in sql_statements
+    assert (
+        "CHECK (observed_context_window_tokens IS NULL OR observed_context_window_tokens >= 1024)"
+        in sql_statements
+    )
 
 
 def test_candidate_rag_schema_is_idempotent_on_repeated_calls() -> None:
@@ -424,10 +428,10 @@ def test_candidate_rag_schema_is_idempotent_on_repeated_calls() -> None:
     repository._ensure_candidate_rag_schema(cursor)
     repository._ensure_candidate_rag_schema(cursor)
 
-    assert len(cursor.queries) == 36
-    assert all("IF NOT EXISTS" in query for query in cursor.queries)
+    assert len(cursor.queries) == 48
+    assert any("ALTER TABLE av3.candidate_model_runtime_profiles" in query for query in cursor.queries)
+    assert any("ALTER TABLE av3.candidate_model_runtime_observations" in query for query in cursor.queries)
     assert all("DROP TABLE" not in query for query in cursor.queries)
-    assert all("ALTER TABLE" not in query for query in cursor.queries)
 
 
 def test_ensure_schema_invokes_candidate_rag_schema_after_vector_schema() -> None:
@@ -467,6 +471,8 @@ def test_candidate_schema_is_present_in_project_ddl() -> None:
     assert "CREATE TABLE av3.candidate_answer_context_chunks (" in ddl
     assert "CREATE TABLE av3.candidate_model_runtime_profiles (" in ddl
     assert "CREATE TABLE av3.candidate_model_runtime_observations (" in ddl
+    assert "CHECK (context_window_tokens IS NULL OR context_window_tokens >= 1024)" in ddl
+    assert "CHECK (observed_context_window_tokens IS NULL OR observed_context_window_tokens >= 1024)" in ddl
     assert "CREATE UNIQUE INDEX idx_prompt_candidatos_active_dataset" in ddl
     assert "CREATE INDEX idx_candidate_model_assignments_provider_status" in ddl
     assert "CREATE INDEX idx_candidate_answers_run_status" in ddl

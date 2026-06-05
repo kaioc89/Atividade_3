@@ -343,10 +343,32 @@ def test_assignment_registry_query_helpers_filter_by_owner_dataset_question_prov
     assert {assignment.owner for assignment in j1_question_95} == {"Wagner"}
     assert len(j1_question_95) == 3
     assert out_of_range == ()
-    assert {assignment.id_modelo_av2 for assignment in openrouter_assignments} == {13, 14, 15}
+    assert {assignment.id_modelo_av2 for assignment in openrouter_assignments} == {5, 9, 13, 14, 15}
     assert len(model_id_14) == 1
     assert model_id_14[0].owner == "José Bruno"
+    assert model_id_14[0].av3_provider_model_id == "openai/gpt-5-chat"
+    assert model_id_14[0].notes == (
+        "AV3 runtime adjustment: using openai/gpt-5-chat because the original "
+        "AV1 runtime was ChatGPT UI and openai/gpt-5 returned empty/unparsed "
+        "model text through OpenRouter."
+    )
     jose_grok = repository.find_candidate_model_assignments_for_model_id(15)[0]
+    diego_llama = repository.find_candidate_model_assignments_for_model_id(9)[0]
+    kaio_llama = repository.find_candidate_model_assignments_for_model_id(5)[0]
+
+    assert diego_llama.av3_provider == "openrouter"
+    assert diego_llama.av3_provider_model_id == "meta-llama/llama-3.2-3b-instruct"
+    assert diego_llama.hf_model_id == "meta-llama/Llama-3.2-3B-Instruct"
+    assert diego_llama.notes == (
+        "AV3 runtime adjustment: Featherless returned a provider chat-template "
+        "error for meta-llama/Llama-3.2-3B-Instruct. Using the same model "
+        "identity through OpenRouter as meta-llama/llama-3.2-3b-instruct for "
+        "execution compatibility."
+    )
+    assert kaio_llama.av3_provider == "openrouter"
+    assert kaio_llama.av3_provider_model_id == "meta-llama/llama-3.2-3b-instruct"
+    assert kaio_llama.hf_model_id == "meta-llama/Llama-3.2-3B-Instruct"
+    assert kaio_llama.notes == diego_llama.notes
 
     assert jose_grok.owner == "José Bruno"
     assert jose_grok.id_modelo_av2 == 15
@@ -388,6 +410,11 @@ def test_assignment_registry_runnable_pending_and_excluded_filters_follow_requir
     assert {assignment.id_modelo_av2 for assignment in pending} == {13}
     assert all(assignment.av3_provider_model_id for assignment in default_runnable)
     assert all(assignment.av3_provider not in {"excluded", "unresolved"} for assignment in default_runnable)
+    assert "openai/gpt-5" not in {assignment.av3_provider_model_id for assignment in default_runnable}
+    assert not any(
+        assignment.id_modelo_av2 in {5, 9} and assignment.av3_provider == "featherless"
+        for assignment in default_runnable
+    )
 
 
 def test_assignment_registry_serialization_preserves_both_identities_and_helpers_do_not_mutate_records() -> None:

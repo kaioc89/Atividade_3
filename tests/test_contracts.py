@@ -172,6 +172,7 @@ def test_candidate_model_assignment_contract_validates_ranges_and_match_types() 
         "same_model_different_quantization",
         "same_model_api_reproduction",
         "same_family_version_needs_subtype_confirmation",
+        "same_family_newer_version_substitution",
         "proprietary_api_resolved",
         "not_reproduced_provider_unavailable",
     }

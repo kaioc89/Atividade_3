@@ -42,7 +42,12 @@ class FakeTransport:
 
 def _openrouter_entries() -> tuple[ProviderModelCatalogEntry, ...]:
     return (
-        ProviderModelCatalogEntry(provider="openrouter", model_id="openai/gpt-5", name="GPT-5"),
+        ProviderModelCatalogEntry(
+            provider="openrouter",
+            model_id="meta-llama/llama-3.2-3b-instruct",
+            name="Llama 3.2 3B Instruct",
+        ),
+        ProviderModelCatalogEntry(provider="openrouter", model_id="openai/gpt-5-chat", name="GPT-5 Chat"),
         ProviderModelCatalogEntry(
             provider="openrouter",
             model_id="google/gemini-3.5-flash",
@@ -61,7 +66,6 @@ def _featherless_entries() -> tuple[ProviderModelCatalogEntry, ...]:
         ProviderModelCatalogEntry(provider="featherless", model_id=model_id)
         for model_id in (
             "google/gemma-2-2b-it",
-            "meta-llama/Llama-3.2-3B-Instruct",
             "meta-llama/Llama-3.2-1B-Instruct",
             "Qwen/Qwen2.5-3B-Instruct",
             "Qwen/Qwen2.5-7B-Instruct",
@@ -97,7 +101,7 @@ def test_service_validates_openrouter_and_featherless_assignments_against_fake_c
     assert report.missing == 0
     assert jose_gpt5.status == "found"
     assert jose_gpt5.matched_model is not None
-    assert jose_gpt5.matched_model.model_id == "openai/gpt-5"
+    assert jose_gpt5.matched_model.model_id == "openai/gpt-5-chat"
     assert all(
         item.status == "found"
         for item in report.items
@@ -192,20 +196,20 @@ def test_provider_client_error_produces_provider_error_without_crashing() -> Non
     diego_gemma = next(item for item in report.items if item.id_modelo_av2 == 6)
     jose_grok = next(item for item in report.items if item.id_modelo_av2 == 15)
 
-    assert report.provider_errors == 2
+    assert report.provider_errors == 4
     assert jose_gpt5.status == "provider_error"
     assert jose_grok.status == "provider_error"
     assert diego_gemma.status == "found"
 
 
-def test_jose_gpt5_is_found_when_fake_openrouter_contains_openai_gpt5() -> None:
+def test_jose_gpt5_is_found_when_fake_openrouter_contains_openai_gpt5_chat() -> None:
     report = _default_service().validate()
 
     jose_gpt5 = next(item for item in report.items if item.id_modelo_av2 == 14)
 
     assert jose_gpt5.status == "found"
     assert jose_gpt5.matched_model is not None
-    assert jose_gpt5.matched_model.name == "GPT-5"
+    assert jose_gpt5.matched_model.name == "GPT-5 Chat"
 
 
 def test_jose_gemini_is_excluded_by_default_when_pending_confirmation_is_disabled() -> None:
@@ -232,11 +236,13 @@ def test_openrouter_provider_filter_includes_jose_grok_pending_assignment() -> N
 
     statuses = {item.id_modelo_av2: item.status for item in report.items}
 
-    assert report.total_assignments == 3
-    assert set(statuses) == {13, 14, 15}
+    assert report.total_assignments == 5
+    assert set(statuses) == {5, 9, 13, 14, 15}
     assert statuses[14] == "found"
     assert statuses[13] == "found"
     assert statuses[15] == "found"
+    assert statuses[5] == "found"
+    assert statuses[9] == "found"
 
 
 def test_all_checked_featherless_ids_can_be_found_in_fake_catalog() -> None:
@@ -250,7 +256,6 @@ def test_all_checked_featherless_ids_can_be_found_in_fake_catalog() -> None:
 
     assert checked_featherless_ids == {
         "google/gemma-2-2b-it",
-        "meta-llama/Llama-3.2-3B-Instruct",
         "meta-llama/Llama-3.2-1B-Instruct",
         "Qwen/Qwen2.5-3B-Instruct",
         "Qwen/Qwen2.5-7B-Instruct",

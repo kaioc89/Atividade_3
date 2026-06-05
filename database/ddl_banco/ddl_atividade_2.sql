@@ -459,7 +459,7 @@ CREATE TABLE av3.candidate_model_runtime_profiles (
     provider_model_id VARCHAR NOT NULL,
     provider_model_key VARCHAR NOT NULL,
     context_window_tokens INTEGER NULL
-        CHECK (context_window_tokens IS NULL OR context_window_tokens > 0),
+        CHECK (context_window_tokens IS NULL OR context_window_tokens >= 1024),
     default_max_output_tokens INTEGER NULL
         CHECK (default_max_output_tokens IS NULL OR default_max_output_tokens > 0),
     safety_margin_tokens INTEGER NOT NULL DEFAULT 512
@@ -483,7 +483,7 @@ CREATE TABLE av3.candidate_model_runtime_observations (
     provider_model_id VARCHAR NOT NULL,
     provider_model_key VARCHAR NOT NULL,
     observed_context_window_tokens INTEGER NULL
-        CHECK (observed_context_window_tokens IS NULL OR observed_context_window_tokens > 0),
+        CHECK (observed_context_window_tokens IS NULL OR observed_context_window_tokens >= 1024),
     observed_prompt_tokens INTEGER NULL
         CHECK (observed_prompt_tokens IS NULL OR observed_prompt_tokens > 0),
     observed_requested_max_tokens INTEGER NULL

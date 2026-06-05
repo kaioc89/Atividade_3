@@ -249,12 +249,18 @@ def _default_candidate_model_assignments() -> tuple[CandidateModelAssignment, ..
             original_runtime="AV1 repository/local inference",
             av3_provider="openrouter",
             av3_provider_model_id="meta-llama/llama-3.2-3b-instruct",
-            hf_model_id="meta-llama/llama-3.2-3b-instruct",
+            hf_model_id="meta-llama/Llama-3.2-3B-Instruct",
             artifact_format="safetensors",
             original_quantization="FP16",
             av3_quantization="provider_default",
             match_type="same_model_different_quantization",
             validation_status="confirmed_from_av2_artifacts",
+            notes=(
+                "AV3 runtime adjustment: Featherless returned a provider chat-template "
+                "error for meta-llama/Llama-3.2-3B-Instruct. Using the same model "
+                "identity through OpenRouter as meta-llama/llama-3.2-3b-instruct for "
+                "execution compatibility."
+            ),
             ranges=diego_ranges,
         ),
         CandidateModelAssignment(
@@ -297,12 +303,18 @@ def _default_candidate_model_assignments() -> tuple[CandidateModelAssignment, ..
             original_runtime="AV1 repository/local inference",
             av3_provider="openrouter",
             av3_provider_model_id="meta-llama/llama-3.2-3b-instruct",
-            hf_model_id="meta-llama/llama-3.2-3b-instruct",
+            hf_model_id="meta-llama/Llama-3.2-3B-Instruct",
             artifact_format="safetensors",
             original_quantization="FP32",
             av3_quantization="provider_default",
             match_type="same_model_different_quantization",
             validation_status="confirmed_from_av2_artifacts",
+            notes=(
+                "AV3 runtime adjustment: Featherless returned a provider chat-template "
+                "error for meta-llama/Llama-3.2-3B-Instruct. Using the same model "
+                "identity through OpenRouter as meta-llama/llama-3.2-3b-instruct for "
+                "execution compatibility."
+            ),
             ranges=kaio_ranges,
         ),
         CandidateModelAssignment(
@@ -456,13 +468,18 @@ def _default_candidate_model_assignments() -> tuple[CandidateModelAssignment, ..
             original_provider_model_id="GPT-5",
             original_runtime="ChatGPT UI",
             av3_provider="openrouter",
-            av3_provider_model_id="openai/gpt-5",
+            av3_provider_model_id="openai/gpt-5-chat",
             hf_model_id=None,
             artifact_format="api",
             original_quantization=None,
             av3_quantization="proprietary_api",
             match_type="same_model_api_reproduction",
             validation_status="confirmed_by_owner",
+            notes=(
+                "AV3 runtime adjustment: using openai/gpt-5-chat because the original "
+                "AV1 runtime was ChatGPT UI and openai/gpt-5 returned empty/unparsed "
+                "model text through OpenRouter."
+            ),
             ranges=jose_bruno_ranges,
         ),
         CandidateModelAssignment(
@@ -1347,7 +1364,7 @@ class JudgeRepository:
                 provider_model_id VARCHAR NOT NULL,
                 provider_model_key VARCHAR NOT NULL,
                 context_window_tokens INTEGER NULL
-                    CHECK (context_window_tokens IS NULL OR context_window_tokens > 0),
+                    CHECK (context_window_tokens IS NULL OR context_window_tokens >= 1024),
                 default_max_output_tokens INTEGER NULL
                     CHECK (default_max_output_tokens IS NULL OR default_max_output_tokens > 0),
                 safety_margin_tokens INTEGER NOT NULL DEFAULT 512
@@ -1374,7 +1391,7 @@ class JudgeRepository:
                 provider_model_id VARCHAR NOT NULL,
                 provider_model_key VARCHAR NOT NULL,
                 observed_context_window_tokens INTEGER NULL
-                    CHECK (observed_context_window_tokens IS NULL OR observed_context_window_tokens > 0),
+                    CHECK (observed_context_window_tokens IS NULL OR observed_context_window_tokens >= 1024),
                 observed_prompt_tokens INTEGER NULL
                     CHECK (observed_prompt_tokens IS NULL OR observed_prompt_tokens > 0),
                 observed_requested_max_tokens INTEGER NULL
@@ -1444,6 +1461,47 @@ class JudgeRepository:
             """
             CREATE INDEX IF NOT EXISTS idx_candidate_model_runtime_observations_provider_model
             ON av3.candidate_model_runtime_observations (av3_provider, provider_model_key, observed_at DESC);
+            """
+        )
+        cursor.execute(
+            """
+            ALTER TABLE av3.candidate_model_runtime_profiles
+            DROP CONSTRAINT IF EXISTS candidate_model_runtime_profiles_context_window_tokens_check;
+            """
+        )
+        cursor.execute(
+            """
+            ALTER TABLE av3.candidate_model_runtime_profiles
+            DROP CONSTRAINT IF EXISTS candidate_model_runtime_profiles_context_window_min_1024_check;
+            """
+        )
+        cursor.execute(
+            """
+            ALTER TABLE av3.candidate_model_runtime_profiles
+            ADD CONSTRAINT candidate_model_runtime_profiles_context_window_min_1024_check
+            CHECK (context_window_tokens IS NULL OR context_window_tokens >= 1024) NOT VALID;
+            """
+        )
+        cursor.execute(
+            """
+            ALTER TABLE av3.candidate_model_runtime_observations
+            DROP CONSTRAINT IF EXISTS candidate_model_runtime_obse_observed_context_window_toke_check;
+            """
+        )
+        cursor.execute(
+            """
+            ALTER TABLE av3.candidate_model_runtime_observations
+            DROP CONSTRAINT IF EXISTS candidate_model_runtime_observations_context_window_min_1024_check;
+            """
+        )
+        cursor.execute(
+            """
+            ALTER TABLE av3.candidate_model_runtime_observations
+            ADD CONSTRAINT candidate_model_runtime_observations_context_window_min_1024_check
+            CHECK (
+                observed_context_window_tokens IS NULL
+                OR observed_context_window_tokens >= 1024
+            ) NOT VALID;
             """
         )
 

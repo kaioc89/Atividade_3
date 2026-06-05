@@ -297,7 +297,11 @@ def test_validate_provider_models_returns_nonzero_when_checked_model_is_missing(
         lambda _env: {
             "openrouter": FakeProviderCatalogClient(
                 entries=(
-                    ProviderModelCatalogEntry(provider="openrouter", model_id="openai/gpt-4.1"),
+                    ProviderModelCatalogEntry(
+                        provider="openrouter",
+                        model_id="meta-llama/llama-3.2-3b-instruct",
+                    ),
+                    ProviderModelCatalogEntry(provider="openrouter", model_id="openai/gpt-5-chat"),
                     ProviderModelCatalogEntry(
                         provider="openrouter",
                         model_id="google/gemini-3.5-flash",
@@ -348,7 +352,11 @@ def test_validate_provider_models_reports_jose_grok_under_openrouter_when_pendin
         lambda _env: {
             "openrouter": FakeProviderCatalogClient(
                 entries=(
-                    ProviderModelCatalogEntry(provider="openrouter", model_id="openai/gpt-5"),
+                    ProviderModelCatalogEntry(
+                        provider="openrouter",
+                        model_id="meta-llama/llama-3.2-3b-instruct",
+                    ),
+                    ProviderModelCatalogEntry(provider="openrouter", model_id="openai/gpt-5-chat"),
                     ProviderModelCatalogEntry(
                         provider="openrouter",
                         model_id="google/gemini-3.5-flash",
@@ -376,7 +384,9 @@ def test_validate_provider_models_reports_jose_grok_under_openrouter_when_pendin
     output = capsys.readouterr().out
 
     assert exit_code == 0
-    assert '"total_assignments": 3' in output
+    assert '"total_assignments": 5' in output
+    assert '"id_modelo_av2": 5' in output
+    assert '"id_modelo_av2": 9' in output
     assert '"id_modelo_av2": 15' in output
     assert '"av3_provider": "openrouter"' in output
     assert '"av3_provider_model_id": "x-ai/grok-4.3"' in output
@@ -411,8 +421,8 @@ def test_validate_provider_models_returns_two_when_provider_catalog_fails(
     output = capsys.readouterr().out
 
     assert exit_code == 2
-    assert '"total_assignments": 2' in output
-    assert '"provider_errors": 2' in output
+    assert '"total_assignments": 4' in output
+    assert '"provider_errors": 4' in output
 
 
 def test_run_judge_dry_run_prints_single_summary(capsys: pytest.CaptureFixture[str], tmp_path) -> None:
