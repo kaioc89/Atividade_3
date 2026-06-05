@@ -42,6 +42,7 @@ from .contracts import (
 )
 from .candidate_runtime_learning import normalize_provider_model_key
 from .evaluation_details import EvaluationDetails, jsonb_dumps
+from .rag_context_snapshots import build_retrieval_snapshot_chunks
 
 DATASET_ALIASES = {
     "J1": "OAB_Bench",
@@ -3217,61 +3218,94 @@ class JudgeRepository:
         """Insert or update one AV3 candidate answer keyed by run and question."""
         with self.connection:
             with self.connection.cursor() as cursor:
-                cursor.execute(
-                    """
-                    INSERT INTO av3.candidate_answers
-                        (
-                            id_candidate_run,
-                            id_pergunta,
-                            model_name,
-                            answer_text,
-                            final_choice,
-                            rendered_prompt,
-                            status,
-                            error_message,
-                            latency_ms,
-                            raw_response_jsonb
-                        )
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb)
-                    ON CONFLICT (id_candidate_run, id_pergunta) DO UPDATE
-                    SET
-                        model_name = EXCLUDED.model_name,
-                        answer_text = EXCLUDED.answer_text,
-                        final_choice = EXCLUDED.final_choice,
-                        rendered_prompt = EXCLUDED.rendered_prompt,
-                        status = EXCLUDED.status,
-                        error_message = EXCLUDED.error_message,
-                        latency_ms = EXCLUDED.latency_ms,
-                        raw_response_jsonb = EXCLUDED.raw_response_jsonb
-                    RETURNING
-                        id_candidate_answer,
-                        id_candidate_run,
-                        id_pergunta,
-                        model_name,
-                        answer_text,
-                        final_choice,
-                        rendered_prompt,
-                        status,
-                        error_message,
-                        latency_ms,
-                        raw_response_jsonb,
-                        created_at;
-                    """,
-                    (
-                        answer.candidate_run_id,
-                        answer.question_id,
-                        answer.model_name,
-                        answer.answer_text,
-                        answer.final_choice,
-                        answer.rendered_prompt,
-                        answer.status,
-                        answer.error_message,
-                        answer.latency_ms,
-                        jsonb_dumps(answer.raw_response),
-                    ),
+                return self._persist_candidate_answer_with_cursor(cursor=cursor, answer=answer)
+
+    def persist_successful_candidate_answer_with_context_snapshot(
+        self,
+        *,
+        answer: CandidateAnswerRecord,
+        retrieval_result: RagRetrievalResult,
+    ) -> tuple[CandidateAnswerRecord, list[CandidateAnswerContextChunkRecord]]:
+        """Persist a successful candidate answer and its RAG context snapshot atomically."""
+        if answer.status != "success":
+            raise ValueError("Atomic candidate answer snapshot persistence requires status='success'.")
+
+        with self.connection:
+            with self.connection.cursor() as cursor:
+                stored_answer = self._persist_candidate_answer_with_cursor(cursor=cursor, answer=answer)
+                if stored_answer.candidate_answer_id is None:
+                    raise ValueError("Persisted candidate answer did not return an id.")
+                chunks = build_retrieval_snapshot_chunks(
+                    candidate_answer_id=stored_answer.candidate_answer_id,
+                    retrieval_result=retrieval_result,
                 )
-                row = cursor.fetchone()
-        return _row_to_candidate_answer(row)
+                snapshot_rows = self._replace_candidate_answer_context_chunks_with_cursor(
+                    cursor=cursor,
+                    candidate_answer_id=stored_answer.candidate_answer_id,
+                    chunks=chunks,
+                )
+        return stored_answer, snapshot_rows
+
+    def _persist_candidate_answer_with_cursor(
+        self,
+        *,
+        cursor: Any,
+        answer: CandidateAnswerRecord,
+    ) -> CandidateAnswerRecord:
+        cursor.execute(
+            """
+            INSERT INTO av3.candidate_answers
+                (
+                    id_candidate_run,
+                    id_pergunta,
+                    model_name,
+                    answer_text,
+                    final_choice,
+                    rendered_prompt,
+                    status,
+                    error_message,
+                    latency_ms,
+                    raw_response_jsonb
+                )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb)
+            ON CONFLICT (id_candidate_run, id_pergunta) DO UPDATE
+            SET
+                model_name = EXCLUDED.model_name,
+                answer_text = EXCLUDED.answer_text,
+                final_choice = EXCLUDED.final_choice,
+                rendered_prompt = EXCLUDED.rendered_prompt,
+                status = EXCLUDED.status,
+                error_message = EXCLUDED.error_message,
+                latency_ms = EXCLUDED.latency_ms,
+                raw_response_jsonb = EXCLUDED.raw_response_jsonb
+            RETURNING
+                id_candidate_answer,
+                id_candidate_run,
+                id_pergunta,
+                model_name,
+                answer_text,
+                final_choice,
+                rendered_prompt,
+                status,
+                error_message,
+                latency_ms,
+                raw_response_jsonb,
+                created_at;
+            """,
+            (
+                answer.candidate_run_id,
+                answer.question_id,
+                answer.model_name,
+                answer.answer_text,
+                answer.final_choice,
+                answer.rendered_prompt,
+                answer.status,
+                answer.error_message,
+                answer.latency_ms,
+                jsonb_dumps(answer.raw_response),
+            ),
+        )
+        return _row_to_candidate_answer(cursor.fetchone())
 
     def get_candidate_model_runtime_profile(
         self,
@@ -3512,57 +3546,70 @@ class JudgeRepository:
         chunks: list[CandidateAnswerContextChunkRecord],
     ) -> list[CandidateAnswerContextChunkRecord]:
         """Replace the stored chunk snapshot set for one candidate answer."""
+        with self.connection:
+            with self.connection.cursor() as cursor:
+                return self._replace_candidate_answer_context_chunks_with_cursor(
+                    cursor=cursor,
+                    candidate_answer_id=candidate_answer_id,
+                    chunks=chunks,
+                )
+
+    def _replace_candidate_answer_context_chunks_with_cursor(
+        self,
+        *,
+        cursor: Any,
+        candidate_answer_id: int,
+        chunks: list[CandidateAnswerContextChunkRecord],
+    ) -> list[CandidateAnswerContextChunkRecord]:
         for chunk in chunks:
             if chunk.candidate_answer_id != candidate_answer_id:
                 raise ValueError(
                     "All context chunks must belong to the same candidate answer."
                 )
-        with self.connection:
-            with self.connection.cursor() as cursor:
-                cursor.execute(
-                    """
-                    DELETE FROM av3.candidate_answer_context_chunks
-                    WHERE id_candidate_answer = %s;
-                    """,
-                    (candidate_answer_id,),
-                )
-                rows = []
-                for chunk in chunks:
-                    cursor.execute(
-                        """
-                        INSERT INTO av3.candidate_answer_context_chunks
-                            (
-                                id_candidate_answer,
-                                id_chunk,
-                                rank,
-                                similarity_score,
-                                chunk_text_snapshot,
-                                source_url,
-                                metadata_jsonb
-                            )
-                        VALUES (%s, %s, %s, %s, %s, %s, %s::jsonb)
-                        RETURNING
-                            id_answer_context_chunk,
-                            id_candidate_answer,
-                            id_chunk,
-                            rank,
-                            similarity_score,
-                            chunk_text_snapshot,
-                            source_url,
-                            metadata_jsonb,
-                            created_at;
-                        """,
-                        (
-                            candidate_answer_id,
-                            chunk.chunk_id,
-                            chunk.rank,
-                            chunk.similarity_score,
-                            chunk.chunk_text_snapshot,
-                            chunk.source_url,
-                            jsonb_dumps(chunk.metadata),
-                        ),
+        cursor.execute(
+            """
+            DELETE FROM av3.candidate_answer_context_chunks
+            WHERE id_candidate_answer = %s;
+            """,
+            (candidate_answer_id,),
+        )
+        rows = []
+        for chunk in chunks:
+            cursor.execute(
+                """
+                INSERT INTO av3.candidate_answer_context_chunks
+                    (
+                        id_candidate_answer,
+                        id_chunk,
+                        rank,
+                        similarity_score,
+                        chunk_text_snapshot,
+                        source_url,
+                        metadata_jsonb
                     )
-                    rows.append(cursor.fetchone())
+                VALUES (%s, %s, %s, %s, %s, %s, %s::jsonb)
+                RETURNING
+                    id_answer_context_chunk,
+                    id_candidate_answer,
+                    id_chunk,
+                    rank,
+                    similarity_score,
+                    chunk_text_snapshot,
+                    source_url,
+                    metadata_jsonb,
+                    created_at;
+                """,
+                (
+                    candidate_answer_id,
+                    chunk.chunk_id,
+                    chunk.rank,
+                    chunk.similarity_score,
+                    chunk.chunk_text_snapshot,
+                    chunk.source_url,
+                    jsonb_dumps(chunk.metadata),
+                ),
+            )
+            rows.append(cursor.fetchone())
         return [_row_to_candidate_answer_context_chunk(row) for row in rows]
 
     def list_candidate_runs(
@@ -4213,6 +4260,11 @@ class JudgeRepository:
                           AND a.model_name = %s
                           AND a.id_pergunta = scoped.id_pergunta
                           AND a.status = 'success'
+                          AND EXISTS (
+                              SELECT 1
+                              FROM av3.candidate_answer_context_chunks c
+                              WHERE c.id_candidate_answer = a.id_candidate_answer
+                          )
                     ) AS has_success,
                     EXISTS (
                         SELECT 1
@@ -4305,6 +4357,11 @@ class JudgeRepository:
                   AND a.model_name = %s
                   AND a.id_pergunta = %s
                   AND a.status = 'success'
+                  AND EXISTS (
+                      SELECT 1
+                      FROM av3.candidate_answer_context_chunks c
+                      WHERE c.id_candidate_answer = a.id_candidate_answer
+                  )
                   {exclusion_clause}
                 LIMIT 1;
                 """,

@@ -14,7 +14,9 @@ from atividade_2.contracts import (
     EvaluationRecord,
     ModelSpec,
     ParsedJudgeEvaluation,
+    RagRetrievalResult,
     RagVectorBaseSummary,
+    RetrievedRagChunk,
 )
 from atividade_2.evaluation_details import EvaluationDetails
 from atividade_2.repositories import JudgeRepository, _default_prompt_config
@@ -50,11 +52,15 @@ class RecordingConnection:
 class TransactionConnection:
     def __init__(self, cursor) -> None:
         self.cursor_instance = cursor
+        self.enter_count = 0
+        self.exit_exceptions = []
 
     def __enter__(self):
+        self.enter_count += 1
         return self
 
     def __exit__(self, exc_type, exc, traceback) -> None:
+        self.exit_exceptions.append(exc_type)
         return None
 
     def cursor(self):
@@ -88,6 +94,13 @@ class MultiRecordingCursor:
         if self.fetchall_rows:
             return self.fetchall_rows.pop(0)
         return []
+
+
+class FailingContextInsertCursor(MultiRecordingCursor):
+    def execute(self, query, params=None) -> None:
+        super().execute(query, params)
+        if "INSERT INTO av3.candidate_answer_context_chunks" in query:
+            raise RuntimeError("snapshot persistence unavailable")
 
 
 def test_pending_answer_selection_takes_a_batch_per_required_judge() -> None:
@@ -712,6 +725,175 @@ def test_persist_candidate_answer_context_chunks_replaces_existing_snapshots() -
     ]
 
 
+def test_persist_successful_candidate_answer_with_context_snapshot_uses_one_transaction() -> None:
+    answer_created_at = datetime(2026, 6, 4, 13, 45, 0)
+    chunk_created_at = datetime(2026, 6, 4, 14, 0, 0)
+    cursor = MultiRecordingCursor(
+        fetchone_rows=[
+            (
+                41,
+                17,
+                77,
+                "candidate-model",
+                "Resposta final",
+                "B",
+                "prompt renderizado",
+                "success",
+                None,
+                812,
+                '{"candidate_budget": {"included_chunks": 1}}',
+                answer_created_at,
+            ),
+            (
+                91,
+                41,
+                501,
+                1,
+                0.88,
+                "Trecho seguro",
+                "https://fonte.example/1",
+                '{"dataset": "J1", "retrieval_run_id": 21, "source_kind": "lei", "safe": "kept"}',
+                chunk_created_at,
+            ),
+        ]
+    )
+    connection = TransactionConnection(cursor)
+    repository = JudgeRepository(connection)
+
+    answer, chunks = repository.persist_successful_candidate_answer_with_context_snapshot(
+        answer=CandidateAnswerRecord(
+            candidate_answer_id=None,
+            candidate_run_id=17,
+            question_id=77,
+            model_name="candidate-model",
+            rendered_prompt="prompt renderizado",
+            status="success",
+            answer_text="Resposta final",
+            final_choice="B",
+            latency_ms=812,
+            raw_response={"candidate_budget": {"included_chunks": 1}},
+        ),
+        retrieval_result=RagRetrievalResult(
+            question_id=77,
+            dataset="J1",
+            retrieval_run_id=21,
+            retrieval_name="j1_source_urls_v1",
+            embedding_model="text-embedding-3-small",
+            top_k=5,
+            status="success",
+            chunks=[
+                RetrievedRagChunk(
+                    rank=1,
+                    chunk_id=501,
+                    chunk_text="Trecho seguro",
+                    source_kind="lei",
+                    document_id=701,
+                    document_key="doc-701",
+                    lei="Lei X",
+                    norma="Norma X",
+                    url="https://fonte.example/1",
+                    urn=None,
+                    artigo="Art. 5",
+                    topico="Tema X",
+                    relevancia="alta",
+                    tipo="lei",
+                    distance=0.12,
+                    similarity=0.88,
+                    metadata={"official_answer_key": "B", "safe": "kept"},
+                )
+            ],
+        ),
+    )
+
+    assert connection.enter_count == 1
+    assert "INSERT INTO av3.candidate_answers" in cursor.queries[0]
+    assert "DELETE FROM av3.candidate_answer_context_chunks" in cursor.queries[1]
+    assert "INSERT INTO av3.candidate_answer_context_chunks" in cursor.queries[2]
+    assert cursor.params[1] == [41]
+    assert answer.candidate_answer_id == 41
+    assert chunks[0].candidate_answer_id == 41
+    assert chunks[0].metadata["dataset"] == "J1"
+    assert chunks[0].metadata["retrieval_run_id"] == 21
+    assert "official_answer_key" not in chunks[0].metadata
+    assert chunks[0].metadata["safe"] == "kept"
+
+
+def test_persist_successful_candidate_answer_with_context_snapshot_rolls_back_on_snapshot_failure() -> None:
+    cursor = FailingContextInsertCursor(
+        fetchone_rows=[
+            (
+                41,
+                17,
+                77,
+                "candidate-model",
+                "Resposta final",
+                "B",
+                "prompt renderizado",
+                "success",
+                None,
+                812,
+                "{}",
+                datetime(2026, 6, 4, 13, 45, 0),
+            )
+        ]
+    )
+    connection = TransactionConnection(cursor)
+    repository = JudgeRepository(connection)
+
+    try:
+        repository.persist_successful_candidate_answer_with_context_snapshot(
+            answer=CandidateAnswerRecord(
+                candidate_answer_id=None,
+                candidate_run_id=17,
+                question_id=77,
+                model_name="candidate-model",
+                rendered_prompt="prompt renderizado",
+                status="success",
+                answer_text="Resposta final",
+                final_choice="B",
+                latency_ms=812,
+            ),
+            retrieval_result=RagRetrievalResult(
+                question_id=77,
+                dataset="J1",
+                retrieval_run_id=21,
+                retrieval_name="j1_source_urls_v1",
+                embedding_model="text-embedding-3-small",
+                top_k=5,
+                status="success",
+                chunks=[
+                    RetrievedRagChunk(
+                        rank=1,
+                        chunk_id=501,
+                        chunk_text="Trecho seguro",
+                        source_kind="lei",
+                        document_id=701,
+                        document_key="doc-701",
+                        lei=None,
+                        norma=None,
+                        url=None,
+                        urn=None,
+                        artigo=None,
+                        topico=None,
+                        relevancia=None,
+                        tipo=None,
+                        distance=None,
+                        similarity=0.88,
+                    )
+                ],
+            ),
+        )
+    except RuntimeError as error:
+        assert str(error) == "snapshot persistence unavailable"
+    else:
+        raise AssertionError("Expected snapshot persistence failure.")
+
+    assert connection.enter_count == 1
+    assert connection.exit_exceptions == [RuntimeError]
+    assert "INSERT INTO av3.candidate_answers" in cursor.queries[0]
+    assert "INSERT INTO av3.candidate_answer_context_chunks" in cursor.queries[-1]
+
+
 def test_list_candidate_runs_filters_by_dataset_and_status() -> None:
     created_at = datetime(2026, 6, 4, 14, 10, 0)
     cursor = MultiRecordingCursor(
@@ -1077,6 +1259,7 @@ def test_select_pending_candidate_questions_success_wins_over_failed() -> None:
     )
 
     assert "WHERE NOT has_success" in cursor.queries[0]
+    assert "FROM av3.candidate_answer_context_chunks c" in cursor.queries[0]
     assert result.questions == []
     assert result.summary.successful_excluded == 1
 
@@ -1222,6 +1405,7 @@ def test_successful_candidate_answer_exists_filters_by_dataset_model_question_an
     assert "FROM av3.candidate_answers a" in cursor.queries[0]
     assert "JOIN av3.candidate_runs r" in cursor.queries[0]
     assert "a.status = 'success'" in cursor.queries[0]
+    assert "FROM av3.candidate_answer_context_chunks c" in cursor.queries[0]
     assert "r.id_candidate_run <> %s" in cursor.queries[0]
     assert cursor.params[0] == ["J1", "candidate-model", 77, 17]
 

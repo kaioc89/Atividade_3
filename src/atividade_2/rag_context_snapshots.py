@@ -76,18 +76,33 @@ class RagContextSnapshotService:
         if retrieval_result.status != "success":
             return []
 
-        chunks = [
-            _to_context_chunk_record(
-                candidate_answer_id=candidate_answer_id,
-                retrieval_result=retrieval_result,
-                chunk=chunk,
-            )
-            for chunk in retrieval_result.chunks
-        ]
+        chunks = build_retrieval_snapshot_chunks(
+            candidate_answer_id=candidate_answer_id,
+            retrieval_result=retrieval_result,
+        )
         return self._repository.persist_candidate_answer_context_chunks(
             candidate_answer_id=candidate_answer_id,
             chunks=chunks,
         )
+
+
+def build_retrieval_snapshot_chunks(
+    *,
+    candidate_answer_id: int,
+    retrieval_result: RagRetrievalResult,
+) -> list[CandidateAnswerContextChunkRecord]:
+    """Build immutable context chunk snapshots without persisting them."""
+    if retrieval_result.status != "success":
+        return []
+
+    return [
+        _to_context_chunk_record(
+            candidate_answer_id=candidate_answer_id,
+            retrieval_result=retrieval_result,
+            chunk=chunk,
+        )
+        for chunk in retrieval_result.chunks
+    ]
 
 
 def _to_context_chunk_record(

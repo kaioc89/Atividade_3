@@ -30,6 +30,7 @@ from .candidate_runtime_learning import parse_candidate_runtime_observation
 from .candidate_prompts import build_candidate_prompt
 from .config import load_settings
 from .contracts import (
+    CandidateAnswerContextChunkRecord,
     CandidateAnswerRecord,
     CandidateModelAssignment,
     CandidateProgressCallback,
@@ -614,6 +615,14 @@ class CandidateRunRepositoryProtocol(Protocol):
 
     def persist_candidate_answer(self, *, answer: CandidateAnswerRecord) -> CandidateAnswerRecord:
         """Insert or update one candidate answer."""
+
+    def persist_successful_candidate_answer_with_context_snapshot(
+        self,
+        *,
+        answer: CandidateAnswerRecord,
+        retrieval_result: RagRetrievalResult,
+    ) -> tuple[CandidateAnswerRecord, list[CandidateAnswerContextChunkRecord]]:
+        """Persist one successful candidate answer and its context snapshot atomically."""
 
     def get_rag_embedding_model_config(self, *, dataset: str) -> Any | None:
         """Return the dataset embedding config used to call the retriever's embedder."""
@@ -2376,7 +2385,57 @@ def _execute_candidate_question_task_inner(
             budget=outcome.budget,
         )
     stored_answer = outcome.answer
-    assert stored_answer.candidate_answer_id is not None
+    snapshot_rows: list[CandidateAnswerContextChunkRecord] = []
+    if stored_answer.status == "success":
+        try:
+            stored_answer, snapshot_rows = repository.persist_successful_candidate_answer_with_context_snapshot(
+                answer=stored_answer,
+                retrieval_result=outcome.retrieval_result_for_prompt,
+            )
+        except Exception as error:
+            audit.event(
+                AuditEvent(
+                    "snapshot_persistence_failed",
+                    (
+                        f"candidate_run_id={candidate_run_id} question_id={question.question_id} "
+                        f"error_type={type(error).__name__}"
+                    ),
+                )
+            )
+            if progress is not None:
+                progress.emit(
+                    "candidate_question_failed",
+                    question=question,
+                    status="failed",
+                    message="context_snapshot_persistence_failed",
+                    metadata={
+                        "error_class": type(error).__name__,
+                        "error_message": "context_snapshot_persistence_failed",
+                    },
+                )
+            return CandidateQuestionTaskResult(
+                question_result=CandidateQuestionRunResult(
+                    question_id=question.question_id,
+                    question_sequence=question.question_sequence,
+                    status="failed",
+                    retrieval_status=retrieval_result.status,
+                    candidate_answer_id=None,
+                    error_message="context_snapshot_persistence_failed",
+                ),
+                budget=outcome.budget,
+                runtime_config=outcome.runtime_config,
+            )
+        audit.event(
+            AuditEvent(
+                "answer_persisted",
+                (
+                    f"candidate_answer_id={stored_answer.candidate_answer_id} "
+                    f"question_id={question.question_id} status=success"
+                ),
+            )
+        )
+    else:
+        assert stored_answer.candidate_answer_id is not None
     if progress is not None:
         progress.emit(
             "candidate_answer_persisted",
@@ -2387,10 +2446,11 @@ def _execute_candidate_question_task_inner(
                 "status": stored_answer.status,
             },
         )
-    snapshot_rows = snapshot_service.persist_retrieval_snapshot(
-        candidate_answer_id=stored_answer.candidate_answer_id,
-        retrieval_result=outcome.retrieval_result_for_prompt,
-    )
+    if stored_answer.status != "success":
+        snapshot_rows = snapshot_service.persist_retrieval_snapshot(
+            candidate_answer_id=stored_answer.candidate_answer_id,
+            retrieval_result=outcome.retrieval_result_for_prompt,
+        )
     audit.event(
         AuditEvent(
             "snapshot_persisted",
@@ -3046,32 +3106,21 @@ def _execute_candidate_generation(
                 status="success",
                 metadata={"latency_ms": raw_response.latency_ms},
             )
-        stored_answer = repository.persist_candidate_answer(
-            answer=CandidateAnswerRecord(
-                candidate_answer_id=None,
-                candidate_run_id=candidate_run_id,
-                question_id=question.question_id,
-                model_name=resolved.model_name,
-                rendered_prompt=rendered_prompt,
-                status="success",
-                answer_text=raw_response.text,
-                final_choice=_extract_final_choice(raw_response.text, dataset=resolved.dataset),
-                latency_ms=raw_response.latency_ms,
-                raw_response=_build_candidate_answer_raw_response(
-                    raw_response=raw_response.raw_response if request.save_raw_response else None,
-                    retry_metadata=None,
-                    candidate_budget_metadata=candidate_budget_metadata,
-                ),
-            )
-        )
-        audit.event(
-            AuditEvent(
-                "answer_persisted",
-                (
-                    f"candidate_answer_id={stored_answer.candidate_answer_id} "
-                    f"question_id={question.question_id} status=success"
-                ),
-            )
+        stored_answer = CandidateAnswerRecord(
+            candidate_answer_id=None,
+            candidate_run_id=candidate_run_id,
+            question_id=question.question_id,
+            model_name=resolved.model_name,
+            rendered_prompt=rendered_prompt,
+            status="success",
+            answer_text=raw_response.text,
+            final_choice=_extract_final_choice(raw_response.text, dataset=resolved.dataset),
+            latency_ms=raw_response.latency_ms,
+            raw_response=_build_candidate_answer_raw_response(
+                raw_response=raw_response.raw_response if request.save_raw_response else None,
+                retry_metadata=None,
+                candidate_budget_metadata=candidate_budget_metadata,
+            ),
         )
         return CandidateGenerationOutcome(
             answer=stored_answer,
@@ -3199,32 +3248,21 @@ def _execute_candidate_generation(
                             status="success",
                             metadata={"latency_ms": retried_response.latency_ms},
                         )
-                    stored_answer = repository.persist_candidate_answer(
-                        answer=CandidateAnswerRecord(
-                            candidate_answer_id=None,
-                            candidate_run_id=candidate_run_id,
-                            question_id=question.question_id,
-                            model_name=resolved.model_name,
-                            rendered_prompt=retried_prompt,
-                            status="success",
-                            answer_text=retried_response.text,
-                            final_choice=_extract_final_choice(retried_response.text, dataset=resolved.dataset),
-                            latency_ms=retried_response.latency_ms,
-                            raw_response=_build_candidate_answer_raw_response(
-                                raw_response=retried_response.raw_response if request.save_raw_response else None,
-                                retry_metadata=retry_metadata,
-                                candidate_budget_metadata=candidate_budget_metadata,
-                            ),
-                        )
-                    )
-                    audit.event(
-                        AuditEvent(
-                            "answer_persisted",
-                            (
-                                f"candidate_answer_id={stored_answer.candidate_answer_id} "
-                                f"question_id={question.question_id} status=success"
-                            ),
-                        )
+                    stored_answer = CandidateAnswerRecord(
+                        candidate_answer_id=None,
+                        candidate_run_id=candidate_run_id,
+                        question_id=question.question_id,
+                        model_name=resolved.model_name,
+                        rendered_prompt=retried_prompt,
+                        status="success",
+                        answer_text=retried_response.text,
+                        final_choice=_extract_final_choice(retried_response.text, dataset=resolved.dataset),
+                        latency_ms=retried_response.latency_ms,
+                        raw_response=_build_candidate_answer_raw_response(
+                            raw_response=retried_response.raw_response if request.save_raw_response else None,
+                            retry_metadata=retry_metadata,
+                            candidate_budget_metadata=candidate_budget_metadata,
+                        ),
                     )
                     return CandidateGenerationOutcome(
                         answer=stored_answer,
