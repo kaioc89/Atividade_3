@@ -81,6 +81,22 @@ def test_fetch_source_url_contents_removes_nul_characters(monkeypatch) -> None:
     assert report.successes[0].content == "Texto da fonte."
 
 
+def test_fetch_source_url_contents_decodes_utf16_html_with_bom(monkeypatch) -> None:
+    def fake_urlopen(request: urllib.request.Request, timeout: int) -> FakeHttpResponse:
+        html = "<html><body><p>Lei Maria da Penha.</p></body></html>"
+        return FakeHttpResponse(
+            body=html.encode("utf-16"),
+            content_type="text/html",
+        )
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+
+    report = fetch_source_url_contents(["https://fonte.example/lei"])
+
+    assert not report.failures
+    assert report.successes[0].content == "Lei Maria da Penha."
+
+
 def test_fetch_source_url_contents_extracts_pdf_text(monkeypatch) -> None:
     class FakePdfPage:
         def __init__(self, text: str | None) -> None:
@@ -107,6 +123,67 @@ def test_fetch_source_url_contents_extracts_pdf_text(monkeypatch) -> None:
 
     assert not report.failures
     assert report.successes[0].content == "Codigo de Etica Disciplina da OAB"
+
+
+def test_fetch_source_url_contents_rejects_pdf_viewer_without_direct_pdf(monkeypatch) -> None:
+    def fake_urlopen(request: urllib.request.Request, timeout: int) -> FakeHttpResponse:
+        return FakeHttpResponse(
+            body=b"""
+            <html><body>
+              Thumbnails Document Outline Attachments
+              Presentation Mode Open Print Download
+              Enter the password to open this PDF file
+            </body></html>
+            """,
+            content_type="text/html; charset=utf-8",
+        )
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+
+    report = fetch_source_url_contents(["https://www.oab.org.br/visualizador/19/codigo-de-etica-e-disciplina"])
+
+    assert not report.successes
+    assert "visualizador PDF detectado" in report.failures[0].reason
+
+
+def test_fetch_source_url_contents_resolves_pdf_viewer_with_direct_pdf(monkeypatch) -> None:
+    class FakePdfPage:
+        def extract_text(self) -> str:
+            return "Codigo de Etica recuperado do PDF"
+
+    class FakePdfReader:
+        def __init__(self, stream: BytesIO) -> None:
+            assert stream.read() == b"%PDF"
+            self.pages = [FakePdfPage()]
+
+    class FakePypdfModule:
+        PdfReader = FakePdfReader
+
+    def fake_urlopen(request: urllib.request.Request, timeout: int) -> FakeHttpResponse:
+        if request.full_url == "https://www.oab.org.br/visualizador/19/codigo-de-etica-e-disciplina":
+            return FakeHttpResponse(
+                body=b"""
+                <html><body>
+                  Thumbnails Document Outline Attachments
+                  Presentation Mode Open Print Download
+                  Enter the password to open this PDF file
+                  <iframe src="/arquivos/codigo-de-etica.pdf"></iframe>
+                </body></html>
+                """,
+                content_type="text/html; charset=utf-8",
+            )
+        assert request.full_url == "https://www.oab.org.br/arquivos/codigo-de-etica.pdf"
+        return FakeHttpResponse(body=b"%PDF", content_type="application/pdf")
+
+    monkeypatch.setitem(sys.modules, "pypdf", FakePypdfModule())
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+
+    report = fetch_source_url_contents(["https://www.oab.org.br/visualizador/19/codigo-de-etica-e-disciplina"])
+
+    assert not report.failures
+    assert report.successes[0].url == "https://www.oab.org.br/visualizador/19/codigo-de-etica-e-disciplina"
+    assert report.successes[0].content_type == "application/pdf"
+    assert report.successes[0].content == "Codigo de Etica recuperado do PDF"
 
 
 def test_fetch_source_url_contents_reports_unsupported_content_type(monkeypatch) -> None:
