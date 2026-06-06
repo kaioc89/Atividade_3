@@ -196,6 +196,8 @@ class CandidateAnswerContext:
     candidate_answer: str
     candidate_model: str
     metadata: dict[str, Any] = field(default_factory=dict)
+    raw_candidate_answer: str | None = None
+    candidate_answer_normalization_flags: dict[str, bool] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
