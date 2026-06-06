@@ -47,6 +47,17 @@ AUDIT_TIMESTAMP_PATTERN = re.compile(r"^([^|]+)\s+\|\s+([^|]+)(?:\s+\|\s+(.*))?$
 AUDIT_KEY_VALUE_PATTERN = re.compile(r"([A-Za-z_]+)=([^ ]+)")
 DEFAULT_AUDIT_DIR = Path("outputs") / "audit"
 DEFAULT_BACKUP_DIR = Path("outputs") / "backup"
+DEFAULT_MAIN_TAB_ID = "dashboard"
+VALID_MAIN_TAB_IDS = frozenset({"dashboard", "execution", "history", "prompt", "meta", "rag"})
+
+
+def _resolve_main_tab_id(raw_value: str | None) -> str:
+    if raw_value is None:
+        return DEFAULT_MAIN_TAB_ID
+    candidate = raw_value.strip().lower()
+    if candidate in VALID_MAIN_TAB_IDS:
+        return candidate
+    return DEFAULT_MAIN_TAB_ID
 
 
 def _env_flag(name: str, *, default: bool = False) -> bool:
@@ -268,10 +279,10 @@ class JobRegistry:
                 self._jobs[run_id].eligibility = eligibility
 
         def update_evaluation(evaluation: EvaluationProgress) -> None:
-            if evaluation.status == "skipped":
-                return
             with self._lock:
                 job = self._jobs[run_id]
+                if evaluation.status == "skipped" and not _has_evaluation_event(job.evaluation_events, evaluation):
+                    return
                 _upsert_evaluation_event(job.evaluation_events, evaluation)
                 _sync_progress_with_execution_table(job)
 
@@ -471,8 +482,11 @@ def create_app(
     @app.get("/", response_class=HTMLResponse)
     def index(request: Request) -> HTMLResponse:
         assistant_hidden = " hidden" if not request.app.state.assistant_enabled else ""
+        initial_main_tab_id = _resolve_main_tab_id(request.query_params.get("tab"))
         return HTMLResponse(
-            _INDEX_HTML.replace("__ASSISTANT_WIDGET_HIDDEN__", assistant_hidden),
+            _INDEX_HTML.replace("__ASSISTANT_WIDGET_HIDDEN__", assistant_hidden).replace(
+                "__INITIAL_MAIN_TAB_ID__", initial_main_tab_id
+            ),
             headers={"Cache-Control": "no-store"},
         )
 
@@ -1178,6 +1192,11 @@ def _upsert_evaluation_event(events: list[EvaluationProgress], event: Evaluation
     events.append(event)
 
 
+def _has_evaluation_event(events: list[EvaluationProgress], event: EvaluationProgress) -> bool:
+    event_key = _evaluation_event_key(event)
+    return any(_evaluation_event_key(existing) == event_key for existing in events)
+
+
 def _sync_progress_with_execution_table(job: JobState) -> None:
     total = job.progress.total
     if total == 0 and job.eligibility is not None:
@@ -1555,14 +1574,14 @@ _INDEX_HTML = """
     <div id="config-status" class="status">Carregando configuracao local...</div>
   </header>
   <nav class="tabs" aria-label="Navegacao principal">
-    <button class="tab-button active" type="button" data-tab="dashboard-panel">Dashboard</button>
-    <button class="tab-button" type="button" data-tab="execution-panel">Execucao</button>
-    <button class="tab-button" type="button" data-tab="history-panel">Execucoes anteriores</button>
-      <button class="tab-button" type="button" data-tab="prompt-panel">Prompt Juizes</button>
-      <button class="tab-button" type="button" data-tab="meta-panel">Meta-Avaliacao</button>
-      <button class="tab-button" type="button" data-tab="rag-panel">RAG</button>
+    <button class="tab-button active" type="button" data-tab="dashboard">Dashboard</button>
+    <button class="tab-button" type="button" data-tab="execution">Execucao</button>
+    <button class="tab-button" type="button" data-tab="history">Execucoes anteriores</button>
+      <button class="tab-button" type="button" data-tab="prompt">Prompt Juizes</button>
+      <button class="tab-button" type="button" data-tab="meta">Meta-Avaliacao</button>
+      <button class="tab-button" type="button" data-tab="rag">RAG</button>
   </nav>
-  <main id="dashboard-panel" class="dashboard-layout tab-panel">
+  <main id="dashboard-panel" class="dashboard-layout tab-panel" data-tab-panel="dashboard">
     <aside class="dashboard-filters">
       <h2>Filtros globais</h2>
       <label>Dataset
@@ -1810,7 +1829,7 @@ _INDEX_HTML = """
       </div>
     </section>
   </main>
-  <main id="execution-panel" class="tab-panel" hidden>
+  <main id="execution-panel" class="tab-panel" data-tab-panel="execution" hidden>
     <aside>
       <h2>Presets</h2>
       <div id="presets" class="presets"></div>
@@ -2003,7 +2022,7 @@ _INDEX_HTML = """
       </div>
     </section>
   </main>
-  <div id="history-panel" class="history-layout tab-panel" hidden>
+  <div id="history-panel" class="history-layout tab-panel" data-tab-panel="history" hidden>
     <section>
       <div class="history-actions">
         <h2>Execucoes anteriores</h2>
@@ -2045,7 +2064,7 @@ _INDEX_HTML = """
       <pre id="history-log-content" class="history-log">Selecione uma execucao.</pre>
     </aside>
   </div>
-    <div id="prompt-panel" class="prompt-layout tab-panel" hidden>
+    <div id="prompt-panel" class="prompt-layout tab-panel" data-tab-panel="prompt" hidden>
       <aside>
         <h2>Configuracao do prompt</h2>
         <label>Dataset
@@ -2107,7 +2126,7 @@ _INDEX_HTML = """
         </div>
       </section>
     </div>
-    <div id="meta-panel" class="tab-panel" hidden>
+    <div id="meta-panel" class="tab-panel" data-tab-panel="meta" hidden>
       <div class="meta-mode-switch" role="tablist" aria-label="Modos da meta-avaliacao">
         <button class="meta-mode-button active" id="meta_mode_new" type="button" data-meta-mode="new" role="tab" aria-selected="true">Nova auditoria</button>
         <button class="meta-mode-button" id="meta_mode_history" type="button" data-meta-mode="history" role="tab" aria-selected="false">Auditorias realizadas</button>
@@ -2277,7 +2296,7 @@ _INDEX_HTML = """
         </section>
       </div>
     </div>
-    <div id="rag-panel" class="tab-panel" hidden>
+    <div id="rag-panel" class="tab-panel" data-tab-panel="rag" hidden>
       <main class="prompt-layout" style="display:block; width:min(100%, 1440px);">
         <section>
           <div class="rag-subtabs" aria-label="Submenus de RAG">
@@ -2843,10 +2862,55 @@ _INDEX_HTML = """
     let judgeModelOptions = [];
     let assistantMessages = [];
     let assistantLoading = false;
+    const DEFAULT_MAIN_TAB_ID = "dashboard";
+    const INITIAL_MAIN_TAB_ID = "__INITIAL_MAIN_TAB_ID__";
     const executionTableState = new Map();
 
     function value(id) { return document.getElementById(id).value; }
     function setText(id, text) { document.getElementById(id).textContent = text ?? "-"; }
+
+    function mainTabButtons() {
+      return Array.from(document.querySelectorAll(".tab-button"));
+    }
+
+    function isValidTabId(value) {
+      return typeof value === "string" && mainTabButtons().some((button) => button.dataset.tab === value);
+    }
+
+    function normalizeTabId(value) {
+      return isValidTabId(value) ? value : DEFAULT_MAIN_TAB_ID;
+    }
+
+    function getTabFromUrl(url = window.location.href) {
+      const currentUrl = new URL(url, window.location.origin);
+      return normalizeTabId(currentUrl.searchParams.get("tab"));
+    }
+
+    function buildUrlForTab(tabId, url = window.location.href) {
+      const nextUrl = new URL(url, window.location.origin);
+      nextUrl.searchParams.set("tab", normalizeTabId(tabId));
+      return nextUrl;
+    }
+
+    function syncUrlForTab(tabId, {replace = false} = {}) {
+      const nextUrl = buildUrlForTab(tabId);
+      const currentUrl = new URL(window.location.href);
+      if (
+        currentUrl.pathname === nextUrl.pathname
+        && currentUrl.search === nextUrl.search
+        && currentUrl.hash === nextUrl.hash
+      ) {
+        return;
+      }
+      const historyMethod = replace ? "replaceState" : "pushState";
+      window.history[historyMethod]({tab: normalizeTabId(tabId)}, "", `${nextUrl.pathname}${nextUrl.search}${nextUrl.hash}`);
+    }
+
+    function urlHasInvalidTab(url = window.location.href) {
+      const currentUrl = new URL(url, window.location.origin);
+      const requestedTab = currentUrl.searchParams.get("tab");
+      return requestedTab !== null && !isValidTabId(requestedTab);
+    }
 
     function truncateText(text, maxLength = 180) {
       const normalized = String(text ?? "");
@@ -2865,6 +2929,8 @@ _INDEX_HTML = """
         ["gated model", "Modelo sem acesso neste provedor"],
         ["don't have access", "Modelo sem acesso neste provedor"],
         ["model does not exist", "Modelo inválido ou sem acesso nesse provedor"],
+        ["temporarily at capacity", "modelo temporariamente sem capacidade no provedor; pulado nesta execucao"],
+        ["please try again shortly", "modelo temporariamente sem capacidade no provedor; pulado nesta execucao"],
         ["HTTP 401", "key inválida ou sem permissão"],
         ["HTTP 403", "acesso negado pelo provedor"],
         ["HTTP 404", "base URL/modelo incorreto"],
@@ -4043,7 +4109,7 @@ _INDEX_HTML = """
     }
 
     async function openMetaEvaluation(evaluationId) {
-      activateTab("meta-panel");
+      switchTab("meta");
       if (!metaOptionsLoaded) {
         await loadMetaOptions(evaluationId);
         return;
@@ -6336,7 +6402,7 @@ _INDEX_HTML = """
     }
 
     async function openHistoryLogFromMeta(runId, logPath) {
-      activateTab("history-panel");
+      switchTab("history");
       const rows = await getRunHistory();
       const entry = rows.find((item) => String(item.run_id) === String(runId))
         || {
@@ -6395,17 +6461,19 @@ _INDEX_HTML = """
     }
 
     function activateTab(targetId) {
+      const resolvedTabId = normalizeTabId(targetId);
       for (const button of document.querySelectorAll(".tab-button")) {
-        const active = button.dataset.tab === targetId;
+        const active = button.dataset.tab === resolvedTabId;
         button.classList.toggle("active", active);
         button.setAttribute("aria-selected", String(active));
       }
       for (const panel of document.querySelectorAll(".tab-panel")) {
-        panel.hidden = panel.id !== targetId;
+        panel.hidden = panel.dataset.tabPanel !== resolvedTabId;
       }
-      if (targetId === "meta-panel" || targetId === "history-panel") {
+      if (resolvedTabId === "meta" || resolvedTabId === "history") {
         window.scrollTo({top: 0, left: 0, behavior: "auto"});
       }
+      return resolvedTabId;
     }
 
     function switchRagSubtab(targetId) {
@@ -6428,13 +6496,14 @@ _INDEX_HTML = """
       }
     }
 
-    function switchTab(targetId) {
-      activateTab(targetId);
-      if (targetId === "dashboard-panel") loadDashboard();
-      if (targetId === "history-panel") loadHistory();
-      if (targetId === "prompt-panel" && !promptOptionsLoaded) loadPromptOptions();
-      if (targetId === "meta-panel" && !metaOptionsLoaded) loadMetaOptions();
-      if (targetId === "rag-panel" && !ragCurationOptionsLoaded) loadRagCurationOptions();
+    function switchTab(targetId, {updateUrl = true, replaceUrl = false} = {}) {
+      const resolvedTabId = activateTab(targetId);
+      if (updateUrl) syncUrlForTab(resolvedTabId, {replace: replaceUrl});
+      if (resolvedTabId === "dashboard") loadDashboard();
+      if (resolvedTabId === "history") loadHistory();
+      if (resolvedTabId === "prompt" && !promptOptionsLoaded) loadPromptOptions();
+      if (resolvedTabId === "meta" && !metaOptionsLoaded) loadMetaOptions();
+      if (resolvedTabId === "rag" && !ragCurationOptionsLoaded) loadRagCurationOptions();
     }
 
     async function loadConfig() {
@@ -6483,6 +6552,10 @@ _INDEX_HTML = """
       document.getElementById("dry-run").disabled = false;
       document.getElementById("run").disabled = false;
       await loadDashboard();
+      const initialTabId = getTabFromUrl();
+      if (initialTabId !== DEFAULT_MAIN_TAB_ID) {
+        switchTab(initialTabId, {updateUrl: false});
+      }
     }
 
     function populateSelect(id, options, valueKey, labelKey) {
@@ -6715,6 +6788,9 @@ _INDEX_HTML = """
     for (const button of document.querySelectorAll(".tab-button")) {
       button.onclick = () => switchTab(button.dataset.tab);
     }
+    window.addEventListener("popstate", () => {
+      switchTab(getTabFromUrl(), {updateUrl: false});
+    });
     for (const button of document.querySelectorAll(".rag-subtab-button")) {
       button.onclick = () => switchRagSubtab(button.dataset.ragSubtab);
     }
@@ -6899,6 +6975,10 @@ _INDEX_HTML = """
         setText("output", friendlyErrorMessage(error.message));
       }
     };
+    activateTab(INITIAL_MAIN_TAB_ID);
+    if (urlHasInvalidTab()) {
+      syncUrlForTab(INITIAL_MAIN_TAB_ID, {replace: true});
+    }
     prefetchOperationalLogSummary();
     prefetchRunHistory();
     loadConfig();

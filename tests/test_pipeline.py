@@ -172,6 +172,70 @@ class ModelSpecificDailyTokenQuotaJudgeClient(FakeJudgeClient):
         )
 
 
+class ModelSpecificCapacityJudgeClient(FakeJudgeClient):
+    def __init__(self, scores: dict[str, int], failing_model: str) -> None:
+        super().__init__(scores)
+        self.failing_model = failing_model
+
+    def judge(
+        self,
+        prompt: str,
+        model: str,
+        *,
+        requested_model: str | None = None,
+        endpoint_key: str | None = None,
+    ) -> JudgeRawResponse:
+        self.calls.append(model)
+        self.endpoint_keys.append(endpoint_key)
+        if model == self.failing_model:
+            raise RemoteJudgeError(
+                (
+                    f"Remote judge returned HTTP 503: {model} is temporarily at capacity. "
+                    "Please try again shortly."
+                ),
+                status_code=503,
+                retryable=True,
+            )
+        score = self.scores[model]
+        return JudgeRawResponse(
+            text=f'{{"score": {score}, "rationale": "nota {score}"}}',
+            provider="fake",
+            model=model,
+            latency_ms=1,
+        )
+
+
+class Flaky503JudgeClient(FakeJudgeClient):
+    def __init__(self, scores: dict[str, int]) -> None:
+        super().__init__(scores)
+        self.fail_once = True
+
+    def judge(
+        self,
+        prompt: str,
+        model: str,
+        *,
+        requested_model: str | None = None,
+        endpoint_key: str | None = None,
+    ) -> JudgeRawResponse:
+        self.calls.append(model)
+        self.endpoint_keys.append(endpoint_key)
+        if self.fail_once:
+            self.fail_once = False
+            raise RemoteJudgeError(
+                "Remote judge returned HTTP 503: upstream unavailable",
+                status_code=503,
+                retryable=True,
+            )
+        score = self.scores[model]
+        return JudgeRawResponse(
+            text=f'{{"score": {score}, "rationale": "nota {score}"}}',
+            provider="fake",
+            model=model,
+            latency_ms=1,
+        )
+
+
 class ConcurrencyLimitJudgeClient(FakeJudgeClient):
     def __init__(self, scores: dict[str, int], *, slow_model: str, limited_model: str) -> None:
         super().__init__(scores)
@@ -305,6 +369,20 @@ def answer_with_id(answer_id: int) -> CandidateAnswerContext:
     )
 
 
+def av3_answer_with_id(answer_id: int) -> CandidateAnswerContext:
+    base_answer = answer()
+    return CandidateAnswerContext(
+        av1_answer_id=None,
+        candidate_answer_id=answer_id,
+        question_id=base_answer.question_id,
+        dataset_name=base_answer.dataset_name,
+        question_text=base_answer.question_text,
+        reference_answer=base_answer.reference_answer,
+        candidate_answer=base_answer.candidate_answer,
+        candidate_model=base_answer.candidate_model,
+    )
+
+
 def _record_for_existing_score(
     *,
     answer_id: int,
@@ -338,6 +416,20 @@ def test_single_mode_runs_one_judge() -> None:
     assert len(repo.records) == 1
     assert repo.records[0].stored_role == "principal"
     assert client.endpoint_keys == ["JUDGE"]
+
+
+def test_single_mode_persists_candidate_answer_identity_for_av3() -> None:
+    settings = load_settings(dotenv_path=None, env=BASE_ENV)
+    config = resolve_runtime_config(settings, panel_mode="single")
+    repo = InMemoryJudgeRepository()
+    client = FakeJudgeClient({"openai/gpt-oss-120b": 5})
+
+    summary = JudgePipeline(repo, client).run([av3_answer_with_id(301)], config)
+
+    assert summary.executed_evaluations == 1
+    assert len(repo.records) == 1
+    assert repo.records[0].candidate_answer_id == 301
+    assert repo.records[0].av1_answer_id is None
 
 
 def test_j2_rejects_non_binary_judge_score() -> None:
@@ -805,6 +897,88 @@ def test_adaptive_scheduler_continues_other_models_after_one_model_quota_failure
     assert client.calls.count(judge_1) == 3
     assert client.calls.count(judge_2) == 1
     assert any(message == "adaptive_group_disabled" for message, _ in audit.events)
+
+
+def test_adaptive_scheduler_skips_capacity_limited_model_without_retry() -> None:
+    env = dict(BASE_ENV)
+    env["JUDGE_EXECUTION_STRATEGY"] = "adaptive"
+    env["JUDGE_ADAPTIVE_INITIAL_CONCURRENCY"] = "1"
+    env["JUDGE_ADAPTIVE_MAX_CONCURRENCY"] = "1"
+    env["JUDGE_ADAPTIVE_MAX_RETRIES"] = "3"
+    settings = load_settings(dotenv_path=None, env=env)
+    config = resolve_runtime_config(settings, panel_mode="primary_only")
+    repo = InMemoryJudgeRepository()
+    audit = RecordingAudit()
+    judge_1 = "openai/gpt-oss-120b"
+    judge_2 = "meta-llama/Llama-3.3-70B-Instruct"
+    client = ModelSpecificCapacityJudgeClient({judge_1: 5, judge_2: 4}, failing_model=judge_2)
+
+    summary = JudgePipeline(repo, client, audit=audit).run(
+        [answer_with_id(1), answer_with_id(2), answer_with_id(3)],
+        config,
+    )
+
+    assert summary.executed_evaluations == 3
+    assert [record.judge_model.provider_model for record in repo.records] == [judge_1, judge_1, judge_1]
+    assert client.calls.count(judge_1) == 3
+    assert client.calls.count(judge_2) == 1
+    assert any(message == "judge_model_skipped_due_to_capacity" for message, _ in audit.events)
+    assert any(message == "adaptive_group_disabled_due_to_capacity" for message, _ in audit.events)
+    assert not any(message == "adaptive_task_requeued" for message, _ in audit.events)
+
+
+def test_adaptive_2plus1_skips_capacity_limited_primary_without_arbiter() -> None:
+    env = dict(BASE_ENV)
+    env["JUDGE_EXECUTION_STRATEGY"] = "adaptive"
+    env["JUDGE_ADAPTIVE_INITIAL_CONCURRENCY"] = "1"
+    env["JUDGE_ADAPTIVE_MAX_CONCURRENCY"] = "1"
+    settings = load_settings(dotenv_path=None, env=env)
+    config = resolve_runtime_config(settings, panel_mode="2plus1")
+    repo = InMemoryJudgeRepository()
+    judge_1 = "openai/gpt-oss-120b"
+    judge_2 = "meta-llama/Llama-3.3-70B-Instruct"
+    arbiter = "Unbabel/M-Prometheus-14B"
+    client = ModelSpecificCapacityJudgeClient(
+        {
+            judge_1: 5,
+            judge_2: 4,
+            arbiter: 3,
+        },
+        failing_model=judge_2,
+    )
+    evaluation_events: list[EvaluationProgress] = []
+
+    summary = JudgePipeline(repo, client, evaluation_callback=evaluation_events.append).run([answer_with_id(1)], config)
+
+    assert summary.executed_evaluations == 1
+    assert summary.arbiter_evaluations == 0
+    assert [record.judge_model.provider_model for record in repo.records] == [judge_1]
+    assert arbiter not in client.calls
+    assert [(event.role, event.status) for event in evaluation_events] == [
+        ("principal", "running"),
+        ("principal", "success"),
+        ("controle", "running"),
+        ("controle", "skipped"),
+    ]
+
+
+def test_adaptive_scheduler_keeps_retrying_generic_503_errors() -> None:
+    env = dict(BASE_ENV)
+    env["JUDGE_EXECUTION_STRATEGY"] = "adaptive"
+    env["JUDGE_ADAPTIVE_INITIAL_CONCURRENCY"] = "1"
+    env["JUDGE_ADAPTIVE_MAX_RETRIES"] = "3"
+    settings = load_settings(dotenv_path=None, env=env)
+    config = resolve_runtime_config(settings, panel_mode="single")
+    repo = InMemoryJudgeRepository()
+    audit = RecordingAudit()
+    client = Flaky503JudgeClient({"openai/gpt-oss-120b": 5})
+
+    summary = JudgePipeline(repo, client, audit=audit, jitter_func=lambda: 0).run([answer()], config)
+
+    assert summary.executed_evaluations == 1
+    assert client.calls == ["openai/gpt-oss-120b", "openai/gpt-oss-120b"]
+    assert any(message == "adaptive_task_requeued" for message, _ in audit.events)
+    assert not any(message == "judge_model_skipped_due_to_capacity" for message, _ in audit.events)
 
 
 def test_adaptive_2plus1_starts_each_judge_from_its_own_pending_answers() -> None:

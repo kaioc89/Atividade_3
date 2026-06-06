@@ -32,6 +32,19 @@ class RemoteJudgeError(RuntimeError):
         self.retryable = retryable
 
 
+def is_remote_model_capacity_error(error: Exception) -> bool:
+    """Return True for provider capacity errors that should skip the model for this run."""
+
+    if not isinstance(error, RemoteJudgeError):
+        return False
+    normalized = str(error).lower()
+    has_capacity_phrase = "temporarily at capacity" in normalized
+    has_retry_phrase = "please try again shortly" in normalized
+    if error.status_code == 503:
+        return has_capacity_phrase or has_retry_phrase
+    return has_capacity_phrase and has_retry_phrase
+
+
 class HttpTransport(Protocol):
     """Small transport seam for offline tests."""
 
@@ -133,10 +146,11 @@ class RemoteHttpJudgeClient:
         )
         latency_ms = int((time.monotonic() - started) * 1000)
         if status_code < 200 or status_code >= 300:
+            message = _response_message(raw_response)
             raise RemoteJudgeError(
-                f"Remote judge returned HTTP {status_code}.",
+                f"Remote judge returned HTTP {status_code}: {message}",
                 status_code=status_code,
-                retryable=_is_retryable_http_error(status_code, ""),
+                retryable=_is_retryable_http_error(status_code, message),
             )
 
         text = _extract_response_text(raw_response)
@@ -263,12 +277,17 @@ def _safe_response_message(raw_body: bytes) -> str:
     except (json.JSONDecodeError, UnicodeDecodeError):
         return "<non-json response>"
     if isinstance(parsed, dict):
-        for key in ("error", "message", "detail"):
-            value = parsed.get(key)
-            if isinstance(value, str):
-                return value[:300]
-            if isinstance(value, dict) and isinstance(value.get("message"), str):
-                return value["message"][:300]
+        return _response_message(parsed)
+    return "<response omitted>"
+
+
+def _response_message(payload: dict[str, Any]) -> str:
+    for key in ("error", "message", "detail"):
+        value = payload.get(key)
+        if isinstance(value, str):
+            return value[:300]
+        if isinstance(value, dict) and isinstance(value.get("message"), str):
+            return value["message"][:300]
     return "<response omitted>"
 
 
@@ -290,6 +309,11 @@ def _is_retryable_status(status_code: int | None) -> bool:
 
 def _is_retryable_http_error(status_code: int | None, message: str) -> bool:
     if status_code == 429 and _is_daily_token_quota_error(message):
+        return False
+    if status_code == 503 and (
+        "temporarily at capacity" in message.lower()
+        or "please try again shortly" in message.lower()
+    ):
         return False
     return _is_retryable_status(status_code)
 
