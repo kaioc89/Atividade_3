@@ -4766,6 +4766,11 @@ class JudgeRepository:
 
                 chunk_count = 0
                 next_chunk_index_by_document: dict[int, int] = {}
+                seen_base_chunk_hashes = _existing_source_chunk_text_hashes(
+                    cursor,
+                    import_run_id=vector_summary.import_run_id,
+                    dataset=vector_summary.dataset,
+                )
                 for item in source_contents:
                     document_id = int(item["document_id"])
                     url = str(item["url"])
@@ -4780,9 +4785,10 @@ class JudgeRepository:
                     seen_document_chunk_hashes: set[str] = set()
                     for index, chunk_text in enumerate(chunks, start=1):
                         source_text_hash = _normalized_chunk_text_hash(chunk_text)
-                        if source_text_hash in seen_document_chunk_hashes:
+                        if source_text_hash in seen_document_chunk_hashes or source_text_hash in seen_base_chunk_hashes:
                             continue
                         seen_document_chunk_hashes.add(source_text_hash)
+                        seen_base_chunk_hashes.add(source_text_hash)
                         chunk_index = next_chunk_index_by_document.get(document_id, 1000001)
                         next_chunk_index_by_document[document_id] = chunk_index + 1
                         cursor.execute(
@@ -4819,7 +4825,7 @@ class JudgeRepository:
                                         "total_parts": len(chunks),
                                     }
                                 ),
-                                _sha256_text(f"{url}|{index}|{chunk_text}"),
+                                source_text_hash,
                             ),
                         )
                         chunk_count += 1

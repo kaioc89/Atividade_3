@@ -81,6 +81,59 @@ def test_fetch_source_url_contents_removes_nul_characters(monkeypatch) -> None:
     assert report.successes[0].content == "Texto da fonte."
 
 
+def test_fetch_source_url_contents_omits_strike_markup(monkeypatch) -> None:
+    def fake_urlopen(request: urllib.request.Request, timeout: int) -> FakeHttpResponse:
+        return FakeHttpResponse(
+            body=b"""
+            <html><body>
+              <p>Art. 6 vigente.</p>
+              <p><strike><a href="../Decreto/D10922.htm#art1">(Vide Decreto n. 10.922)</a></strike>
+              Vigencia encerrada</p>
+              <p>Texto final vigente.</p>
+            </body></html>
+            """,
+            content_type="text/html; charset=utf-8",
+        )
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+
+    report = fetch_source_url_contents(["https://fonte.example/lei"])
+
+    assert not report.failures
+    assert report.successes[0].content == "Art. 6 vigente. Vigencia encerrada Texto final vigente."
+    assert "Decreto n. 10.922" not in report.successes[0].content
+    assert report.successes[0].suppressed_text_segments == 1
+    assert report.successes[0].suppressed_text_chars > 0
+
+
+def test_fetch_source_url_contents_omits_line_through_style(monkeypatch) -> None:
+    def fake_urlopen(request: urllib.request.Request, timeout: int) -> FakeHttpResponse:
+        return FakeHttpResponse(
+            body=b"""
+            <html><body>
+              <p>Texto vigente antes.</p>
+              <p><span style="font-size:10pt; text-decoration: line-through">
+                Art. 191 obsoleto.
+              </span></p>
+              <p><span style="text-decoration-line: line-through">Paragrafo unico obsoleto.</span></p>
+              <p>Texto vigente depois.</p>
+            </body></html>
+            """,
+            content_type="text/html; charset=utf-8",
+        )
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+
+    report = fetch_source_url_contents(["https://fonte.example/lei"])
+
+    assert not report.failures
+    assert report.successes[0].content == "Texto vigente antes. Texto vigente depois."
+    assert "Art. 191 obsoleto" not in report.successes[0].content
+    assert "Paragrafo unico obsoleto" not in report.successes[0].content
+    assert report.successes[0].suppressed_text_segments == 2
+    assert report.successes[0].suppressed_text_chars > 0
+
+
 def test_fetch_source_url_contents_decodes_utf16_html_with_bom(monkeypatch) -> None:
     def fake_urlopen(request: urllib.request.Request, timeout: int) -> FakeHttpResponse:
         html = "<html><body><p>Lei Maria da Penha.</p></body></html>"

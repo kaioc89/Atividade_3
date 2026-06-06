@@ -166,12 +166,12 @@ def test_rag_vector_search_does_not_hide_duplicate_chunk_text() -> None:
     )
 
     query = cursor.queries[0]
-    assert "PARTITION BY md5(c.chunk_text)" not in query
+    assert "PARTITION BY c.content_hash" not in query
     assert "WHERE duplicate_rank = 1" not in query
     assert "ORDER BY e.embedding_vector <=> %s::vector ASC, c.id_chunk ASC" in query
 
 
-def test_rag_source_chunk_replacement_skips_duplicate_text_chunks() -> None:
+def test_rag_source_chunk_replacement_skips_duplicate_text_chunks_across_documents() -> None:
     cursor = MultiRecordingCursor(fetchall_rows=[[]])
     repository = JudgeRepository(TransactionConnection(cursor))
     repository.get_rag_vector_base_summary = lambda dataset: RagVectorBaseSummary(  # type: ignore[method-assign]
@@ -218,8 +218,8 @@ def test_rag_source_chunk_replacement_skips_duplicate_text_chunks() -> None:
         for query in cursor.queries
         if "INSERT INTO av3.rag_chunks" in query
     ]
-    assert inserted == 2
-    assert len(insert_queries) == 2
+    assert inserted == 1
+    assert len(insert_queries) == 1
 
 
 def test_get_question_for_rag_retrieval_loads_only_candidate_safe_fields() -> None:

@@ -19,6 +19,8 @@ class SourceUrlContent:
     content: str
     content_type: str | None
     title: str | None = None
+    suppressed_text_segments: int = 0
+    suppressed_text_chars: int = 0
 
 
 @dataclass(frozen=True)
@@ -115,6 +117,8 @@ def _content_from_raw(
     normalized_type = (content_type or "").split(";", 1)[0].strip().lower()
     if normalized_type not in {"", "text/html", "application/xhtml+xml", "text/plain", "application/pdf"}:
         raise SourceFetchError(f"Tipo de conteudo nao suportado: {normalized_type or 'desconhecido'}.")
+    suppressed_text_segments = 0
+    suppressed_text_chars = 0
 
     if normalized_type == "application/pdf":
         content = _normalize_whitespace(_extract_pdf_text(raw))
@@ -129,6 +133,8 @@ def _content_from_raw(
         parser.feed(text)
         content = _normalize_whitespace(" ".join(parser.parts))
         title = _normalize_whitespace(parser.title or "") or None
+        suppressed_text_segments = parser.suppressed_text_segments
+        suppressed_text_chars = parser.suppressed_text_chars
         if _looks_like_pdf_viewer_text(content):
             pdf_url = _extract_pdf_url_from_html(text, base_url=url)
             if pdf_url is None:
@@ -143,7 +149,14 @@ def _content_from_raw(
             raise SourceFetchError("Conteudo HTML aparenta markup bruto ou decodificacao incorreta.")
     if not content:
         raise SourceFetchError("Conteudo textual vazio.")
-    return SourceUrlContent(url=url, content=content, content_type=content_type, title=title)
+    return SourceUrlContent(
+        url=url,
+        content=content,
+        content_type=content_type,
+        title=title,
+        suppressed_text_segments=suppressed_text_segments,
+        suppressed_text_chars=suppressed_text_chars,
+    )
 
 
 def _decode_response(raw: bytes, *, content_type: str | None) -> str:
@@ -242,24 +255,57 @@ class _ReadableHtmlParser(HTMLParser):
         self.title: str = ""
         self._skip_depth = 0
         self._in_title = False
+        self._obsolete_element_stack: list[str] = []
+        self.suppressed_text_segments = 0
+        self.suppressed_text_chars = 0
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
-        if tag in {"script", "style", "noscript"}:
+        normalized_tag = tag.lower()
+        if normalized_tag in {"script", "style", "noscript"}:
             self._skip_depth += 1
-        if tag == "title":
+        if _is_obsolete_text_element(normalized_tag, attrs):
+            self._obsolete_element_stack.append(normalized_tag)
+        if normalized_tag == "title":
             self._in_title = True
 
     def handle_endtag(self, tag: str) -> None:
-        if tag in {"script", "style", "noscript"} and self._skip_depth:
+        normalized_tag = tag.lower()
+        if normalized_tag in {"script", "style", "noscript"} and self._skip_depth:
             self._skip_depth -= 1
-        if tag == "title":
+        self._close_obsolete_element(normalized_tag)
+        if normalized_tag == "title":
             self._in_title = False
 
     def handle_data(self, data: str) -> None:
         text = data.strip()
         if not text or self._skip_depth:
             return
+        if self._obsolete_element_stack:
+            self.suppressed_text_segments += 1
+            self.suppressed_text_chars += len(text)
+            return
         if self._in_title:
             self.title = f"{self.title} {text}".strip()
         else:
             self.parts.append(text)
+
+    def _close_obsolete_element(self, tag: str) -> None:
+        for index in range(len(self._obsolete_element_stack) - 1, -1, -1):
+            if self._obsolete_element_stack[index] == tag:
+                del self._obsolete_element_stack[index:]
+                return
+
+
+def _is_obsolete_text_element(tag: str, attrs: list[tuple[str, str | None]]) -> bool:
+    return tag in {"strike", "s", "del"} or _has_line_through_style(attrs)
+
+
+def _has_line_through_style(attrs: list[tuple[str, str | None]]) -> bool:
+    for name, value in attrs:
+        if name.lower() == "style" and value is not None:
+            normalized_style = re.sub(r"\s+", "", value.lower())
+            if "line-through" in normalized_style and (
+                "text-decoration:" in normalized_style or "text-decoration-line:" in normalized_style
+            ):
+                return True
+    return False
