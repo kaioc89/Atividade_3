@@ -13,6 +13,9 @@ from .rag_embedding_client import request_openai_compatible_embeddings
 from .rag_source_fetch import SourceUrlFetchReport, fetch_source_url_contents, split_source_urls
 
 
+EXPECTED_RETRIEVAL_STRATEGY = "source_url_only_v2"
+
+
 class RagEmbeddingGenerationService:
     """Generate embeddings for active materialized RAG chunks."""
 
@@ -96,6 +99,24 @@ class RagEmbeddingGenerationService:
                     "previous_retrieval_run_id": vector_base_summary.retrieval_run_id,
                 }
                 emit("Base vetorial rematerializada a partir da curadoria ativa.", state="done")
+            elif _is_legacy_vector_base(vector_base_summary):
+                emit(
+                    "Base vetorial ativa usa estrategia anterior; rematerializando com a versao atual.",
+                    previous_retrieval_run_id=vector_base_summary.retrieval_run_id,
+                    previous_retrieval_name=vector_base_summary.retrieval_name,
+                    previous_retrieval_strategy=vector_base_summary.retrieval_strategy,
+                    expected_retrieval_strategy=EXPECTED_RETRIEVAL_STRATEGY,
+                )
+                repository.materialize_rag_base_from_active_curation(dataset=dataset_code)
+                materialized_base = True
+                vector_base_trace = {
+                    "action": "refreshed_legacy_strategy",
+                    "previous_retrieval_run_id": vector_base_summary.retrieval_run_id,
+                    "previous_retrieval_name": vector_base_summary.retrieval_name,
+                    "previous_retrieval_strategy": vector_base_summary.retrieval_strategy,
+                    "expected_retrieval_strategy": EXPECTED_RETRIEVAL_STRATEGY,
+                }
+                emit("Base vetorial rematerializada com a estrategia atual.", state="done")
             else:
                 emit("Base vetorial ativa encontrada.")
             requested_question_sequence_start = question_sequence_start
@@ -391,6 +412,13 @@ class RagEmbeddingGenerationService:
 
 def _chunked(items: list[dict[str, Any]], size: int) -> list[list[dict[str, Any]]]:
     return [items[index : index + size] for index in range(0, len(items), size)]
+
+
+def _is_legacy_vector_base(vector_base_summary: Any) -> bool:
+    return (
+        vector_base_summary.retrieval_strategy != EXPECTED_RETRIEVAL_STRATEGY
+        or str(vector_base_summary.retrieval_name).endswith("_source_urls_v1")
+    )
 
 
 def _normalize_question_range(

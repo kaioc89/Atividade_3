@@ -316,8 +316,8 @@ def test_embedding_generation_summary_refreshes_retrieval_run_created_at() -> No
             active_curation_run_id=7,
             matches_active_curation=True,
             retrieval_run_id=21,
-            retrieval_name="j1_source_urls_v2",
-            retrieval_strategy="source_url_only_v2",
+            retrieval_name="j1_source_urls_v1",
+            retrieval_strategy="source_url_only_v1",
             embedding_model=None,
             top_k=5,
             vector_enabled=True,
@@ -335,7 +335,7 @@ def test_embedding_generation_summary_refreshes_retrieval_run_created_at() -> No
             import_run_id=7,
             active_curation_run_id=7,
             matches_active_curation=True,
-            retrieval_run_id=21,
+            retrieval_run_id=22,
             retrieval_name="j1_source_urls_v2",
             retrieval_strategy="source_url_only_v2",
             embedding_model="text-embedding-3-small",
@@ -366,6 +366,8 @@ def test_embedding_generation_summary_refreshes_retrieval_run_created_at() -> No
     assert "metadata_jsonb = metadata_jsonb || %s::jsonb" in cursor.queries[0]
     assert "created_at = NOW()" in cursor.queries[0]
     assert cursor.params[0][1] == 21
+    assert summary.retrieval_run_id == 22
+    assert summary.retrieval_name == "j1_source_urls_v2"
     assert summary.created_at == refreshed_created_at
 
 

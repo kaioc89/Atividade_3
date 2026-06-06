@@ -5126,12 +5126,13 @@ class JudgeRepository:
                     ),
                 )
         refreshed_summary = self.get_rag_vector_base_summary(dataset=vector_summary.dataset)
+        summary_source = refreshed_summary or vector_summary
         return RagEmbeddingGenerationSummary(
-            dataset=vector_summary.dataset,
-            dataset_name=vector_summary.dataset_name,
-            retrieval_run_id=vector_summary.retrieval_run_id,
-            retrieval_name=vector_summary.retrieval_name,
-            import_run_id=vector_summary.import_run_id,
+            dataset=summary_source.dataset,
+            dataset_name=summary_source.dataset_name,
+            retrieval_run_id=summary_source.retrieval_run_id,
+            retrieval_name=summary_source.retrieval_name,
+            import_run_id=summary_source.import_run_id,
             embedding_model=model_name,
             provider=provider_name,
             api_base_url=api_base_url,
@@ -5139,7 +5140,7 @@ class JudgeRepository:
             generated_embeddings=generated_embeddings,
             total_chunks=refreshed_summary.chunk_count if refreshed_summary is not None else generated_embeddings,
             latency_ms=latency_ms,
-            created_at=refreshed_summary.created_at if refreshed_summary is not None else vector_summary.created_at,
+            created_at=summary_source.created_at,
         )
 
     def search_rag_chunks_by_embedding(
