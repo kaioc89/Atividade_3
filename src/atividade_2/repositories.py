@@ -5843,7 +5843,7 @@ def _rough_token_count(value: str) -> int:
 
 
 def _split_source_content(*, content: str, max_chunk_chars: int, overlap_chars: int) -> list[str]:
-    normalized = " ".join(content.split())
+    normalized = " ".join(content.replace("\x00", " ").split())
     if not normalized:
         return []
     max_size = max(500, int(max_chunk_chars))

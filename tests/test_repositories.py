@@ -239,6 +239,51 @@ def test_get_question_for_rag_retrieval_loads_only_candidate_safe_fields() -> No
     assert cursor.params[0] == [41, "OAB_Bench"]
 
 
+def test_rag_source_chunk_replacement_removes_nul_characters() -> None:
+    cursor = MultiRecordingCursor(fetchall_rows=[[]])
+    repository = JudgeRepository(TransactionConnection(cursor))
+    repository.get_rag_vector_base_summary = lambda dataset: RagVectorBaseSummary(  # type: ignore[method-assign]
+        dataset=dataset,
+        dataset_name="OAB_Bench",
+        import_run_id=7,
+        active_curation_run_id=7,
+        matches_active_curation=True,
+        retrieval_run_id=21,
+        retrieval_name="j1_source_urls_v1",
+        retrieval_strategy="source_url_only_v1",
+        embedding_model="Qwen/Qwen3-Embedding-8B",
+        top_k=5,
+        vector_enabled=True,
+        lexical_enabled=False,
+        rerank_enabled=False,
+        document_count=70,
+        chunk_count=433,
+        embedding_count=433,
+        status="pronta_com_embeddings",
+        created_at="2026-06-02T01:20:00",
+    )
+
+    inserted = repository.replace_rag_source_content_chunks_for_active_vector_base(
+        dataset="J1",
+        source_contents=[
+            {
+                "document_id": 10,
+                "url": "https://fonte.example/a",
+                "content_type": "text/html",
+                "content": "Texto\0 normativo.",
+            },
+        ],
+    )
+
+    insert_params = [
+        params
+        for query, params in zip(cursor.queries, cursor.params, strict=True)
+        if "INSERT INTO av3.rag_chunks" in query
+    ]
+    assert inserted == 1
+    assert insert_params[0][4] == "Texto normativo."
+
+
 def test_evaluation_details_schema_is_auxiliary_and_unique_by_evaluation() -> None:
     cursor = MultiRecordingCursor()
     repository = JudgeRepository(TransactionConnection(cursor))

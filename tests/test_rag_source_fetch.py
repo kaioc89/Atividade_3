@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 from io import BytesIO
 from typing import Any
 
@@ -65,14 +66,57 @@ def test_fetch_source_url_contents_extracts_readable_html(monkeypatch) -> None:
     assert "ignore" not in report.successes[0].content
 
 
-def test_fetch_source_url_contents_reports_unsupported_content_type(monkeypatch) -> None:
+def test_fetch_source_url_contents_removes_nul_characters(monkeypatch) -> None:
+    def fake_urlopen(request: urllib.request.Request, timeout: int) -> FakeHttpResponse:
+        return FakeHttpResponse(
+            body=b"<html><body><p>Texto\x00 da fonte.</p></body></html>",
+            content_type="text/html; charset=utf-8",
+        )
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+
+    report = fetch_source_url_contents(["https://fonte.example/lei"])
+
+    assert not report.failures
+    assert report.successes[0].content == "Texto da fonte."
+
+
+def test_fetch_source_url_contents_extracts_pdf_text(monkeypatch) -> None:
+    class FakePdfPage:
+        def __init__(self, text: str | None) -> None:
+            self._text = text
+
+        def extract_text(self) -> str | None:
+            return self._text
+
+    class FakePdfReader:
+        def __init__(self, stream: BytesIO) -> None:
+            assert stream.read() == b"%PDF"
+            self.pages = [FakePdfPage("Codigo de Etica"), FakePdfPage("Disciplina da OAB")]
+
+    class FakePypdfModule:
+        PdfReader = FakePdfReader
+
     def fake_urlopen(request: urllib.request.Request, timeout: int) -> FakeHttpResponse:
         return FakeHttpResponse(body=b"%PDF", content_type="application/pdf")
 
+    monkeypatch.setitem(sys.modules, "pypdf", FakePypdfModule())
     monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
 
     report = fetch_source_url_contents(["https://fonte.example/lei.pdf"])
 
+    assert not report.failures
+    assert report.successes[0].content == "Codigo de Etica Disciplina da OAB"
+
+
+def test_fetch_source_url_contents_reports_unsupported_content_type(monkeypatch) -> None:
+    def fake_urlopen(request: urllib.request.Request, timeout: int) -> FakeHttpResponse:
+        return FakeHttpResponse(body=b"ZIP", content_type="application/zip")
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+
+    report = fetch_source_url_contents(["https://fonte.example/arquivo.zip"])
+
     assert not report.successes
-    assert report.failures[0].url == "https://fonte.example/lei.pdf"
+    assert report.failures[0].url == "https://fonte.example/arquivo.zip"
     assert "Tipo de conteudo nao suportado" in report.failures[0].reason

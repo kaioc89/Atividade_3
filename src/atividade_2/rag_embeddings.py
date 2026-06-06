@@ -69,11 +69,33 @@ class RagEmbeddingGenerationService:
                 raise RuntimeError(f"Nenhuma configuracao de embedding encontrada para {dataset_code}.")
             emit(f"Modelo de embedding carregado: {config.model_name}.")
             materialized_base = False
-            if repository.get_rag_vector_base_summary(dataset=dataset_code) is None:
+            vector_base_trace: dict[str, Any] = {"action": "reused"}
+            vector_base_summary = repository.get_rag_vector_base_summary(dataset=dataset_code)
+            if vector_base_summary is None:
                 emit("Nenhuma base vetorial ativa encontrada; materializando curadoria ativa.")
                 repository.materialize_rag_base_from_active_curation(dataset=dataset_code)
                 materialized_base = True
+                vector_base_trace = {"action": "created_missing"}
                 emit("Base vetorial materializada.", state="done")
+            elif not vector_base_summary.matches_active_curation:
+                previous_import_run_id = vector_base_summary.import_run_id
+                active_curation_run_id = vector_base_summary.active_curation_run_id
+                emit(
+                    "Base vetorial ativa desatualizada; materializando curadoria ativa "
+                    f"(base atual import_run_id={previous_import_run_id}, "
+                    f"curadoria ativa import_run_id={active_curation_run_id}).",
+                    previous_import_run_id=previous_import_run_id,
+                    active_curation_run_id=active_curation_run_id,
+                )
+                repository.materialize_rag_base_from_active_curation(dataset=dataset_code)
+                materialized_base = True
+                vector_base_trace = {
+                    "action": "refreshed_stale",
+                    "previous_import_run_id": previous_import_run_id,
+                    "active_curation_run_id": active_curation_run_id,
+                    "previous_retrieval_run_id": vector_base_summary.retrieval_run_id,
+                }
+                emit("Base vetorial rematerializada a partir da curadoria ativa.", state="done")
             else:
                 emit("Base vetorial ativa encontrada.")
             requested_question_sequence_start = question_sequence_start
@@ -335,6 +357,7 @@ class RagEmbeddingGenerationService:
         return {
             "summary": summary,
             "materialized_base": materialized_base,
+            "vector_base_trace": vector_base_trace,
             "question_sequence_range": {
                 "requested_start": requested_question_sequence_start,
                 "requested_end": requested_question_sequence_end,

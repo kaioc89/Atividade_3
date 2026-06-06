@@ -947,6 +947,7 @@ def _serialize_rag_embedding_result(result: dict[str, Any] | None) -> dict | Non
     summary = result.get("summary")
     return {
         "materialized_base": bool(result.get("materialized_base")),
+        "vector_base_trace": result.get("vector_base_trace") or {},
         "question_sequence_range": result.get("question_sequence_range") or {},
         "source_url_summary": result.get("source_url_summary") or {},
         "chunk_summary": result.get("chunk_summary") or {},

@@ -32,8 +32,9 @@ class FakeConnection:
 
 
 class FakeRepository:
-    def __init__(self, *, has_vector_base: bool) -> None:
+    def __init__(self, *, has_vector_base: bool, vector_base_matches_active_curation: bool = True) -> None:
         self.has_vector_base = has_vector_base
+        self.vector_base_matches_active_curation = vector_base_matches_active_curation
         self.calls: list[str] = []
         self.source_chunk_count = 0
         self.resolved_ranges: list[tuple[int | None, int | None]] = []
@@ -61,11 +62,17 @@ class FakeRepository:
         self.calls.append(f"get_vector_base:{dataset}")
         if not self.has_vector_base:
             return None
-        return _vector_base_summary(dataset=dataset)
+        return _vector_base_summary(
+            dataset=dataset,
+            import_run_id=7 if self.vector_base_matches_active_curation else 6,
+            active_curation_run_id=7,
+            matches_active_curation=self.vector_base_matches_active_curation,
+        )
 
     def materialize_rag_base_from_active_curation(self, *, dataset: str) -> None:
         self.calls.append(f"materialize:{dataset}")
         self.has_vector_base = True
+        self.vector_base_matches_active_curation = True
 
     def resolve_rag_question_sequence_range_for_active_vector_base(
         self,
@@ -261,7 +268,42 @@ def test_generate_embeddings_reuses_existing_vector_base(monkeypatch) -> None:
     result = service.run(dataset="J1")
 
     assert result["materialized_base"] is False
+    assert result["vector_base_trace"] == {"action": "reused"}
     assert "materialize:J1" not in repository.calls
+    assert result["summary"].generated_embeddings == 2
+
+
+def test_generate_embeddings_rematerializes_stale_vector_base(monkeypatch) -> None:
+    connection = FakeConnection()
+    repository = FakeRepository(has_vector_base=True, vector_base_matches_active_curation=False)
+
+    monkeypatch.setattr(
+        "atividade_2.rag_embeddings.request_openai_compatible_embeddings",
+        _fake_embedding_request,
+    )
+    service = RagEmbeddingGenerationService(
+        settings_loader=FakeSettings,
+        connect_func=lambda _database_url: connection,
+        repository_factory=lambda _connection: repository,
+        source_fetcher=_fake_source_fetcher,
+    )
+    events: list[dict[str, Any]] = []
+
+    result = service.run(dataset="J1", progress_callback=events.append)
+
+    assert result["materialized_base"] is True
+    assert result["vector_base_trace"] == {
+        "action": "refreshed_stale",
+        "previous_import_run_id": 6,
+        "active_curation_run_id": 7,
+        "previous_retrieval_run_id": 21,
+    }
+    assert "materialize:J1" in repository.calls
+    assert any("Base vetorial ativa desatualizada" in event["message"] for event in events)
+    assert any(
+        event.get("previous_import_run_id") == 6 and event.get("active_curation_run_id") == 7
+        for event in events
+    )
     assert result["summary"].generated_embeddings == 2
 
 
@@ -444,13 +486,19 @@ def _fake_source_fetcher(urls: list[str]) -> SourceUrlFetchReport:
     )
 
 
-def _vector_base_summary(*, dataset: str) -> RagVectorBaseSummary:
+def _vector_base_summary(
+    *,
+    dataset: str,
+    import_run_id: int = 7,
+    active_curation_run_id: int | None = 7,
+    matches_active_curation: bool = True,
+) -> RagVectorBaseSummary:
     return RagVectorBaseSummary(
         dataset=dataset,
         dataset_name="OAB_Bench",
-        import_run_id=7,
-        active_curation_run_id=7,
-        matches_active_curation=True,
+        import_run_id=import_run_id,
+        active_curation_run_id=active_curation_run_id,
+        matches_active_curation=matches_active_curation,
         retrieval_run_id=21,
         retrieval_name="j1_source_urls_v1",
         retrieval_strategy="source_url_only_v1",

@@ -6,6 +6,7 @@ import re
 import http.client
 import urllib.error
 import urllib.request
+from io import BytesIO
 from dataclasses import dataclass
 from html.parser import HTMLParser
 from urllib.parse import urlparse
@@ -96,14 +97,18 @@ def _fetch_one(*, url: str, timeout_seconds: int, max_bytes: int) -> SourceUrlCo
         raise SourceFetchError(f"Conteudo excede o limite de {max_bytes} bytes.")
 
     normalized_type = (content_type or "").split(";", 1)[0].strip().lower()
-    if normalized_type not in {"", "text/html", "application/xhtml+xml", "text/plain"}:
+    if normalized_type not in {"", "text/html", "application/xhtml+xml", "text/plain", "application/pdf"}:
         raise SourceFetchError(f"Tipo de conteudo nao suportado: {normalized_type or 'desconhecido'}.")
 
-    text = _decode_response(raw, content_type=content_type)
-    if normalized_type == "text/plain":
+    if normalized_type == "application/pdf":
+        content = _normalize_whitespace(_extract_pdf_text(raw))
+        title = None
+    elif normalized_type == "text/plain":
+        text = _decode_response(raw, content_type=content_type)
         content = _normalize_whitespace(text)
         title = None
     else:
+        text = _decode_response(raw, content_type=content_type)
         parser = _ReadableHtmlParser()
         parser.feed(text)
         content = _normalize_whitespace(" ".join(parser.parts))
@@ -125,8 +130,21 @@ def _decode_response(raw: bytes, *, content_type: str | None) -> str:
     return raw.decode("utf-8", errors="replace")
 
 
+def _extract_pdf_text(raw: bytes) -> str:
+    try:
+        from pypdf import PdfReader
+    except ImportError as error:
+        raise SourceFetchError("Leitor de PDF indisponivel: instale a dependencia pypdf.") from error
+
+    try:
+        reader = PdfReader(BytesIO(raw))
+        return "\n".join(page.extract_text() or "" for page in reader.pages)
+    except Exception as error:
+        raise SourceFetchError(f"Falha ao extrair texto PDF: {error}.") from error
+
+
 def _normalize_whitespace(value: str) -> str:
-    return re.sub(r"\s+", " ", value).strip()
+    return re.sub(r"\s+", " ", value.replace("\x00", " ")).strip()
 
 
 class _ReadableHtmlParser(HTMLParser):
