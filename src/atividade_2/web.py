@@ -1338,6 +1338,10 @@ _INDEX_HTML = """
     .rag-progress-item.done .rag-progress-marker { background:#dcfce7; color:#166534; }
     .rag-progress-item.error .rag-progress-marker { background:#fee2e2; color:#991b1b; }
     .rag-progress-text { min-width:0; overflow-wrap:anywhere; line-height:1.35; }
+    .rag-progress-details { min-width:0; }
+    .rag-progress-details summary { cursor:pointer; color:var(--ink); font-size:12px; font-weight:650; overflow-wrap:anywhere; }
+    .rag-progress-failures { margin:8px 0 0; padding-left:18px; display:grid; gap:6px; color:var(--muted); }
+    .rag-progress-failures li { overflow-wrap:anywhere; }
     .prompt-log-table table { min-width:1480px; }
     .prompt-preview { margin-top:18px; display:grid; grid-template-columns:repeat(auto-fit, minmax(280px,1fr)); gap:10px; align-items:start; }
     .prompt-preview-card { border:1px solid var(--line); border-radius:8px; background:#fff; padding:12px; min-width:0; overflow:hidden; }
@@ -4928,6 +4932,50 @@ _INDEX_HTML = """
       progress.scrollTop = progress.scrollHeight;
     }
 
+    function appendRagVectorProgressNode(node, state = "running") {
+      const progress = document.getElementById("rag_vector_progress");
+      const item = document.createElement("div");
+      item.className = `rag-progress-item ${state}`;
+      const time = document.createElement("span");
+      time.className = "rag-progress-time";
+      time.textContent = new Date().toLocaleTimeString("pt-BR", {
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit"
+      });
+      const marker = document.createElement("span");
+      marker.className = "rag-progress-marker";
+      marker.textContent = state === "error" ? "erro" : state === "done" ? "ok" : "...";
+      item.appendChild(time);
+      item.appendChild(marker);
+      item.appendChild(node);
+      progress.appendChild(item);
+      progress.scrollTop = progress.scrollHeight;
+    }
+
+    function appendRagSourceFailureDetails(failures) {
+      if (!Array.isArray(failures) || !failures.length) return;
+      const details = document.createElement("details");
+      details.className = "rag-progress-details";
+      details.open = failures.length <= 5;
+      const summary = document.createElement("summary");
+      summary.textContent = failures.length === 1
+        ? "1 URL nao recuperada"
+        : `${failures.length} URLs nao recuperadas`;
+      details.appendChild(summary);
+      const list = document.createElement("ol");
+      list.className = "rag-progress-failures";
+      failures.forEach((failure) => {
+        const item = document.createElement("li");
+        const url = display(failure?.url);
+        const reason = display(failure?.reason);
+        item.textContent = `${url} (${reason})`;
+        list.appendChild(item);
+      });
+      details.appendChild(list);
+      appendRagVectorProgressNode(details, "error");
+    }
+
     function ragVectorQuestionRangePayload() {
       const startRaw = value("rag_vector_question_start").trim();
       const endRaw = value("rag_vector_question_end").trim();
@@ -5280,12 +5328,7 @@ _INDEX_HTML = """
           sourceSummary.failed ? "error" : "done"
         );
         if (sourceFailures.length) {
-          for (const failure of sourceFailures.slice(0, 5)) {
-            appendRagVectorProgress(`Fonte indisponivel: ${display(failure.url)} (${display(failure.reason)}).`, "error");
-          }
-          if (sourceFailures.length > 5) {
-            appendRagVectorProgress(`${display(sourceFailures.length - 5)} falhas de fonte adicionais omitidas na tela.`, "error");
-          }
+          appendRagSourceFailureDetails(sourceFailures);
         }
         if (summary) {
           appendRagVectorProgress(
