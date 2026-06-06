@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import datetime
 from pathlib import Path
 
@@ -172,7 +173,7 @@ def test_rag_vector_search_does_not_hide_duplicate_chunk_text() -> None:
 
 
 def test_rag_source_chunk_replacement_skips_duplicate_text_chunks_across_documents() -> None:
-    cursor = MultiRecordingCursor(fetchall_rows=[[]])
+    cursor = MultiRecordingCursor(fetchall_rows=[[]], fetchone_rows=[(501,)])
     repository = JudgeRepository(TransactionConnection(cursor))
     repository.get_rag_vector_base_summary = lambda dataset: RagVectorBaseSummary(  # type: ignore[method-assign]
         dataset=dataset,
@@ -220,6 +221,24 @@ def test_rag_source_chunk_replacement_skips_duplicate_text_chunks_across_documen
     ]
     assert inserted == 1
     assert len(insert_queries) == 1
+    duplicate_updates = [
+        params
+        for query, params in zip(cursor.queries, cursor.params, strict=True)
+        if "metadata_jsonb->'duplicate_sources'" in query
+    ]
+    assert len(duplicate_updates) == 1
+    duplicate_metadata = json.loads(duplicate_updates[0][0])[0]
+    assert duplicate_updates[0][1] == 501
+    assert duplicate_metadata["reason"] == "duplicate_chunk_content"
+    assert duplicate_metadata["content_hash"]
+    assert duplicate_metadata["discarded_document_id"] == 11
+    assert duplicate_metadata["discarded_url"] == "https://fonte.example/b"
+    assert duplicate_metadata["discarded_part"] == 1
+    assert duplicate_metadata["discarded_total_parts"] == 1
+    assert duplicate_metadata["kept_chunk_id"] == 501
+    assert duplicate_metadata["kept_document_id"] == 10
+    assert duplicate_metadata["kept_url"] == "https://fonte.example/a"
+    assert duplicate_metadata["preview"] == "Texto normativo repetido."
 
 
 def test_get_question_for_rag_retrieval_loads_only_candidate_safe_fields() -> None:
@@ -240,7 +259,7 @@ def test_get_question_for_rag_retrieval_loads_only_candidate_safe_fields() -> No
 
 
 def test_rag_source_chunk_replacement_removes_nul_characters() -> None:
-    cursor = MultiRecordingCursor(fetchall_rows=[[]])
+    cursor = MultiRecordingCursor(fetchall_rows=[[]], fetchone_rows=[(501,)])
     repository = JudgeRepository(TransactionConnection(cursor))
     repository.get_rag_vector_base_summary = lambda dataset: RagVectorBaseSummary(  # type: ignore[method-assign]
         dataset=dataset,

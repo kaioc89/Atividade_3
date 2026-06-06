@@ -4766,7 +4766,7 @@ class JudgeRepository:
 
                 chunk_count = 0
                 next_chunk_index_by_document: dict[int, int] = {}
-                seen_base_chunk_hashes = _existing_source_chunk_text_hashes(
+                seen_base_chunks = _existing_source_chunks_by_text_hash(
                     cursor,
                     import_run_id=vector_summary.import_run_id,
                     dataset=vector_summary.dataset,
@@ -4785,10 +4785,26 @@ class JudgeRepository:
                     seen_document_chunk_hashes: set[str] = set()
                     for index, chunk_text in enumerate(chunks, start=1):
                         source_text_hash = _normalized_chunk_text_hash(chunk_text)
-                        if source_text_hash in seen_document_chunk_hashes or source_text_hash in seen_base_chunk_hashes:
+                        kept_chunk = seen_base_chunks.get(source_text_hash)
+                        if source_text_hash in seen_document_chunk_hashes or kept_chunk is not None:
+                            if kept_chunk is not None:
+                                _append_duplicate_source_metadata(
+                                    cursor,
+                                    kept_chunk=kept_chunk,
+                                    duplicate_source=_duplicate_source_metadata(
+                                        content_hash=source_text_hash,
+                                        document_id=document_id,
+                                        url=url,
+                                        content_type=content_type,
+                                        curation_id=curation_id,
+                                        question_id=question_id,
+                                        part=index,
+                                        total_parts=len(chunks),
+                                        chunk_text=chunk_text,
+                                    ),
+                                )
                             continue
                         seen_document_chunk_hashes.add(source_text_hash)
-                        seen_base_chunk_hashes.add(source_text_hash)
                         chunk_index = next_chunk_index_by_document.get(document_id, 1000001)
                         next_chunk_index_by_document[document_id] = chunk_index + 1
                         cursor.execute(
@@ -4806,7 +4822,8 @@ class JudgeRepository:
                                     metadata_jsonb,
                                     content_hash
                                 )
-                            VALUES (%s, %s, %s, %s, %s, %s, %s, 'source_url_content', %s::jsonb, %s);
+                            VALUES (%s, %s, %s, %s, %s, %s, %s, 'source_url_content', %s::jsonb, %s)
+                            RETURNING id_chunk;
                             """,
                             (
                                 document_id,
@@ -4828,6 +4845,12 @@ class JudgeRepository:
                                 source_text_hash,
                             ),
                         )
+                        inserted_chunk_id = int(cursor.fetchone()[0])
+                        seen_base_chunks[source_text_hash] = {
+                            "chunk_id": inserted_chunk_id,
+                            "document_id": document_id,
+                            "url": url,
+                        }
                         chunk_count += 1
 
                 cursor.execute(
@@ -5739,15 +5762,19 @@ def _rag_document_key(
     return _sha256_text("|".join(parts))
 
 
-def _existing_source_chunk_text_hashes(
+def _existing_source_chunks_by_text_hash(
     cursor: Any,
     *,
     import_run_id: int,
     dataset: str,
-) -> set[str]:
+) -> dict[str, dict[str, Any]]:
     cursor.execute(
         """
-        SELECT c.chunk_text
+        SELECT
+            c.id_chunk,
+            c.chunk_text,
+            c.id_document,
+            d.source_url
         FROM av3.rag_chunks c
         JOIN av3.rag_documents d ON d.id_document = c.id_document
         WHERE d.id_import_run = %s
@@ -5756,7 +5783,84 @@ def _existing_source_chunk_text_hashes(
         """,
         (import_run_id, dataset),
     )
-    return {_normalized_chunk_text_hash(str(row[0])) for row in cursor.fetchall()}
+    chunks_by_hash: dict[str, dict[str, Any]] = {}
+    for row in cursor.fetchall():
+        chunks_by_hash.setdefault(
+            _normalized_chunk_text_hash(str(row[1])),
+            {
+                "chunk_id": int(row[0]),
+                "document_id": int(row[2]),
+                "url": row[3],
+            },
+        )
+    return chunks_by_hash
+
+
+def _append_duplicate_source_metadata(
+    cursor: Any,
+    *,
+    kept_chunk: dict[str, Any],
+    duplicate_source: dict[str, Any],
+) -> None:
+    cursor.execute(
+        """
+        UPDATE av3.rag_chunks
+        SET metadata_jsonb = jsonb_set(
+            metadata_jsonb,
+            '{duplicate_sources}',
+            COALESCE(metadata_jsonb->'duplicate_sources', '[]'::jsonb) || %s::jsonb,
+            TRUE
+        )
+        WHERE id_chunk = %s;
+        """,
+        (
+            jsonb_dumps(
+                [
+                    {
+                        **duplicate_source,
+                        "kept_chunk_id": kept_chunk.get("chunk_id"),
+                        "kept_document_id": kept_chunk.get("document_id"),
+                        "kept_url": kept_chunk.get("url"),
+                    }
+                ]
+            ),
+            int(kept_chunk["chunk_id"]),
+        ),
+    )
+
+
+def _duplicate_source_metadata(
+    *,
+    content_hash: str,
+    document_id: int,
+    url: str,
+    content_type: Any,
+    curation_id: int | None,
+    question_id: int | None,
+    part: int,
+    total_parts: int,
+    chunk_text: str,
+) -> dict[str, Any]:
+    return {
+        "reason": "duplicate_chunk_content",
+        "content_hash": content_hash,
+        "discarded_document_id": document_id,
+        "discarded_url": url,
+        "discarded_content_type": content_type,
+        "discarded_curation_id": curation_id,
+        "discarded_question_id": question_id,
+        "discarded_part": part,
+        "discarded_total_parts": total_parts,
+        "normalized_char_count": len(" ".join(chunk_text.split())),
+        "preview": _short_duplicate_preview(chunk_text),
+    }
+
+
+def _short_duplicate_preview(value: str, max_length: int = 220) -> str:
+    normalized = " ".join(value.split())
+    if len(normalized) <= max_length:
+        return normalized
+    return normalized[: max_length - 3] + "..."
 
 
 def _normalized_chunk_text_hash(value: str) -> str:
