@@ -792,6 +792,10 @@ class RunCandidatesRagService:
                     questions=questions,
                     require_api_key=not request.dry_run,
                 )
+                _validate_candidate_provider_execution_strategy(
+                    runtime_config=runtime_config,
+                    execution_config=execution_config,
+                )
                 runtime_summary = _format_candidate_runtime_config(
                     runtime_config,
                     execution_config=execution_config,
@@ -2688,6 +2692,17 @@ def _resolve_candidate_provider_config(
             base_url=base_url,
             api_key=api_key,
         )
+    if provider == "llama_cpp":
+        raw_api_key = getattr(settings, "llama_cpp_api_key", None)
+        api_key = None if raw_api_key is None else str(raw_api_key).strip()
+        base_url = (getattr(settings, "llama_cpp_url", None) or "").strip()
+        if not base_url:
+            raise ValueError("LLAMA_CPP_URL is required for llama.cpp candidate execution.")
+        return ResolvedCandidateProviderConfig(
+            av3_provider=provider,
+            base_url=base_url,
+            api_key=api_key,
+        )
     raise ValueError(
         f"Candidate model {assignment.av3_provider_model_id} is mapped to unsupported av3_provider={assignment.av3_provider}."
     )
@@ -2940,6 +2955,21 @@ def _resolve_candidate_execution_config(
         adaptive_max_retries=adaptive_max_retries,
         adaptive_base_backoff_seconds=adaptive_base_backoff_seconds,
         adaptive_max_backoff_seconds=adaptive_max_backoff_seconds,
+    )
+
+
+def _validate_candidate_provider_execution_strategy(
+    *,
+    runtime_config: ResolvedCandidateRuntimeConfig,
+    execution_config: ResolvedCandidateExecutionConfig,
+) -> None:
+    if runtime_config.av3_provider != "llama_cpp":
+        return
+    if execution_config.strategy == "sequential":
+        return
+    raise ValueError(
+        "llama.cpp candidate assignments must use sequential execution. "
+        f"Requested strategy: {execution_config.strategy}."
     )
 
 

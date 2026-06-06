@@ -291,6 +291,11 @@ def test_upsert_default_candidate_model_assignments_creates_full_mapping_and_own
         for assignment in assignments
         for assignment_range in assignment.ranges
     )
+    assert {assignment.id_modelo_av2 for assignment in assignments if assignment.av3_provider == "llama_cpp"} == {
+        8,
+        11,
+        12,
+    }
 
 
 def test_upsert_default_candidate_model_assignments_is_idempotent_and_replaces_ranges() -> None:
@@ -303,6 +308,9 @@ def test_upsert_default_candidate_model_assignments_is_idempotent_and_replaces_r
     assert len(cursor.state["assignments_by_id"]) == 20
     assert sum(len(ranges) for ranges in cursor.state["ranges_by_assignment"].values()) == 36
     assert len(repository.find_candidate_model_assignments_for_model_id(17)[0].ranges) == 2
+    assert repository.find_candidate_model_assignments_for_model_id(8)[0].av3_provider == "llama_cpp"
+    assert repository.find_candidate_model_assignments_for_model_id(11)[0].av3_provider == "llama_cpp"
+    assert repository.find_candidate_model_assignments_for_model_id(12)[0].av3_provider == "llama_cpp"
 
 
 def test_upsert_default_candidate_model_assignments_fails_when_required_public_model_is_missing() -> None:
@@ -355,6 +363,9 @@ def test_assignment_registry_query_helpers_filter_by_owner_dataset_question_prov
     jose_grok = repository.find_candidate_model_assignments_for_model_id(15)[0]
     diego_llama = repository.find_candidate_model_assignments_for_model_id(9)[0]
     kaio_llama = repository.find_candidate_model_assignments_for_model_id(5)[0]
+    wagner_jurema = repository.find_candidate_model_assignments_for_model_id(8)[0]
+    paulo_jurema = repository.find_candidate_model_assignments_for_model_id(11)[0]
+    wagner_curio = repository.find_candidate_model_assignments_for_model_id(12)[0]
 
     assert diego_llama.av3_provider == "openrouter"
     assert diego_llama.av3_provider_model_id == "meta-llama/llama-3.2-3b-instruct"
@@ -369,6 +380,22 @@ def test_assignment_registry_query_helpers_filter_by_owner_dataset_question_prov
     assert kaio_llama.av3_provider_model_id == "meta-llama/llama-3.2-3b-instruct"
     assert kaio_llama.hf_model_id == "meta-llama/Llama-3.2-3B-Instruct"
     assert kaio_llama.notes == diego_llama.notes
+    assert wagner_jurema.av3_provider == "llama_cpp"
+    assert wagner_jurema.av3_provider_model_id == "jurema-7b-q4_k_m"
+    assert wagner_jurema.artifact_format == "gguf"
+    assert wagner_jurema.av3_quantization == "Q4_K_M"
+    assert wagner_jurema.validation_status == "confirmed_from_av2_artifacts"
+    assert "llama.cpp local OpenAI-compatible server" in (wagner_jurema.notes or "")
+    assert "Sequential-only" in (wagner_jurema.notes or "")
+    assert paulo_jurema.av3_provider == "llama_cpp"
+    assert paulo_jurema.av3_provider_model_id == "jurema-7b-q4_k_m"
+    assert paulo_jurema.artifact_format == "gguf"
+    assert paulo_jurema.av3_quantization == "Q4_K_M"
+    assert "do not include in normal OpenRouter/Featherless adaptive batches" in (paulo_jurema.notes or "")
+    assert wagner_curio.av3_provider == "llama_cpp"
+    assert wagner_curio.av3_provider_model_id == "curio-edu-7b-gguf"
+    assert wagner_curio.artifact_format == "gguf"
+    assert wagner_curio.av3_quantization == "Q4_K_M"
 
     assert jose_grok.owner == "José Bruno"
     assert jose_grok.id_modelo_av2 == 15
@@ -400,13 +427,14 @@ def test_assignment_registry_runnable_pending_and_excluded_filters_follow_requir
     gpt5_assignment = repository.find_candidate_model_assignments_for_model_id(14)[0]
 
     assert gpt5_assignment.is_runnable() is True
-    assert len(default_runnable) == 16
-    assert len(pending_enabled) == 17
+    assert len(default_runnable) == 19
+    assert len(pending_enabled) == 20
     assert 14 in {assignment.id_modelo_av2 for assignment in default_runnable}
     assert 13 not in {assignment.id_modelo_av2 for assignment in default_runnable}
     assert 15 in {assignment.id_modelo_av2 for assignment in default_runnable}
+    assert {8, 11, 12}.issubset({assignment.id_modelo_av2 for assignment in default_runnable})
     assert 13 in {assignment.id_modelo_av2 for assignment in pending_enabled}
-    assert {assignment.id_modelo_av2 for assignment in excluded} == {8, 11, 12}
+    assert excluded == ()
     assert {assignment.id_modelo_av2 for assignment in pending} == {13}
     assert all(assignment.av3_provider_model_id for assignment in default_runnable)
     assert all(assignment.av3_provider not in {"excluded", "unresolved"} for assignment in default_runnable)

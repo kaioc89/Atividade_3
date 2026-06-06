@@ -74,3 +74,26 @@ def test_remote_candidate_client_openai_payload_uses_only_user_message() -> None
         raw_response={"choices": [{"message": {"content": "Alternativa final: B"}}]},
     )
     assert response.latency_ms >= 0
+
+
+def test_remote_candidate_client_omits_authorization_header_when_api_key_is_empty() -> None:
+    transport = FakeTransport(
+        200,
+        {"choices": [{"message": {"content": "Resposta final"}}]},
+    )
+    client = RemoteHttpCandidateClient(
+        config=RemoteHttpCandidateClientConfig(
+            base_url="http://localhost:8080/v1",
+            api_key="",
+            provider="llama_cpp",
+            openai_compatible=True,
+        ),
+        transport=transport,
+    )
+
+    response = client.generate("prompt candidato", model="jurema-7b-q4_k_m")
+
+    assert transport.url == "http://localhost:8080/v1/chat/completions"
+    assert transport.headers is not None
+    assert "Authorization" not in transport.headers
+    assert response.provider == "llama_cpp"

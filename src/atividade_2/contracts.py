@@ -26,6 +26,7 @@ CandidateDatasetCode = Literal["J1", "J2"]
 Av3Provider = Literal[
     "featherless",
     "openrouter",
+    "llama_cpp",
     "xai",
     "ollama",
     "huggingface",
@@ -58,6 +59,7 @@ DATASET_CODE_VALUES: tuple[CandidateDatasetCode, ...] = ("J1", "J2")
 AV3_PROVIDER_VALUES: tuple[Av3Provider, ...] = (
     "featherless",
     "openrouter",
+    "llama_cpp",
     "xai",
     "ollama",
     "huggingface",
@@ -125,6 +127,8 @@ class JudgeSettings:
     featherless_api_key: str | None
     openrouter_url: str | None
     openrouter_api_key: str | None
+    llama_cpp_url: str | None
+    llama_cpp_api_key: str | None
     remote_judge_base_url: str | None
     remote_judge_api_key: str | None
     remote_judge_endpoints: dict[str, RemoteJudgeEndpoint]

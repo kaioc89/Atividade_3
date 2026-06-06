@@ -227,6 +227,12 @@ def _default_candidate_model_assignments() -> tuple[CandidateModelAssignment, ..
     wagner_ranges = _candidate_assignment_ranges(("J1", 95, 106), ("J2", 985, 1107))
     jose_bruno_ranges = _candidate_assignment_ranges(("J1", 119, 130), ("J2", 1231, 1353))
     paulo_ranges = _candidate_assignment_ranges(("J1", 131, 140), ("J2", 1354, 1476))
+    local_llama_cpp_notes = (
+        "AV3 local runtime: model executed through llama.cpp local OpenAI-compatible "
+        "server. Requires operator to start llama.cpp with the corresponding GGUF "
+        "model. Sequential-only; do not include in normal OpenRouter/Featherless "
+        "adaptive batches."
+    )
     return (
         CandidateModelAssignment(
             assignment_id=None,
@@ -342,14 +348,15 @@ def _default_candidate_model_assignments() -> tuple[CandidateModelAssignment, ..
             owner="Wagner",
             original_provider_model_id="jurema-7b",
             original_runtime="local GGUF/Ollama-style execution",
-            av3_provider="excluded",
-            av3_provider_model_id=None,
+            av3_provider="llama_cpp",
+            av3_provider_model_id="jurema-7b-q4_k_m",
             hf_model_id="mauroneto/Jurema-7B-Q4_K_M-GGUF",
-            artifact_format="excluded",
+            artifact_format="gguf",
             original_quantization="Q4_K_M",
-            av3_quantization="excluded",
-            match_type="not_reproduced_provider_unavailable",
-            validation_status="excluded_from_av3_run",
+            av3_quantization="Q4_K_M",
+            match_type="same_model_same_runtime",
+            validation_status="confirmed_from_av2_artifacts",
+            notes=local_llama_cpp_notes,
             ranges=wagner_ranges,
         ),
         CandidateModelAssignment(
@@ -374,14 +381,15 @@ def _default_candidate_model_assignments() -> tuple[CandidateModelAssignment, ..
             owner="Wagner",
             original_provider_model_id="curio-edu-7b",
             original_runtime="local GGUF/Ollama-style execution",
-            av3_provider="excluded",
-            av3_provider_model_id=None,
+            av3_provider="llama_cpp",
+            av3_provider_model_id="curio-edu-7b-gguf",
             hf_model_id="mradermacher/Curio-edu-7b-GGUF",
-            artifact_format="excluded",
+            artifact_format="gguf",
             original_quantization="Q4_K_M",
-            av3_quantization="excluded",
-            match_type="not_reproduced_provider_unavailable",
-            validation_status="excluded_from_av3_run",
+            av3_quantization="Q4_K_M",
+            match_type="same_model_same_runtime",
+            validation_status="confirmed_from_av2_artifacts",
+            notes=local_llama_cpp_notes,
             ranges=wagner_ranges,
         ),
         CandidateModelAssignment(
@@ -528,14 +536,15 @@ def _default_candidate_model_assignments() -> tuple[CandidateModelAssignment, ..
             owner="Paulo",
             original_provider_model_id="Jurema:7b",
             original_runtime="Ollama/local GGUF",
-            av3_provider="excluded",
-            av3_provider_model_id=None,
+            av3_provider="llama_cpp",
+            av3_provider_model_id="jurema-7b-q4_k_m",
             hf_model_id="mauroneto/Jurema-7B-Q4_K_M-GGUF",
-            artifact_format="excluded",
+            artifact_format="gguf",
             original_quantization="INT4/Ollama",
-            av3_quantization="excluded",
-            match_type="not_reproduced_provider_unavailable",
-            validation_status="excluded_from_av3_run",
+            av3_quantization="Q4_K_M",
+            match_type="same_model_same_runtime",
+            validation_status="confirmed_from_av2_artifacts",
+            notes=local_llama_cpp_notes,
             ranges=paulo_ranges,
         ),
         CandidateModelAssignment(

@@ -6,6 +6,7 @@ import atividade_2
 from atividade_2 import contracts
 from atividade_2.contracts import (
     MATCH_TYPE_VALUES,
+    AV3_PROVIDER_VALUES,
     CandidateAnswerContextChunkRecord,
     CandidateAnswerRecord,
     CandidateModelAssignment,
@@ -176,6 +177,7 @@ def test_candidate_model_assignment_contract_validates_ranges_and_match_types() 
         "proprietary_api_resolved",
         "not_reproduced_provider_unavailable",
     }
+    assert "llama_cpp" in AV3_PROVIDER_VALUES
 
     invalid_range_error = None
     try:
@@ -221,3 +223,34 @@ def test_candidate_model_assignment_contract_validates_ranges_and_match_types() 
     assert pending_assignment.warning_message == (
         "Pending owner confirmation: Gemini subtype still needs exact confirmation."
     )
+
+
+def test_candidate_model_assignment_contract_accepts_llama_cpp_provider() -> None:
+    assignment = CandidateModelAssignment(
+        assignment_id=19,
+        id_modelo_av2=21,
+        av2_model_name="llama-local",
+        owner="Local Tester",
+        original_provider_model_id="Llama local",
+        original_runtime="llama.cpp",
+        av3_provider="llama_cpp",
+        av3_provider_model_id="bartowski/llama-3.1-8b-instruct-gguf",
+        hf_model_id="bartowski/llama-3.1-8b-instruct-gguf",
+        artifact_format="gguf",
+        original_quantization=None,
+        av3_quantization="Q4_K_M",
+        match_type="same_model_same_runtime",
+        validation_status="confirmed_by_owner",
+        ranges=(
+            CandidateModelAssignmentRange(
+                assignment_range_id=33,
+                assignment_id=19,
+                dataset_code="J1",
+                question_sequence_start=1,
+                question_sequence_end=2,
+            ),
+        ),
+    )
+
+    assert assignment.av3_provider == "llama_cpp"
+    assert assignment.is_runnable() is True

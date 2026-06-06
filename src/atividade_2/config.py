@@ -132,6 +132,8 @@ def load_settings(dotenv_path: str | Path | None = ".env", env: Mapping[str, str
         featherless_api_key=_empty_to_none(values.get("FEATHERLESS_API")),
         openrouter_url=_empty_to_none(values.get("OPENROUTER_URL", DEFAULT_OPENROUTER_URL)),
         openrouter_api_key=_empty_to_none(values.get("OPENROUTER_KEY")),
+        llama_cpp_url=_empty_to_none(values.get("LLAMA_CPP_URL")),
+        llama_cpp_api_key=_get_optional_env_value(values, "LLAMA_CPP_API"),
         remote_judge_base_url=_empty_to_none(values.get("REMOTE_JUDGE_BASE_URL")),
         remote_judge_api_key=_empty_to_none(values.get("REMOTE_JUDGE_API_KEY")),
         remote_judge_endpoints=_parse_remote_judge_endpoints(values),
@@ -489,3 +491,10 @@ def _empty_to_none(value: str | None) -> str | None:
         return None
     stripped = value.strip()
     return stripped or None
+
+
+def _get_optional_env_value(values: Mapping[str, str], key: str) -> str | None:
+    raw_value = values.get(key)
+    if raw_value is None:
+        return None
+    return raw_value.strip()
