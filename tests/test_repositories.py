@@ -1104,7 +1104,7 @@ def test_select_candidate_questions_uses_active_vector_base_scope_and_filters() 
     cursor = MultiRecordingCursor(
         fetchall_rows=[
             [
-                (101, "J2", 8, "Qual alternativa correta?", '{"A": "Opcao A", "B": "Opcao B"}'),
+                (101, "J2", 8, "Qual alternativa correta?", "questao objetiva", '{"A": "Opcao A", "B": "Opcao B"}'),
             ]
         ]
     )
@@ -1143,6 +1143,7 @@ def test_select_candidate_questions_uses_active_vector_base_scope_and_filters() 
     assert "q.id_pergunta = %s" in cursor.queries[0]
     assert "q.question_sequence >= %s" in cursor.queries[0]
     assert "q.question_sequence <= %s" in cursor.queries[0]
+    assert "q.tipo_questao" in cursor.queries[0]
     assert cursor.params[0] == ["J2", 31, 101, 5, 9, 2]
     assert records == [
         CandidateQuestionRecord(
@@ -1152,6 +1153,7 @@ def test_select_candidate_questions_uses_active_vector_base_scope_and_filters() 
             question_sequence=8,
             question_text="Qual alternativa correta?",
             alternatives={"A": "Opcao A", "B": "Opcao B"},
+            question_type="questao objetiva",
         )
     ]
 
@@ -1161,8 +1163,8 @@ def test_select_pending_candidate_questions_excludes_successes_before_limit() ->
         fetchone_rows=[(3,)],
         fetchall_rows=[
             [
-                (104, "J1", 4, "Q4", None, True),
-                (105, "J1", 5, "Q5", None, False),
+                (104, "J1", 4, "Q4", "PEÇA PRÁTICO-PROFISSIONAL", None, True),
+                (105, "J1", 5, "Q5", "QUESTÃO", None, False),
             ]
         ],
     )
@@ -1207,10 +1209,12 @@ def test_select_pending_candidate_questions_excludes_successes_before_limit() ->
     assert "WHERE NOT has_success" in selection_sql
     assert "ORDER BY has_failed DESC, question_sequence, id_pergunta" in selection_sql
     assert "LIMIT %s" in selection_sql
+    assert "tipo_questao" in selection_sql
     assert "COUNT(*) FILTER (WHERE has_success)" in count_sql
     assert cursor.params[0] == ["J1", 31, 1, 5, "J1", "model-a", "J1", "model-a", 2]
     assert cursor.params[1] == ["J1", 31, 1, 5, "J1", "model-a", "J1", "model-a"]
     assert [question.question_id for question in result.questions] == [104, 105]
+    assert [question.question_type for question in result.questions] == ["PEÇA PRÁTICO-PROFISSIONAL", "QUESTÃO"]
     assert result.summary == CandidateQuestionSelectionSummary(
         policy="failed_first_pending_aware",
         skip_existing_successful=True,
@@ -1226,9 +1230,9 @@ def test_select_pending_candidate_questions_prioritizes_failed_before_unanswered
         fetchone_rows=[(0,)],
         fetchall_rows=[
             [
-                (102, "J1", 2, "Q2", None, True),
-                (101, "J1", 1, "Q1", None, False),
-                (103, "J1", 3, "Q3", None, False),
+                (102, "J1", 2, "Q2", "QUESTÃO", None, True),
+                (101, "J1", 1, "Q1", "PEÇA PROFISSIONAL", None, False),
+                (103, "J1", 3, "Q3", None, None, False),
             ]
         ],
     )
@@ -1310,7 +1314,7 @@ def test_select_pending_candidate_questions_success_wins_over_failed() -> None:
 
 
 def test_select_pending_candidate_questions_filters_state_by_current_dataset_and_model() -> None:
-    cursor = MultiRecordingCursor(fetchone_rows=[(0,)], fetchall_rows=[[(101, "J1", 1, "Q1", None, False)]])
+    cursor = MultiRecordingCursor(fetchone_rows=[(0,)], fetchall_rows=[[(101, "J1", 1, "Q1", "QUESTÃO", None, False)]])
     repository = JudgeRepository(TransactionConnection(cursor))
     repository.get_rag_vector_base_summary = lambda dataset: RagVectorBaseSummary(  # type: ignore[method-assign]
         dataset=dataset,
@@ -1350,7 +1354,7 @@ def test_select_pending_candidate_questions_filters_state_by_current_dataset_and
 
 
 def test_select_pending_candidate_questions_skip_false_preserves_sequence_policy() -> None:
-    cursor = MultiRecordingCursor(fetchall_rows=[[(101, "J1", 1, "Q1", None)]])
+    cursor = MultiRecordingCursor(fetchall_rows=[[(101, "J1", 1, "Q1", "QUESTÃO", None)]])
     repository = JudgeRepository(TransactionConnection(cursor))
     repository.get_rag_vector_base_summary = lambda dataset: RagVectorBaseSummary(  # type: ignore[method-assign]
         dataset=dataset,
@@ -1386,7 +1390,7 @@ def test_select_pending_candidate_questions_skip_false_preserves_sequence_policy
     assert "FROM av3.candidate_answers a" not in cursor.queries[0]
     assert "ORDER BY q.question_sequence, q.id_pergunta" in cursor.queries[0]
     assert result == CandidateQuestionSelectionResult(
-        questions=[CandidateQuestionRecord(101, "J1", "OAB_Bench", 1, "Q1", None)],
+        questions=[CandidateQuestionRecord(101, "J1", "OAB_Bench", 1, "Q1", None, "QUESTÃO")],
         summary=CandidateQuestionSelectionSummary(
             policy="sequence_order_no_success_filter",
             skip_existing_successful=False,
@@ -1396,7 +1400,7 @@ def test_select_pending_candidate_questions_skip_false_preserves_sequence_policy
 
 
 def test_select_pending_candidate_questions_applies_question_id_and_sequence_filters() -> None:
-    cursor = MultiRecordingCursor(fetchone_rows=[(0,)], fetchall_rows=[[(101, "J1", 7, "Q7", None, False)]])
+    cursor = MultiRecordingCursor(fetchone_rows=[(0,)], fetchall_rows=[[(101, "J1", 7, "Q7", "QUESTÃO", None, False)]])
     repository = JudgeRepository(TransactionConnection(cursor))
     repository.get_rag_vector_base_summary = lambda dataset: RagVectorBaseSummary(  # type: ignore[method-assign]
         dataset=dataset,

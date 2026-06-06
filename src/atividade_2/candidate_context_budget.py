@@ -738,6 +738,7 @@ def _render_prompt(
             question_text=question.question_text,
             retrieved_chunks=chunks,
             alternatives=question.alternatives,
+            question_type=question.question_type,
             retrieval_run_id=retrieval_result.retrieval_run_id,
             retrieval_name=retrieval_result.retrieval_name,
             top_k=retrieval_result.top_k,

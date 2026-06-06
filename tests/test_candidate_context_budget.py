@@ -32,13 +32,18 @@ def _prompt() -> CandidatePromptRecord:
     )
 
 
-def _question(question_text: str = "What is the legal consequence?") -> CandidateQuestionRecord:
+def _question(
+    question_text: str = "What is the legal consequence?",
+    *,
+    question_type: str | None = None,
+) -> CandidateQuestionRecord:
     return CandidateQuestionRecord(
         question_id=71,
         dataset="J1",
         dataset_name="OAB_Bench",
         question_sequence=71,
         question_text=question_text,
+        question_type=question_type,
     )
 
 
@@ -267,6 +272,7 @@ def test_core_question_and_instructions_are_not_truncated() -> None:
             dataset_name=question.dataset,
             question_text=question.question_text,
             retrieved_chunks=result.retrieval_result_for_prompt.chunks,
+            question_type=question.question_type,
         ),
         template=prompt,
     )
@@ -274,6 +280,35 @@ def test_core_question_and_instructions_are_not_truncated() -> None:
     assert "Question text must remain intact." in rendered
     assert "Core instruction: answer as an OAB candidate." in rendered
     assert "Core output instruction: provide the final answer." in rendered
+
+
+def test_piece_prompt_core_instruction_survives_budgeting_with_generic_template() -> None:
+    question = _question("Question text must remain intact.", question_type="PEÇA PRÁTICO-PROFISSIONAL")
+    prompt = _prompt()
+    result = budget_candidate_retrieval_context(
+        question=question,
+        retrieval_result=_retrieval_result([_chunk(rank=1, chunk_id=501, text="A" * 200)]),
+        prompt=prompt,
+        model_name="google/gemma-2-2b-it",
+        av3_provider="featherless",
+        max_tokens=10,
+        safety_margin_tokens=10,
+        context_window_tokens=1200,
+    )
+
+    rendered = build_candidate_prompt(
+        CandidatePromptContext(
+            question_id=question.question_id,
+            dataset_name=question.dataset,
+            question_text=question.question_text,
+            retrieved_chunks=result.retrieval_result_for_prompt.chunks,
+            question_type=question.question_type,
+        ),
+        template=prompt,
+    )
+
+    assert "Question text must remain intact." in rendered
+    assert "peça prático-profissional" in rendered
 
 
 def test_chunk_metadata_records_truncation() -> None:

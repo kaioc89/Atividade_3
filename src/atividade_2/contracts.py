@@ -519,6 +519,7 @@ class CandidateQuestionRecord:
     question_sequence: int
     question_text: str
     alternatives: Any = None
+    question_type: str | None = None
 
 
 @dataclass(frozen=True)
@@ -550,6 +551,7 @@ class CandidatePromptContext:
     question_text: str
     retrieved_chunks: list[RetrievedRagChunk]
     alternatives: Any = None
+    question_type: str | None = None
     retrieval_run_id: int | None = None
     retrieval_name: str | None = None
     top_k: int | None = None
