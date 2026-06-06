@@ -2208,7 +2208,7 @@ class JudgeRepository:
                             motivo_acionamento,
                             status_avaliacao
                         )
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     RETURNING id_avaliacao;
                     """,
                     (

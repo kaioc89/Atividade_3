@@ -376,6 +376,72 @@ class SkippedEvaluationRunJudgeService(FakeRunJudgeService):
         )
 
 
+class RunningThenSkippedEvaluationRunJudgeService(FakeRunJudgeService):
+    def run(
+        self,
+        request,
+        *,
+        progress_callback=None,
+        on_resolved=None,
+        eligibility_callback=None,
+        evaluation_callback=None,
+        should_stop=None,
+    ):
+        self.requests.append(request)
+        eligibility = EligibilitySummary(missing=1, failed=0, successful=240, batch_size=1, will_process=1)
+        if eligibility_callback is not None and not request.dry_run:
+            eligibility_callback(eligibility)
+        if evaluation_callback is not None and not request.dry_run:
+            base_event = {
+                "dataset": "OAB_Bench",
+                "question_id": 72,
+                "answer_id": 20,
+                "candidate_model": "meta-llama/Llama-3.2-1B-Instruct",
+                "judge_model": "Unbabel/M-Prometheus-14B",
+                "role": "principal",
+                "panel_mode": "2plus1",
+                "trigger_reason": "2plus1:primary_panel",
+            }
+            evaluation_callback(EvaluationProgress(status="running", **base_event))
+            evaluation_callback(
+                EvaluationProgress(
+                    status="skipped",
+                    error=(
+                        "Remote judge returned HTTP 503: Unbabel/M-Prometheus-14B "
+                        "is temporarily at capacity. Please try again shortly."
+                    ),
+                    **base_event,
+                )
+            )
+        if progress_callback is not None:
+            progress_callback(
+                BatchProgress(
+                    current=1,
+                    total=1,
+                    percent=100,
+                    executed_evaluations=0,
+                    skipped_evaluations=1,
+                    arbiter_evaluations=0,
+                )
+            )
+        return RunJudgeResult(
+            dry_run=request.dry_run,
+            audit_log=self.audit_path,
+            execution_summary="Judge mode: 2plus1",
+            command_preview=".venv/bin/python -m atividade_2.cli run-judge --dataset J1",
+            batch_size=1,
+            eligibility=None if request.dry_run else eligibility,
+            summary=None
+            if request.dry_run
+            else PipelineSummary(
+                selected_answers=1,
+                executed_evaluations=0,
+                skipped_evaluations=1,
+                arbiter_evaluations=0,
+            ),
+        )
+
+
 class OutOfOrderEvaluationRunJudgeService(FakeRunJudgeService):
     def run(
         self,
@@ -1411,9 +1477,9 @@ def test_web_index_contains_progress_element() -> None:
 
     assert response.status_code == 200
     assert response.headers["cache-control"] == "no-store"
-    assert 'data-tab="dashboard-panel">Dashboard</button>' in response.text
-    assert '<main id="dashboard-panel" class="dashboard-layout tab-panel">' in response.text
-    assert '<main id="execution-panel" class="tab-panel" hidden>' in response.text
+    assert 'data-tab="dashboard">Dashboard</button>' in response.text
+    assert '<main id="dashboard-panel" class="dashboard-layout tab-panel" data-tab-panel="dashboard">' in response.text
+    assert '<main id="execution-panel" class="tab-panel" data-tab-panel="execution" hidden>' in response.text
     assert "Resultados e Auditoria da Avaliacao" in response.text
     assert 'id="database-actions-toggle" class="database-actions-toggle"' in response.text
     assert "Acoes do Banco" in response.text
@@ -1524,6 +1590,44 @@ def test_web_index_contains_progress_element() -> None:
     assert "function valueTone" in response.text
 
 
+def test_web_index_contains_url_aware_main_tab_navigation() -> None:
+    client = TestClient(create_app(FakeRunJudgeService()))
+
+    response = client.get("/")
+
+    assert response.status_code == 200
+    assert 'const DEFAULT_MAIN_TAB_ID = "dashboard";' in response.text
+    assert 'const INITIAL_MAIN_TAB_ID = "dashboard";' in response.text
+    assert "function isValidTabId(value)" in response.text
+    assert "function getTabFromUrl(url = window.location.href)" in response.text
+    assert "function buildUrlForTab(tabId, url = window.location.href)" in response.text
+    assert 'nextUrl.searchParams.set("tab", normalizeTabId(tabId));' in response.text
+    assert 'window.history[historyMethod]({tab: normalizeTabId(tabId)}, "", `${nextUrl.pathname}${nextUrl.search}${nextUrl.hash}`);' in response.text
+    assert 'window.addEventListener("popstate", () => {' in response.text
+    assert 'switchTab(getTabFromUrl(), {updateUrl: false});' in response.text
+    assert 'activateTab(INITIAL_MAIN_TAB_ID);' in response.text
+    assert "function urlHasInvalidTab(url = window.location.href)" in response.text
+    assert 'syncUrlForTab(INITIAL_MAIN_TAB_ID, {replace: true});' in response.text
+
+
+def test_web_index_uses_valid_main_tab_from_query_param() -> None:
+    client = TestClient(create_app(FakeRunJudgeService()))
+
+    response = client.get("/?tab=history")
+
+    assert response.status_code == 200
+    assert 'const INITIAL_MAIN_TAB_ID = "history";' in response.text
+
+
+def test_web_index_falls_back_to_default_main_tab_for_invalid_query_param() -> None:
+    client = TestClient(create_app(FakeRunJudgeService()))
+
+    response = client.get("/?tab=not-a-real-tab")
+
+    assert response.status_code == 200
+    assert 'const INITIAL_MAIN_TAB_ID = "dashboard";' in response.text
+
+
 def test_web_index_hides_floating_assistant_chat_by_default() -> None:
     client = TestClient(create_app(FakeRunJudgeService()))
 
@@ -1582,8 +1686,8 @@ def test_dashboard_tab_selection_always_refreshes_dashboard_data() -> None:
     response = client.get("/")
 
     assert response.status_code == 200
-    assert 'if (targetId === "dashboard-panel") loadDashboard();' in response.text
-    assert 'if (targetId === "dashboard-panel" && !dashboardLoaded) loadDashboard();' not in response.text
+    assert 'if (resolvedTabId === "dashboard") loadDashboard();' in response.text
+    assert 'if (resolvedTabId === "dashboard" && !dashboardLoaded) loadDashboard();' not in response.text
 
 
 def test_web_dashboard_cases_include_audit_action_for_meta_evaluation() -> None:
@@ -1596,7 +1700,7 @@ def test_web_dashboard_cases_include_audit_action_for_meta_evaluation() -> None:
     assert "function appendAuditCell" in response.text
     assert "function openMetaEvaluation" in response.text
     assert 'button.textContent = "Auditar";' in response.text
-    assert 'activateTab("meta-panel");' in response.text
+    assert 'switchTab("meta");' in response.text
     assert 'window.scrollTo({top: 0, left: 0, behavior: "auto"});' in response.text
     assert "await loadMetaOptions(evaluationId);" in response.text
 
@@ -1607,7 +1711,7 @@ def test_web_index_contains_prompt_judges_tab() -> None:
     response = client.get("/")
 
     assert response.status_code == 200
-    assert 'data-tab="prompt-panel">Prompt Juizes</button>' in response.text
+    assert 'data-tab="prompt">Prompt Juizes</button>' in response.text
     assert 'id="prompt_dataset"' in response.text
     assert 'id="prompt_save"' in response.text
     assert 'id="prompt_logs_body"' in response.text
@@ -1658,7 +1762,7 @@ def test_web_index_contains_meta_evaluation_tab() -> None:
     response = client.get("/")
 
     assert response.status_code == 200
-    assert 'data-tab="meta-panel">Meta-Avaliacao</button>' in response.text
+    assert 'data-tab="meta">Meta-Avaliacao</button>' in response.text
     assert '<input id="meta_evaluation_select" autocomplete="off"' in response.text
     assert 'id="meta_evaluation_clear" class="meta-clear-button"' in response.text
     assert 'id="meta_evaluation_options" class="meta-options-list" role="listbox" hidden' in response.text
@@ -1694,7 +1798,7 @@ def test_web_index_contains_rag_curation_tab() -> None:
     response = client.get("/")
 
     assert response.status_code == 200
-    assert 'data-tab="rag-panel">RAG</button>' in response.text
+    assert 'data-tab="rag">RAG</button>' in response.text
     assert 'data-rag-subtab="rag-curation-subpanel">Curadoria</button>' in response.text
     assert 'data-rag-subtab="rag-vector-subpanel">Base Vetorial</button>' in response.text
     assert 'data-rag-subtab="rag-query-subpanel">Consulta</button>' in response.text
@@ -1948,7 +2052,7 @@ def test_web_index_contains_controlled_operational_log_enrichment() -> None:
     assert "Motivo do arbitro" not in response.text
     assert "openHistoryLogFromMeta" in response.text
     assert "Abrir em Execucoes anteriores" in response.text
-    assert 'targetId === "meta-panel" || targetId === "history-panel"' in response.text
+    assert 'resolvedTabId === "meta" || resolvedTabId === "history"' in response.text
     assert "prefetchOperationalLogSummary();" in response.text
     assert "prefetchRunHistory();" in response.text
     assert "let operationalLogSummaryPromise = null;" in response.text
@@ -2044,7 +2148,7 @@ def test_tab_navigation_does_not_cancel_active_run_or_stop_polling() -> None:
     response = client.get("/")
 
     assert response.status_code == 200
-    switch_tab_source = response.text.split("function switchTab(targetId) {", maxsplit=1)[1].split(
+    switch_tab_source = response.text.split('function switchTab(targetId, {updateUrl = true, replaceUrl = false} = {}) {', maxsplit=1)[1].split(
         "async function loadConfig()",
         maxsplit=1,
     )[0]
@@ -2476,6 +2580,15 @@ def test_running_run_progress_ignores_non_success_execution_table_records() -> N
     assert [event["status"] for event in data["evaluation_events"]] == ["running"]
 
 
+def test_web_page_includes_capacity_friendly_error_mapping() -> None:
+    client = TestClient(create_app(FakeRunJudgeService()))
+
+    response = client.get("/")
+
+    assert response.status_code == 200
+    assert "modelo temporariamente sem capacidade no provedor; pulado nesta execucao" in response.text
+
+
 def test_failed_run_reports_complete_process_progress() -> None:
     client = TestClient(create_app(FailedRunJudgeService()))
     token = client.get("/api/config").json()["csrf_token"]
@@ -2510,6 +2623,22 @@ def test_run_lifecycle_hides_skipped_evaluations_from_execution_table_payload() 
     assert data["progress"]["skipped_evaluations"] == 1
     assert [event["status"] for event in data["evaluation_events"]] == ["success"]
     assert data["evaluation_events"][0]["role"] == "controle"
+
+
+def test_run_lifecycle_replaces_running_row_with_skipped_payload() -> None:
+    client = TestClient(create_app(RunningThenSkippedEvaluationRunJudgeService()))
+    token = client.get("/api/config").json()["csrf_token"]
+
+    created = client.post(
+        "/api/runs",
+        headers={"x-csrf-token": token},
+        json={"panel_mode": "2plus1", "dataset": "J1", "batch_size": 1},
+    )
+
+    assert created.status_code == 200
+    data = client.get(f"/api/runs/{created.json()['run_id']}").json()
+    assert [event["status"] for event in data["evaluation_events"]] == ["skipped"]
+    assert "temporarily at capacity" in data["evaluation_events"][0]["error"]
 
 
 def test_run_lifecycle_orders_execution_table_payload_by_status_priority() -> None:
