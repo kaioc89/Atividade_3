@@ -57,6 +57,7 @@ def _env_flag(name: str, *, default: bool = False) -> bool:
 
 
 class RunPayload(BaseModel):
+    judge_input_source: Literal["av2", "av3_j1_com_rag"] = "av2"
     panel_mode: Literal["single", "primary_only", "2plus1"] | None = None
     dataset: Literal["J1", "J2", "OAB_Bench", "OAB_Exames"] = "J2"
     batch_size: int | None = Field(default=None, ge=1)
@@ -84,6 +85,7 @@ class RunPayload(BaseModel):
 
     def to_request(self, *, dry_run: bool) -> RunJudgeRequest:
         return RunJudgeRequest(
+            judge_input_source=self.judge_input_source,
             panel_mode=self.panel_mode,
             judge_model=self.judge_model or None,
             secondary_judge_model=self.secondary_judge_model or None,
@@ -1813,6 +1815,12 @@ _INDEX_HTML = """
       <h2>Presets</h2>
       <div id="presets" class="presets"></div>
       <h2>Configuracao</h2>
+      <label>Fonte das respostas
+        <select id="judge_input_source">
+          <option value="av2">AV2 baseline</option>
+          <option value="av3_j1_com_rag">AV3 J1 Com_RAG</option>
+        </select>
+      </label>
       <label>Modo
         <select id="panel_mode"><option>single</option><option>primary_only</option><option>2plus1</option></select>
       </label>
@@ -3046,6 +3054,16 @@ _INDEX_HTML = """
       renderJudgeModelSelects();
     }
 
+    function renderJudgeInputSource() {
+      const source = value("judge_input_source");
+      const datasetSelect = document.getElementById("dataset");
+      const isAv3ComRag = source === "av3_j1_com_rag";
+      if (isAv3ComRag) {
+        datasetSelect.value = "J1";
+      }
+      datasetSelect.disabled = isAv3ComRag;
+    }
+
     function renderDashboardCards(cards) {
       const root = document.getElementById("dashboard-cards");
       root.textContent = "";
@@ -4106,6 +4124,7 @@ _INDEX_HTML = """
       const secondaryEndpointSource = value("endpoint_source_secondary");
       const arbiterEndpointSource = value("endpoint_source_arbiter");
       return {
+        judge_input_source: value("judge_input_source"),
         panel_mode: value("panel_mode"),
         dataset: value("dataset"),
         batch_size: Number(value("batch_size")),
@@ -6423,7 +6442,7 @@ _INDEX_HTML = """
       csrfToken = config.csrf_token;
       const defaults = config.defaults || {};
       judgeModelOptions = config.judge_model_options || [defaults.judge_model, defaults.secondary_judge_model, defaults.arbiter_judge_model].filter(Boolean);
-      for (const key of ["panel_mode", "dataset", "batch_size", "judge_execution_strategy", "judge_arbitration_min_delta", "remote_judge_timeout_seconds", "remote_judge_temperature", "remote_judge_max_tokens", "remote_judge_top_p"]) {
+      for (const key of ["judge_input_source", "panel_mode", "dataset", "batch_size", "judge_execution_strategy", "judge_arbitration_min_delta", "remote_judge_timeout_seconds", "remote_judge_temperature", "remote_judge_max_tokens", "remote_judge_top_p"]) {
         if (defaults[key] !== null && defaults[key] !== undefined) document.getElementById(key).value = defaults[key];
       }
       for (const key of ["judge_model", "secondary_judge_model", "arbiter_judge_model"]) {
@@ -6453,10 +6472,12 @@ _INDEX_HTML = """
             if (key === "always_run_arbiter") document.getElementById(key).checked = Boolean(val);
             else document.getElementById(key).value = val;
           }
+          renderJudgeInputSource();
           renderJudgeBlocks();
         };
         presetRoot.appendChild(btn);
       }
+      renderJudgeInputSource();
       renderJudgeBlocks();
       renderEndpointFields();
       document.getElementById("dry-run").disabled = false;
@@ -6572,6 +6593,7 @@ _INDEX_HTML = """
       };
     }
     document.getElementById("panel_mode").onchange = renderJudgeBlocks;
+    document.getElementById("judge_input_source").onchange = renderJudgeInputSource;
     for (const id of ["judge_model", "secondary_judge_model", "arbiter_judge_model"]) {
       document.getElementById(id).onchange = renderJudgeModelSelects;
     }

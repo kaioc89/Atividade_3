@@ -89,8 +89,10 @@ CREATE TABLE prompt_juizes (
 CREATE TABLE avaliacoes_juiz (
     id_avaliacao SERIAL PRIMARY KEY,
 
-    id_resposta_ativa1 INTEGER NOT NULL
+    id_resposta_ativa1 INTEGER
         REFERENCES respostas_atividade_1(id_resposta),
+
+    id_candidate_answer INTEGER,
 
     id_modelo_juiz INTEGER NOT NULL
         REFERENCES modelos(id_modelo),
@@ -106,6 +108,16 @@ CREATE TABLE avaliacoes_juiz (
     rodada_julgamento VARCHAR(30),
     motivo_acionamento TEXT,
     status_avaliacao VARCHAR(20) DEFAULT 'success',
+    CHECK (
+        (
+            id_resposta_ativa1 IS NOT NULL
+            AND id_candidate_answer IS NULL
+        )
+        OR (
+            id_resposta_ativa1 IS NULL
+            AND id_candidate_answer IS NOT NULL
+        )
+    ),
 
     data_avaliacao TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -498,6 +510,10 @@ CREATE TABLE av3.candidate_model_runtime_observations (
     observed_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+ALTER TABLE avaliacoes_juiz
+ADD CONSTRAINT avaliacoes_juiz_id_candidate_answer_fkey
+FOREIGN KEY (id_candidate_answer) REFERENCES av3.candidate_answers(id_candidate_answer);
+
 -- =========================
 -- Indexes
 -- =========================
@@ -522,6 +538,10 @@ WHERE ativo;
 -- Evaluations by answer.
 CREATE INDEX idx_avaliacoes_resposta
 ON avaliacoes_juiz(id_resposta_ativa1);
+
+-- AV3 evaluations by candidate answer.
+CREATE INDEX idx_avaliacoes_candidate_answer
+ON avaliacoes_juiz(id_candidate_answer);
 
 -- Evaluations by judge model.
 CREATE INDEX idx_avaliacoes_juiz

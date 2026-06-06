@@ -39,6 +39,7 @@ from .repositories import JudgeRepository
 class RunJudgeRequest:
     """User-provided run options before env/default resolution."""
 
+    judge_input_source: str = "av2"
     judge_provider: str | None = None
     panel_mode: str | None = None
     judge_model: str | None = None
@@ -120,6 +121,7 @@ class RunJudgeService:
             return _config_error_description(str(error))
         base = {
             "defaults": {
+                "judge_input_source": "av2",
                 "panel_mode": settings.judge_panel_mode,
                 "dataset": "J2",
                 "batch_size": settings.judge_batch_size,
@@ -139,12 +141,20 @@ class RunJudgeService:
             "supported": {
                 "panel_modes": ["single", "primary_only", "2plus1"],
                 "datasets": ["J1", "J2"],
+                "judge_input_sources": ["av2", "av3_j1_com_rag"],
                 "judge_execution_strategies": ["sequential", "parallel", "adaptive"],
             },
             "endpoints": _endpoint_overview(settings),
             "presets": [
                 {"name": "Smoke J2", "panel_mode": "single", "dataset": "J2", "batch_size": 1},
                 {"name": "Smoke J1", "panel_mode": "single", "dataset": "J1", "batch_size": 1},
+                {
+                    "name": "AV3 J1 Com_RAG",
+                    "panel_mode": "single",
+                    "dataset": "J1",
+                    "judge_input_source": "av3_j1_com_rag",
+                    "batch_size": 1,
+                },
                 {"name": "Comparacao primaria", "panel_mode": "primary_only"},
                 {"name": "AV2 principal", "panel_mode": "2plus1"},
                 {"name": "Auditoria completa", "panel_mode": "2plus1", "always_run_arbiter": True},
@@ -161,6 +171,7 @@ class RunJudgeService:
 
     def resolve(self, request: RunJudgeRequest) -> ResolvedRun:
         """Resolve settings and CLI/Web overrides without touching DB or remote HTTP."""
+        _validate_judge_input_source(request)
         settings = _apply_request_overrides(self._settings_loader(), request)
         runtime_config = resolve_runtime_config(
             settings,
@@ -193,6 +204,7 @@ class RunJudgeService:
         should_stop: Callable[[], bool] | None = None,
     ) -> RunJudgeResult:
         """Run or dry-run the judge pipeline."""
+        _validate_judge_input_source(request)
         audit_path = _resolve_audit_path(request.audit_log)
         animate = False if request.no_audit_animation else None
         with AuditLogger(file_path=audit_path, animate=animate) as audit:
@@ -251,12 +263,16 @@ class RunJudgeService:
                 required_evaluations = _required_evaluations(runtime_config)
                 with audit.step(
                     f"Counting eligible answers for {request.dataset}",
-                    detail=f"dataset={request.dataset} batch_size={resolved.batch_size}",
+                    detail=(
+                        f"dataset={request.dataset} source={request.judge_input_source} "
+                        f"batch_size={resolved.batch_size}"
+                    ),
                 ):
                     eligibility = repository.summarize_eligibility(
                         dataset=request.dataset,
                         batch_size=resolved.batch_size,
                         required_evaluations=required_evaluations,
+                        judge_input_source=request.judge_input_source,
                     )
                 audit.terminal_event(
                     "Respostas elegiveis: "
@@ -274,12 +290,16 @@ class RunJudgeService:
                 )
                 with audit.step(
                     f"Selecting pending candidate answers for {request.dataset}",
-                    detail=f"dataset={request.dataset} batch_size={resolved.batch_size}",
+                    detail=(
+                        f"dataset={request.dataset} source={request.judge_input_source} "
+                        f"batch_size={resolved.batch_size}"
+                    ),
                 ):
                     answers = repository.select_pending_candidate_answers(
                         dataset=request.dataset,
                         batch_size=resolved.batch_size,
                         required_evaluations=required_evaluations,
+                        judge_input_source=request.judge_input_source,
                     )
                 audit.file_event("answers_selected", f"count={len(answers)}")
                 client = self._client_factory(settings)
@@ -296,6 +316,7 @@ class RunJudgeService:
                         dataset=request.dataset,
                         batch_size=resolved.batch_size,
                         required_evaluations=required_evaluations,
+                        judge_input_source=request.judge_input_source,
                     )
                     reported_eligibility = refreshed
                     if eligibility_callback is not None:
@@ -325,6 +346,7 @@ class RunJudgeService:
                     dataset=request.dataset,
                     batch_size=resolved.batch_size,
                     required_evaluations=required_evaluations,
+                    judge_input_source=request.judge_input_source,
                 )
                 if eligibility != reported_eligibility and eligibility_callback is not None:
                     _safe_emit_eligibility(audit, eligibility_callback, eligibility)
@@ -549,6 +571,8 @@ def build_command_preview(request: RunJudgeRequest, config: RuntimeJudgeConfig, 
         "--judge-execution-strategy",
         config.execution_strategy,
     ]
+    if request.judge_input_source != "av2":
+        args.extend(["--judge-input-source", request.judge_input_source])
     if config.panel_mode == "single":
         assert config.single_judge is not None
         args.extend(["--judge-model", config.single_judge.requested])
@@ -595,6 +619,17 @@ def _safe_emit_eligibility(
         eligibility_callback(eligibility)
     except Exception as error:
         audit.file_event("eligibility_callback_failed", f"error={error}")
+
+
+def _validate_judge_input_source(request: RunJudgeRequest) -> None:
+    supported_sources = {"av2", "av3_j1_com_rag"}
+    if request.judge_input_source not in supported_sources:
+        raise ValueError(
+            f"Unsupported judge_input_source={request.judge_input_source!r}. "
+            "Supported values: av2, av3_j1_com_rag."
+        )
+    if request.judge_input_source == "av3_j1_com_rag" and request.dataset.upper() not in {"J1", "OAB_BENCH"}:
+        raise ValueError("judge_input_source=av3_j1_com_rag requires dataset J1/OAB_Bench.")
 
 
 def _required_evaluations(config: RuntimeJudgeConfig) -> tuple[tuple[ModelSpec, StoredJudgeRole, str], ...]:

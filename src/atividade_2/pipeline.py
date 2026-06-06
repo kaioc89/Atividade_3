@@ -173,10 +173,11 @@ class JudgePipeline:
         pending: list[tuple[ModelSpec, StoredJudgeRole]] = []
         for judge_model, stored_role in zip(config.primary_panel, roles, strict=False):
             score_before = self.repository.existing_score(
-                answer.answer_id,
-                judge_model,
-                stored_role,
-                config.panel_mode,
+                av1_answer_id=answer.av1_answer_id,
+                candidate_answer_id=answer.candidate_answer_id,
+                judge_model=judge_model,
+                stored_role=stored_role,
+                panel_mode=config.panel_mode,
             )
             if score_before is not None:
                 skipped += 1
@@ -266,10 +267,11 @@ class JudgePipeline:
         trigger_reason: str,
     ) -> tuple[int, int]:
         if self.repository.evaluation_exists(
-            answer.answer_id,
-            judge_model,
-            stored_role,
-            config.panel_mode,
+            av1_answer_id=answer.av1_answer_id,
+            candidate_answer_id=answer.candidate_answer_id,
+            judge_model=judge_model,
+            stored_role=stored_role,
+            panel_mode=config.panel_mode,
         ):
             self.audit.terminal_event(
                 f"Skipping answer {answer.answer_id} for {judge_model.requested}: existing evaluation"
@@ -418,7 +420,8 @@ class JudgePipeline:
             )
         )
         return EvaluationRecord(
-            answer_id=answer.answer_id,
+            av1_answer_id=answer.av1_answer_id,
+            candidate_answer_id=answer.candidate_answer_id,
             judge_model=judge_model,
             prompt_id=prompt_template.prompt_id if prompt_template is not None else None,
             stored_role=stored_role,
@@ -610,7 +613,13 @@ class JudgePipeline:
                         )
                     )
                     continue
-                if self.repository.evaluation_exists(answer.answer_id, config.arbiter, "arbitro", config.panel_mode):
+                if self.repository.evaluation_exists(
+                    av1_answer_id=answer.av1_answer_id,
+                    candidate_answer_id=answer.candidate_answer_id,
+                    judge_model=config.arbiter,
+                    stored_role="arbitro",
+                    panel_mode=config.panel_mode,
+                ):
                     skipped += 1
                     self._report_existing_skip(answer, config, config.arbiter, "arbitro")
                     continue
@@ -668,10 +677,11 @@ class JudgePipeline:
         skipped = 0
         for sequence, answer in enumerate(answers):
             score_before = self.repository.existing_score(
-                answer.answer_id,
-                judge_model,
-                stored_role,
-                config.panel_mode,
+                av1_answer_id=answer.av1_answer_id,
+                candidate_answer_id=answer.candidate_answer_id,
+                judge_model=judge_model,
+                stored_role=stored_role,
+                panel_mode=config.panel_mode,
             )
             if score_before is not None:
                 skipped += 1

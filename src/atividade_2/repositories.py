@@ -48,6 +48,8 @@ DATASET_ALIASES = {
     "J1": "OAB_Bench",
     "J2": "OAB_Exames",
 }
+JUDGE_INPUT_SOURCE_AV2 = "av2"
+JUDGE_INPUT_SOURCE_AV3_J1_COM_RAG = "av3_j1_com_rag"
 
 
 def _default_prompt_config(dataset_name: str) -> dict[str, str]:
@@ -588,7 +590,9 @@ class JudgeRepositoryProtocol(Protocol):
 
     def evaluation_exists(
         self,
-        answer_id: int,
+        *,
+        av1_answer_id: int | None,
+        candidate_answer_id: int | None,
         judge_model: ModelSpec,
         stored_role: StoredJudgeRole,
         panel_mode: str,
@@ -597,7 +601,9 @@ class JudgeRepositoryProtocol(Protocol):
 
     def existing_score(
         self,
-        answer_id: int,
+        *,
+        av1_answer_id: int | None,
+        candidate_answer_id: int | None,
         judge_model: ModelSpec,
         stored_role: StoredJudgeRole,
         panel_mode: str,
@@ -613,6 +619,7 @@ class JudgeRepositoryProtocol(Protocol):
         dataset: str,
         batch_size: int,
         required_evaluations: Iterable[tuple[ModelSpec, StoredJudgeRole, str]],
+        judge_input_source: str = JUDGE_INPUT_SOURCE_AV2,
     ) -> list[CandidateAnswerContext]:
         """Select AV1 answers still missing at least one required successful evaluation."""
 
@@ -622,6 +629,7 @@ class JudgeRepositoryProtocol(Protocol):
         dataset: str,
         batch_size: int,
         required_evaluations: Iterable[tuple[ModelSpec, StoredJudgeRole, str]],
+        judge_input_source: str = JUDGE_INPUT_SOURCE_AV2,
     ) -> EligibilitySummary:
         """Count answer-level eligibility before selecting the execution batch."""
 
@@ -982,6 +990,58 @@ class JudgeRepository:
                 created_at TIMESTAMP NOT NULL DEFAULT NOW(),
                 updated_at TIMESTAMP NOT NULL DEFAULT NOW()
             );
+            """
+        )
+
+    def _ensure_av3_evaluation_identity_schema(self, cursor: Any) -> None:
+        cursor.execute("ALTER TABLE avaliacoes_juiz ADD COLUMN IF NOT EXISTS id_candidate_answer INTEGER;")
+        cursor.execute("ALTER TABLE avaliacoes_juiz ALTER COLUMN id_resposta_ativa1 DROP NOT NULL;")
+        cursor.execute(
+            """
+            DO $$
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1
+                    FROM pg_constraint
+                    WHERE conname = 'avaliacoes_juiz_id_candidate_answer_fkey'
+                ) THEN
+                    ALTER TABLE avaliacoes_juiz
+                    ADD CONSTRAINT avaliacoes_juiz_id_candidate_answer_fkey
+                    FOREIGN KEY (id_candidate_answer)
+                    REFERENCES av3.candidate_answers(id_candidate_answer);
+                END IF;
+            END $$;
+            """
+        )
+        cursor.execute(
+            """
+            DO $$
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1
+                    FROM pg_constraint
+                    WHERE conname = 'avaliacoes_juiz_exactly_one_answer_identity_check'
+                ) THEN
+                    ALTER TABLE avaliacoes_juiz
+                    ADD CONSTRAINT avaliacoes_juiz_exactly_one_answer_identity_check
+                    CHECK (
+                        (
+                            id_resposta_ativa1 IS NOT NULL
+                            AND id_candidate_answer IS NULL
+                        )
+                        OR (
+                            id_resposta_ativa1 IS NULL
+                            AND id_candidate_answer IS NOT NULL
+                        )
+                    );
+                END IF;
+            END $$;
+            """
+        )
+        cursor.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_avaliacoes_candidate_answer
+            ON avaliacoes_juiz(id_candidate_answer);
             """
         )
 
@@ -1542,6 +1602,7 @@ class JudgeRepository:
                 self._ensure_rag_curation_schema(cursor)
                 self._ensure_rag_vector_schema(cursor)
                 self._ensure_candidate_rag_schema(cursor)
+                self._ensure_av3_evaluation_identity_schema(cursor)
 
     def select_candidate_answers(self, *, dataset: str, limit: int | None) -> list[CandidateAnswerContext]:
         """Select AV1 answers with question/reference context."""
@@ -1578,7 +1639,8 @@ class JudgeRepository:
 
         return [
             CandidateAnswerContext(
-                answer_id=row[0],
+                av1_answer_id=row[0],
+                candidate_answer_id=None,
                 question_id=row[1],
                 dataset_name=row[2],
                 question_text=row[3],
@@ -1596,8 +1658,31 @@ class JudgeRepository:
         dataset: str,
         batch_size: int,
         required_evaluations: Iterable[tuple[ModelSpec, StoredJudgeRole, str]],
+        judge_input_source: str = JUDGE_INPUT_SOURCE_AV2,
     ) -> list[CandidateAnswerContext]:
         """Select candidate answers with at least one missing required evaluation."""
+        if judge_input_source == JUDGE_INPUT_SOURCE_AV3_J1_COM_RAG:
+            return self._select_pending_av3_candidate_answers(
+                dataset=dataset,
+                batch_size=batch_size,
+                required_evaluations=required_evaluations,
+            )
+        if judge_input_source != JUDGE_INPUT_SOURCE_AV2:
+            raise ValueError(f"Unsupported judge_input_source={judge_input_source!r}.")
+        return self._select_pending_av1_candidate_answers(
+            dataset=dataset,
+            batch_size=batch_size,
+            required_evaluations=required_evaluations,
+        )
+
+    def _select_pending_av1_candidate_answers(
+        self,
+        *,
+        dataset: str,
+        batch_size: int,
+        required_evaluations: Iterable[tuple[ModelSpec, StoredJudgeRole, str]],
+    ) -> list[CandidateAnswerContext]:
+        """Select AV2 candidate answers with at least one missing required evaluation."""
         required = tuple(required_evaluations)
         if not required:
             return []
@@ -1683,7 +1768,155 @@ class JudgeRepository:
 
         return [
             CandidateAnswerContext(
-                answer_id=row[0],
+                av1_answer_id=row[0],
+                candidate_answer_id=None,
+                question_id=row[1],
+                dataset_name=row[2],
+                question_text=row[3],
+                reference_answer=row[4],
+                candidate_answer=row[5],
+                candidate_model=row[6],
+                metadata=_normalize_metadata(row[7]),
+            )
+            for row in rows
+        ]
+
+    def _select_pending_av3_candidate_answers(
+        self,
+        *,
+        dataset: str,
+        batch_size: int,
+        required_evaluations: Iterable[tuple[ModelSpec, StoredJudgeRole, str]],
+    ) -> list[CandidateAnswerContext]:
+        """Select successful AV3 J1 Com_RAG answers still missing judge evaluations."""
+        dataset_code = dataset.upper()
+        if dataset_code not in {"J1", "OAB_BENCH"}:
+            raise ValueError("AV3 J1 Com_RAG judge selection requires dataset J1/OAB_Bench.")
+        required = tuple(required_evaluations)
+        if not required:
+            return []
+
+        model_ids = [self.ensure_judge_model(model) for model, _, _ in required]
+        values_sql = ", ".join(["(%s, %s, %s)"] * len(required))
+        required_params: list[Any] = []
+        for model_id, (_, role, panel_mode) in zip(model_ids, required, strict=True):
+            required_params.extend([model_id, role, f"{panel_mode}:%"])
+
+        params: list[Any] = [*required_params, "J1", batch_size]
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                f"""
+                WITH required_evaluations(id_modelo_juiz, papel_juiz, motivo_pattern) AS (
+                    VALUES {values_sql}
+                ),
+                judge_ready_answers AS (
+                    SELECT
+                        a.id_candidate_answer,
+                        a.id_pergunta,
+                        d.nome_dataset,
+                        p.enunciado,
+                        p.resposta_ouro,
+                        a.answer_text,
+                        a.model_name,
+                        (
+                            COALESCE(p.metadados, '{{}}'::jsonb)
+                            || jsonb_build_object(
+                                'dataset_code', r.dataset_code,
+                                'question_sequence', cq.question_sequence,
+                                'tipo_questao', cq.tipo_questao,
+                                'candidate_provider', r.provider,
+                                'candidate_owner', assignment.owner
+                            )
+                        ) AS metadados,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY
+                                required.id_modelo_juiz,
+                                required.papel_juiz,
+                                required.motivo_pattern
+                            ORDER BY cq.question_sequence, a.id_pergunta, a.id_candidate_answer
+                        ) AS required_rank
+                    FROM av3.candidate_answers a
+                    JOIN av3.candidate_runs r ON r.id_candidate_run = a.id_candidate_run
+                    JOIN perguntas p ON p.id_pergunta = a.id_pergunta
+                    JOIN datasets d ON d.id_dataset = p.id_dataset
+                    JOIN av3.retrieval_runs rr ON rr.id_retrieval_run = r.id_retrieval_run
+                    LEFT JOIN av3.curadoria_questoes cq
+                      ON cq.id_import_run = rr.id_import_run
+                     AND cq.dataset_code = r.dataset_code
+                     AND cq.id_pergunta = a.id_pergunta
+                    LEFT JOIN LATERAL (
+                        SELECT assignment.owner
+                        FROM av3.candidate_model_assignments assignment
+                        JOIN av3.candidate_model_assignment_ranges assignment_range
+                          ON assignment_range.id_assignment = assignment.id_assignment
+                        WHERE assignment.active
+                          AND assignment.av3_provider = r.provider
+                          AND assignment.av3_provider_model_id = a.model_name
+                          AND assignment_range.dataset_code = r.dataset_code
+                          AND cq.question_sequence BETWEEN
+                              assignment_range.question_sequence_start
+                              AND assignment_range.question_sequence_end
+                        ORDER BY assignment.updated_at DESC, assignment.id_assignment DESC
+                        LIMIT 1
+                    ) assignment ON TRUE
+                    CROSS JOIN required_evaluations required
+                    WHERE r.dataset_code = %s
+                      AND d.nome_dataset = 'OAB_Bench'
+                      AND a.status = 'success'
+                      AND a.answer_text IS NOT NULL
+                      AND EXISTS (
+                          SELECT 1
+                          FROM av3.candidate_answer_context_chunks context_chunk
+                          WHERE context_chunk.id_candidate_answer = a.id_candidate_answer
+                      )
+                      AND NOT EXISTS (
+                          SELECT 1
+                          FROM avaliacoes_juiz evaluation
+                          WHERE evaluation.id_candidate_answer = a.id_candidate_answer
+                            AND evaluation.id_modelo_juiz = required.id_modelo_juiz
+                            AND COALESCE(evaluation.papel_juiz, '') = required.papel_juiz
+                            AND COALESCE(evaluation.motivo_acionamento, '') LIKE required.motivo_pattern
+                            AND COALESCE(evaluation.status_avaliacao, 'success') = 'success'
+                      )
+                ),
+                selected_answers AS (
+                    SELECT DISTINCT ON (id_candidate_answer)
+                        id_candidate_answer,
+                        id_pergunta,
+                        nome_dataset,
+                        enunciado,
+                        resposta_ouro,
+                        answer_text,
+                        model_name,
+                        metadados
+                    FROM judge_ready_answers
+                    WHERE required_rank <= %s
+                    ORDER BY id_candidate_answer
+                )
+                SELECT
+                    id_candidate_answer,
+                    id_pergunta,
+                    nome_dataset,
+                    enunciado,
+                    resposta_ouro,
+                    answer_text,
+                    model_name,
+                    metadados
+                FROM selected_answers
+                ORDER BY
+                    (metadados->>'question_sequence')::integer NULLS LAST,
+                    id_pergunta,
+                    model_name,
+                    id_candidate_answer;
+                """,
+                params,
+            )
+            rows = cursor.fetchall()
+
+        return [
+            CandidateAnswerContext(
+                av1_answer_id=None,
+                candidate_answer_id=row[0],
                 question_id=row[1],
                 dataset_name=row[2],
                 question_text=row[3],
@@ -1701,8 +1934,31 @@ class JudgeRepository:
         dataset: str,
         batch_size: int,
         required_evaluations: Iterable[tuple[ModelSpec, StoredJudgeRole, str]],
+        judge_input_source: str = JUDGE_INPUT_SOURCE_AV2,
     ) -> EligibilitySummary:
         """Count missing, failed, successful, and next-batch answer totals."""
+        if judge_input_source == JUDGE_INPUT_SOURCE_AV3_J1_COM_RAG:
+            return self._summarize_av3_eligibility(
+                dataset=dataset,
+                batch_size=batch_size,
+                required_evaluations=required_evaluations,
+            )
+        if judge_input_source != JUDGE_INPUT_SOURCE_AV2:
+            raise ValueError(f"Unsupported judge_input_source={judge_input_source!r}.")
+        return self._summarize_av1_eligibility(
+            dataset=dataset,
+            batch_size=batch_size,
+            required_evaluations=required_evaluations,
+        )
+
+    def _summarize_av1_eligibility(
+        self,
+        *,
+        dataset: str,
+        batch_size: int,
+        required_evaluations: Iterable[tuple[ModelSpec, StoredJudgeRole, str]],
+    ) -> EligibilitySummary:
+        """Count AV2 answer-level eligibility before selecting the execution batch."""
         required = tuple(required_evaluations)
         if not required:
             return EligibilitySummary(missing=0, failed=0, successful=0, batch_size=batch_size, will_process=0)
@@ -1780,29 +2036,147 @@ class JudgeRepository:
             will_process=min(batch_size, missing + failed),
         )
 
+    def _summarize_av3_eligibility(
+        self,
+        *,
+        dataset: str,
+        batch_size: int,
+        required_evaluations: Iterable[tuple[ModelSpec, StoredJudgeRole, str]],
+    ) -> EligibilitySummary:
+        """Count AV3 J1 Com_RAG answer-level eligibility before selecting the execution batch."""
+        dataset_code = dataset.upper()
+        if dataset_code not in {"J1", "OAB_BENCH"}:
+            raise ValueError("AV3 J1 Com_RAG judge selection requires dataset J1/OAB_Bench.")
+        required = tuple(required_evaluations)
+        if not required:
+            return EligibilitySummary(missing=0, failed=0, successful=0, batch_size=batch_size, will_process=0)
+
+        model_ids = [self.ensure_judge_model(model) for model, _, _ in required]
+        values_sql = ", ".join(["(%s, %s, %s)"] * len(required))
+        required_params: list[Any] = []
+        for model_id, (_, role, panel_mode) in zip(model_ids, required, strict=True):
+            required_params.extend([model_id, role, f"{panel_mode}:%"])
+
+        params: list[Any] = [*required_params, "J1", len(required)]
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                f"""
+                WITH required_evaluations(id_modelo_juiz, papel_juiz, motivo_pattern) AS (
+                    VALUES {values_sql}
+                ),
+                judge_ready_answers AS (
+                    SELECT DISTINCT
+                        a.id_candidate_answer
+                    FROM av3.candidate_answers a
+                    JOIN av3.candidate_runs r ON r.id_candidate_run = a.id_candidate_run
+                    JOIN perguntas p ON p.id_pergunta = a.id_pergunta
+                    JOIN datasets d ON d.id_dataset = p.id_dataset
+                    WHERE r.dataset_code = %s
+                      AND d.nome_dataset = 'OAB_Bench'
+                      AND a.status = 'success'
+                      AND a.answer_text IS NOT NULL
+                      AND EXISTS (
+                          SELECT 1
+                          FROM av3.candidate_answer_context_chunks context_chunk
+                          WHERE context_chunk.id_candidate_answer = a.id_candidate_answer
+                      )
+                ),
+                answer_required_status AS (
+                    SELECT
+                        answer.id_candidate_answer,
+                        required.id_modelo_juiz,
+                        required.papel_juiz,
+                        required.motivo_pattern,
+                        BOOL_OR(
+                            evaluation.id_avaliacao IS NOT NULL
+                            AND COALESCE(evaluation.status_avaliacao, 'success') = 'success'
+                        ) AS has_success,
+                        BOOL_OR(
+                            evaluation.id_avaliacao IS NOT NULL
+                            AND COALESCE(evaluation.status_avaliacao, 'success') <> 'success'
+                        ) AS has_failure
+                    FROM judge_ready_answers answer
+                    CROSS JOIN required_evaluations required
+                    LEFT JOIN avaliacoes_juiz evaluation
+                      ON evaluation.id_candidate_answer = answer.id_candidate_answer
+                     AND evaluation.id_modelo_juiz = required.id_modelo_juiz
+                     AND COALESCE(evaluation.papel_juiz, '') = required.papel_juiz
+                     AND COALESCE(evaluation.motivo_acionamento, '') LIKE required.motivo_pattern
+                    GROUP BY
+                        answer.id_candidate_answer,
+                        required.id_modelo_juiz,
+                        required.papel_juiz,
+                        required.motivo_pattern
+                ),
+                answer_status AS (
+                    SELECT
+                        id_candidate_answer,
+                        COUNT(*) FILTER (WHERE has_success) AS successful_required,
+                        COUNT(*) FILTER (WHERE NOT has_success AND has_failure) AS failed_required
+                    FROM answer_required_status
+                    GROUP BY id_candidate_answer
+                )
+                SELECT
+                    COUNT(*) FILTER (WHERE successful_required = %s) AS successful,
+                    COUNT(*) FILTER (WHERE successful_required < %s AND failed_required > 0) AS failed,
+                    COUNT(*) FILTER (WHERE successful_required < %s AND failed_required = 0) AS missing
+                FROM answer_status;
+                """,
+                [*params, len(required), len(required)],
+            )
+            row = cursor.fetchone()
+
+        successful = int(row[0] or 0)
+        failed = int(row[1] or 0)
+        missing = int(row[2] or 0)
+        return EligibilitySummary(
+            missing=missing,
+            failed=failed,
+            successful=successful,
+            batch_size=batch_size,
+            will_process=min(batch_size, missing + failed),
+        )
+
     def evaluation_exists(
         self,
-        answer_id: int,
+        *,
+        av1_answer_id: int | None,
+        candidate_answer_id: int | None,
         judge_model: ModelSpec,
         stored_role: StoredJudgeRole,
         panel_mode: str,
     ) -> bool:
-        return self.existing_score(answer_id, judge_model, stored_role, panel_mode) is not None
+        return (
+            self.existing_score(
+                av1_answer_id=av1_answer_id,
+                candidate_answer_id=candidate_answer_id,
+                judge_model=judge_model,
+                stored_role=stored_role,
+                panel_mode=panel_mode,
+            )
+            is not None
+        )
 
     def existing_score(
         self,
-        answer_id: int,
+        *,
+        av1_answer_id: int | None,
+        candidate_answer_id: int | None,
         judge_model: ModelSpec,
         stored_role: StoredJudgeRole,
         panel_mode: str,
     ) -> int | None:
         model_id = self.ensure_judge_model(judge_model)
+        where_sql, answer_param = _evaluation_identity_filter(
+            av1_answer_id=av1_answer_id,
+            candidate_answer_id=candidate_answer_id,
+        )
         with self.connection.cursor() as cursor:
             cursor.execute(
-                """
+                f"""
                 SELECT nota_atribuida
                 FROM avaliacoes_juiz
-                WHERE id_resposta_ativa1 = %s
+                WHERE {where_sql}
                   AND id_modelo_juiz = %s
                   AND COALESCE(papel_juiz, '') = %s
                   AND COALESCE(motivo_acionamento, '') LIKE %s
@@ -1810,7 +2184,7 @@ class JudgeRepository:
                 ORDER BY id_avaliacao DESC
                 LIMIT 1;
                 """,
-                (answer_id, model_id, stored_role, f"{panel_mode}:%"),
+                (answer_param, model_id, stored_role, f"{panel_mode}:%"),
             )
             row = cursor.fetchone()
         return int(row[0]) if row else None
@@ -1824,6 +2198,7 @@ class JudgeRepository:
                     INSERT INTO avaliacoes_juiz
                         (
                             id_resposta_ativa1,
+                            id_candidate_answer,
                             id_modelo_juiz,
                             id_prompt_juiz,
                             nota_atribuida,
@@ -1837,7 +2212,8 @@ class JudgeRepository:
                     RETURNING id_avaliacao;
                     """,
                     (
-                        record.answer_id,
+                        record.av1_answer_id,
+                        record.candidate_answer_id,
                         model_id,
                         record.prompt_id,
                         record.score,
@@ -2227,7 +2603,8 @@ class JudgeRepository:
         if not row:
             return None
         return CandidateAnswerContext(
-            answer_id=row[0],
+            av1_answer_id=row[0],
+            candidate_answer_id=None,
             question_id=row[1],
             dataset_name=row[2],
             question_text=row[3],
@@ -5610,23 +5987,37 @@ class InMemoryJudgeRepository:
 
     def evaluation_exists(
         self,
-        answer_id: int,
+        *,
+        av1_answer_id: int | None,
+        candidate_answer_id: int | None,
         judge_model: ModelSpec,
         stored_role: StoredJudgeRole,
         panel_mode: str,
     ) -> bool:
-        return self.existing_score(answer_id, judge_model, stored_role, panel_mode) is not None
+        return (
+            self.existing_score(
+                av1_answer_id=av1_answer_id,
+                candidate_answer_id=candidate_answer_id,
+                judge_model=judge_model,
+                stored_role=stored_role,
+                panel_mode=panel_mode,
+            )
+            is not None
+        )
 
     def existing_score(
         self,
-        answer_id: int,
+        *,
+        av1_answer_id: int | None,
+        candidate_answer_id: int | None,
         judge_model: ModelSpec,
         stored_role: StoredJudgeRole,
         panel_mode: str,
     ) -> int | None:
         for record in reversed(self.records):
             if (
-                record.answer_id == answer_id
+                record.av1_answer_id == av1_answer_id
+                and record.candidate_answer_id == candidate_answer_id
                 and record.judge_model.provider_model == judge_model.provider_model
                 and record.stored_role == stored_role
                 and record.panel_mode == panel_mode
@@ -5646,6 +6037,7 @@ class InMemoryJudgeRepository:
         dataset: str,
         batch_size: int,
         required_evaluations: Iterable[tuple[ModelSpec, StoredJudgeRole, str]],
+        judge_input_source: str = JUDGE_INPUT_SOURCE_AV2,
     ) -> list[CandidateAnswerContext]:
         return []
 
@@ -5655,6 +6047,7 @@ class InMemoryJudgeRepository:
         dataset: str,
         batch_size: int,
         required_evaluations: Iterable[tuple[ModelSpec, StoredJudgeRole, str]],
+        judge_input_source: str = JUDGE_INPUT_SOURCE_AV2,
     ) -> EligibilitySummary:
         return EligibilitySummary(missing=0, failed=0, successful=0, batch_size=batch_size, will_process=0)
 
@@ -5674,6 +6067,19 @@ def _dataset_label(dataset_name: str) -> str:
     if dataset_name == "OAB_Exames":
         return "J2"
     return dataset_name
+
+
+def _evaluation_identity_filter(
+    *,
+    av1_answer_id: int | None,
+    candidate_answer_id: int | None,
+) -> tuple[str, int]:
+    if (av1_answer_id is None) == (candidate_answer_id is None):
+        raise ValueError("Evaluation identity requires exactly one of av1_answer_id or candidate_answer_id")
+    if av1_answer_id is not None:
+        return ("id_resposta_ativa1 = %s", av1_answer_id)
+    assert candidate_answer_id is not None
+    return ("id_candidate_answer = %s", candidate_answer_id)
 
 
 def _resolve_prompt_dataset_name(value: str) -> str:

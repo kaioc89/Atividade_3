@@ -24,14 +24,18 @@ class EligibilityRepository(InMemoryJudgeRepository):
     def __init__(self) -> None:
         super().__init__()
         self.eligibility_calls = 0
+        self.select_calls: list[tuple[str, str, int]] = []
+        self.eligibility_sources: list[tuple[str, str, int]] = []
 
     def ensure_schema(self) -> None:
         return None
 
-    def select_pending_candidate_answers(self, *, dataset, batch_size, required_evaluations):
+    def select_pending_candidate_answers(self, *, dataset, batch_size, required_evaluations, judge_input_source="av2"):
+        self.select_calls.append((judge_input_source, dataset, batch_size))
         return [
             CandidateAnswerContext(
-                answer_id=1,
+                av1_answer_id=1,
+                candidate_answer_id=None,
                 question_id=1,
                 dataset_name="OAB_Exames",
                 question_text="Enunciado",
@@ -41,8 +45,9 @@ class EligibilityRepository(InMemoryJudgeRepository):
             )
         ]
 
-    def summarize_eligibility(self, *, dataset, batch_size, required_evaluations):
+    def summarize_eligibility(self, *, dataset, batch_size, required_evaluations, judge_input_source="av2"):
         self.eligibility_calls += 1
+        self.eligibility_sources.append((judge_input_source, dataset, batch_size))
         if self.eligibility_calls == 1:
             return EligibilitySummary(missing=1, failed=0, successful=8, batch_size=batch_size, will_process=1)
         return EligibilitySummary(missing=0, failed=0, successful=9, batch_size=batch_size, will_process=0)
@@ -312,3 +317,48 @@ def test_real_run_emits_initial_and_final_eligibility_counts(tmp_path) -> None:
         will_process=0,
     )
     assert result.eligibility == eligibility_events[-1]
+
+
+def test_resolve_rejects_av3_source_for_non_j1_dataset() -> None:
+    service = RunJudgeService(settings_loader=lambda: load_settings(dotenv_path=None, env=BASE_ENV))
+
+    try:
+        service.resolve(
+            RunJudgeRequest(
+                judge_input_source="av3_j1_com_rag",
+                dataset="J2",
+            )
+        )
+    except ValueError as error:
+        assert "requires dataset J1/OAB_Bench" in str(error)
+    else:
+        raise AssertionError("expected invalid AV3 source/dataset combination to fail")
+
+
+def test_real_run_passes_av3_input_source_to_repository(tmp_path) -> None:
+    repository = EligibilityRepository()
+    service = RunJudgeService(
+        settings_loader=lambda: load_settings(dotenv_path=None, env=BASE_ENV),
+        connect_func=lambda database_url: FakeConnection(),
+        repository_factory=lambda connection: repository,
+        client_factory=FakeClient,
+    )
+
+    result = service.run(
+        RunJudgeRequest(
+            judge_input_source="av3_j1_com_rag",
+            dataset="J1",
+            panel_mode="single",
+            batch_size=1,
+            audit_log=str(tmp_path / "av3-run.log"),
+            no_audit_animation=True,
+        )
+    )
+
+    assert result.summary is not None
+    assert repository.select_calls == [("av3_j1_com_rag", "J1", 1)]
+    assert repository.eligibility_sources == [
+        ("av3_j1_com_rag", "J1", 1),
+        ("av3_j1_com_rag", "J1", 1),
+        ("av3_j1_com_rag", "J1", 1),
+    ]
