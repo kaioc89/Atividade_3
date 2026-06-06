@@ -2036,6 +2036,7 @@ def test_persists_successful_candidate_answer(tmp_path) -> None:
             question_sequence=2,
             question_text="Qual alternativa correta?",
             alternatives={"A": "Opcao A", "B": "Opcao B"},
+            question_type="questao objetiva",
         )
     ]
     retriever = FakeRetriever()
@@ -2072,6 +2073,47 @@ def test_persists_successful_candidate_answer(tmp_path) -> None:
     assert answer.raw_response is not None
     assert answer.raw_response["text"] == "Justificativa breve.\nAlternativa final: B"
     assert "candidate_budget" in answer.raw_response
+    assert answer.raw_response["prompt_metadata"] == {
+        "question_type": "questao objetiva",
+        "candidate_prompt_type": "j2_multiple_choice",
+    }
+
+
+def test_records_prompt_type_metadata_for_piece_runs(tmp_path) -> None:
+    repository = FakeRepository()
+    repository.questions_by_dataset["J1"] = [
+        CandidateQuestionRecord(
+            question_id=101,
+            dataset="J1",
+            dataset_name="OAB_Bench",
+            question_sequence=1,
+            question_text="Elabore a peça cabível.",
+            alternatives=None,
+            question_type="PEÇA PRÁTICO-PROFISSIONAL",
+        )
+    ]
+    retriever = FakeRetriever()
+    retriever.results[("J1", 101)] = _success_result(dataset="J1", question_id=101)
+    service = _service(repository=repository, retriever=retriever)
+
+    service.run(
+        RunCandidatesRagRequest(
+            dataset="J1",
+            model_name="candidate-j1",
+            provider="remote_http",
+            batch_size=1,
+            audit_log=str(tmp_path / "piece-metadata.log"),
+            no_audit_animation=True,
+        )
+    )
+
+    assert repository.created_runs[0].metadata["question_type_counts"] == {"PEÇA PRÁTICO-PROFISSIONAL": 1}
+    assert repository.created_runs[0].metadata["candidate_prompt_type_counts"] == {"j1_peca_profissional": 1}
+    assert repository.persisted_answers[0].raw_response is not None
+    assert repository.persisted_answers[0].raw_response["prompt_metadata"] == {
+        "question_type": "PEÇA PRÁTICO-PROFISSIONAL",
+        "candidate_prompt_type": "j1_peca_profissional",
+    }
 
 
 def test_persists_context_snapshot(tmp_path) -> None:
