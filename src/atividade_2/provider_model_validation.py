@@ -24,6 +24,7 @@ SUPPORTED_PROVIDER_VALIDATION_PROVIDERS: tuple[str, ...] = (
     OPENROUTER_PROVIDER,
     FEATHERLESS_PROVIDER,
 )
+LOCAL_RUNTIME_PROVIDERS: tuple[str, ...] = ("llama_cpp",)
 PENDING_CONFIRMATION_STATUSES = {
     "needs_owner_confirmation",
     "needs_owner_confirmation_gemini_subtype",
@@ -154,6 +155,15 @@ class ProviderModelValidationService:
                 assignment,
                 status="skipped_missing_model_id",
                 message="Assignment does not define an AV3 provider model id.",
+            )
+        if provider in LOCAL_RUNTIME_PROVIDERS:
+            return _build_item(
+                assignment,
+                status="skipped_unsupported_provider",
+                message=(
+                    f"Provider {assignment.av3_provider} is a local runtime assignment; "
+                    "skip hosted-provider catalog validation and validate via local operator/runtime checks."
+                ),
             )
         if provider not in SUPPORTED_PROVIDER_VALIDATION_PROVIDERS:
             return _build_item(

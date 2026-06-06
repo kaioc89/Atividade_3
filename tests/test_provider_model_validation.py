@@ -29,6 +29,16 @@ class FakeAssignmentRepository:
         return self._assignments
 
 
+class CountingCatalogClient:
+    def __init__(self, entries: tuple[ProviderModelCatalogEntry, ...]) -> None:
+        self.entries = entries
+        self.calls = 0
+
+    def list_models(self) -> tuple[ProviderModelCatalogEntry, ...]:
+        self.calls += 1
+        return self.entries
+
+
 class FakeTransport:
     def __init__(self, payload, *, status_code: int = 200) -> None:
         self.payload = payload
@@ -151,9 +161,7 @@ def test_jose_grok_is_found_when_fake_openrouter_contains_team_approved_substitu
 def test_excluded_assignments_are_skipped_when_requested() -> None:
     report = _default_service().validate(include_excluded=True)
 
-    excluded = next(item for item in report.items if item.id_modelo_av2 == 11)
-
-    assert excluded.status == "skipped_excluded"
+    assert all(item.status != "skipped_excluded" for item in report.items if item.id_modelo_av2 in {8, 11, 12})
 
 
 def test_assignments_with_empty_provider_model_id_are_skipped() -> None:
@@ -185,6 +193,39 @@ def test_unsupported_providers_are_skipped_with_explicit_reason() -> None:
 
     assert jose_gpt5.status == "skipped_unsupported_provider"
     assert "not supported" in jose_gpt5.message
+
+
+def test_llama_cpp_assignments_are_skipped_with_local_runtime_reason() -> None:
+    report = _default_service().validate()
+
+    statuses = {item.id_modelo_av2: item for item in report.items if item.id_modelo_av2 in {8, 11, 12}}
+
+    assert set(statuses) == {8, 11, 12}
+    assert all(item.status == "skipped_unsupported_provider" for item in statuses.values())
+    assert all("local runtime assignment" in item.message for item in statuses.values())
+    assert all("skip hosted-provider catalog validation" in item.message for item in statuses.values())
+
+
+def test_validation_does_not_route_llama_cpp_assignments_to_hosted_provider_catalogs() -> None:
+    openrouter_client = CountingCatalogClient(_openrouter_entries())
+    featherless_client = CountingCatalogClient(_featherless_entries())
+    service = ProviderModelValidationService(
+        assignment_repository=FakeAssignmentRepository(_default_candidate_model_assignments()),
+        catalog_clients={
+            "openrouter": openrouter_client,
+            "featherless": featherless_client,
+        },
+    )
+
+    report = service.validate()
+
+    assert openrouter_client.calls == 1
+    assert featherless_client.calls == 1
+    assert all(
+        item.status == "skipped_unsupported_provider"
+        for item in report.items
+        if item.id_modelo_av2 in {8, 11, 12}
+    )
 
 
 def test_provider_client_error_produces_provider_error_without_crashing() -> None:

@@ -27,6 +27,8 @@ def test_settings_load_default_models_from_env() -> None:
     assert settings.featherless_api_key is None
     assert settings.openrouter_url == "https://openrouter.ai/api/v1"
     assert settings.openrouter_api_key is None
+    assert settings.llama_cpp_url is None
+    assert settings.llama_cpp_api_key is None
     assert settings.remote_judge_base_url == "https://example.invalid/v1"
     assert settings.remote_judge_api_key == "test-key"
     assert settings.remote_judge_endpoints == {}
@@ -135,6 +137,8 @@ def test_candidate_provider_env_values_can_be_loaded_from_env() -> None:
     env["FEATHERLESS_API"] = "featherless-secret"
     env["OPENROUTER_URL"] = "https://openrouter.example.invalid/api/v1"
     env["OPENROUTER_KEY"] = "openrouter-secret"
+    env["LLAMA_CPP_URL"] = "http://localhost:8080/v1"
+    env["LLAMA_CPP_API"] = "llama-local-secret"
     env["REMOTE_CANDIDATE_MAX_TOKENS"] = "1024"
     env["REMOTE_CANDIDATE_TEMPERATURE"] = "0.2"
     env["REMOTE_CANDIDATE_TOP_P"] = "0.9"
@@ -149,6 +153,8 @@ def test_candidate_provider_env_values_can_be_loaded_from_env() -> None:
     assert settings.featherless_api_key == "featherless-secret"
     assert settings.openrouter_url == "https://openrouter.example.invalid/api/v1"
     assert settings.openrouter_api_key == "openrouter-secret"
+    assert settings.llama_cpp_url == "http://localhost:8080/v1"
+    assert settings.llama_cpp_api_key == "llama-local-secret"
     assert settings.remote_candidate_max_tokens == 1024
     assert settings.remote_candidate_temperature == 0.2
     assert settings.remote_candidate_top_p == 0.9
@@ -158,6 +164,17 @@ def test_candidate_provider_env_values_can_be_loaded_from_env() -> None:
     assert settings.remote_candidate_temperature == 0.2
     assert settings.remote_candidate_top_p == 0.9
     assert settings.embedding_api_key == "embedding-secret"
+
+
+def test_llama_cpp_api_can_be_explicitly_empty() -> None:
+    env = dict(BASE_ENV)
+    env["LLAMA_CPP_URL"] = "http://localhost:8080/v1"
+    env["LLAMA_CPP_API"] = ""
+
+    settings = load_settings(dotenv_path=None, env=env)
+
+    assert settings.llama_cpp_url == "http://localhost:8080/v1"
+    assert settings.llama_cpp_api_key == ""
 
 
 def test_candidate_execution_strategy_parses_sequential() -> None:

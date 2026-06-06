@@ -538,6 +538,63 @@ make db-migrate-or-create
 make db-restore-validate
 ```
 
+## AV3 local llama.cpp candidates
+
+Use local `llama.cpp` candidates only as a separate manual operation. Do not mix them into the normal OpenRouter/Featherless remote batches.
+
+Assignments:
+
+- Wagner / Jurema
+- Wagner / Curió
+- Paulo / Jurema
+
+Required env:
+
+```env
+LLAMA_CPP_URL=http://localhost:8080/v1
+LLAMA_CPP_API=
+```
+
+Operational restrictions:
+
+- local `llama.cpp` models are sequential-only;
+- do not include them in normal OpenRouter/Featherless adaptive production batches;
+- the operator must start `llama.cpp` manually with the correct GGUF model before running the CLI;
+- provider catalog validation does not validate local `llama.cpp` models;
+- run them separately with direct `run-candidates-rag` commands.
+
+Example command for Jurema (`Wagner / Jurema` or `Paulo / Jurema`):
+
+```bash
+LLAMA_CPP_URL=http://localhost:8080/v1 \
+.venv/bin/python -m atividade_2.cli run-candidates-rag \
+  --dataset J1 \
+  --candidate-model jurema-7b-q4_k_m \
+  --provider remote_http \
+  --batch-size 1 \
+  --question-sequence-start 95 \
+  --question-sequence-end 95 \
+  --candidate-execution-strategy sequential \
+  --no-audit-animation
+```
+
+Example command for Curió (`Wagner / Curió`):
+
+```bash
+LLAMA_CPP_URL=http://localhost:8080/v1 \
+.venv/bin/python -m atividade_2.cli run-candidates-rag \
+  --dataset J1 \
+  --candidate-model curio-edu-7b-gguf \
+  --provider remote_http \
+  --batch-size 1 \
+  --question-sequence-start 95 \
+  --question-sequence-end 95 \
+  --candidate-execution-strategy sequential \
+  --no-audit-animation
+```
+
+If you want to run remote-only batches across the normal hosted assignments, keep using explicit remote models and avoid the local `llama.cpp` assignment ids/models.
+
 ### Troubleshooting
 
 - `REMOTE_JUDGE_BASE_URL is required`: copie as variáveis novas de `.env.example` para seu `.env`.

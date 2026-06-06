@@ -80,7 +80,7 @@ class RemoteHttpCandidateClientConfig:
     """Configuration for the remote candidate client."""
 
     base_url: str
-    api_key: str
+    api_key: str | None
     provider: str = "remote_http"
     timeout_seconds: int = 120
     temperature: float = 0.2
@@ -105,8 +105,6 @@ class RemoteHttpCandidateClient:
     ) -> CandidateRawResponse:
         if not self.config.base_url:
             raise RemoteCandidateError("Candidate base_url is required.")
-        if not self.config.api_key:
-            raise RemoteCandidateError("Candidate api_key is required.")
 
         transport = self.transport or UrllibHttpTransport()
         url = _resolve_url(
@@ -116,9 +114,10 @@ class RemoteHttpCandidateClient:
         payload = self._build_payload(prompt=prompt, model=model)
         headers = {
             "Content-Type": "application/json",
-            "Authorization": f"Bearer {self.config.api_key}",
             "User-Agent": "atividade-2-candidate/0.1",
         }
+        if self.config.api_key:
+            headers["Authorization"] = f"Bearer {self.config.api_key}"
 
         started = time.monotonic()
         status_code, raw_response = transport.post(

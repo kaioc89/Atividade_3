@@ -49,6 +49,8 @@ class FakeSettings:
     featherless_api_key: str | None = "featherless-test-key"
     openrouter_url: str | None = "https://openrouter.ai/api/v1"
     openrouter_api_key: str | None = "openrouter-test-key"
+    llama_cpp_url: str | None = "http://localhost:8080/v1"
+    llama_cpp_api_key: str | None = ""
     remote_candidate_temperature: float = 0.2
     remote_candidate_max_tokens: int | None = 1024
     remote_candidate_top_p: float = 0.9
@@ -905,6 +907,119 @@ def test_dry_run_does_not_require_openrouter_or_featherless_keys(tmp_path) -> No
     assert client.calls == []
 
 
+def test_llama_cpp_dry_run_resolves_without_api_key_or_client_call(tmp_path) -> None:
+    repository = FakeRepository()
+    retriever = FakeRetriever()
+    client = FakeClient()
+    repository.questions_by_dataset["J1"] = [
+        CandidateQuestionRecord(101, "J1", "OAB_Bench", 95, "Questao J1 101.", None)
+    ]
+    retriever.results[("J1", 101)] = _success_result(dataset="J1", question_id=101)
+
+    @dataclass
+    class EmptyLlamaCppApiSettings(FakeSettings):
+        llama_cpp_api_key: str | None = ""
+
+    service = RunCandidatesRagService(
+        settings_loader=EmptyLlamaCppApiSettings,
+        connect_func=lambda _: FakeConnection(),
+        repository_factory=lambda _: repository,
+        retriever_factory=lambda _repository, _settings, _dataset: retriever,
+        client_factory=lambda _request, _settings: client,
+        snapshot_service_factory=lambda _repository: FakeSnapshotService(),
+    )
+
+    result = service.run(
+        RunCandidatesRagRequest(
+            dataset="J1",
+            model_name="jurema-7b-q4_k_m",
+            provider="remote_http",
+            batch_size=1,
+            question_sequence_start=95,
+            question_sequence_end=95,
+            dry_run=True,
+            audit_log=str(tmp_path / "llama-cpp-dry-run.log"),
+            no_audit_animation=True,
+        )
+    )
+
+    assert result.dry_run is True
+    assert result.runtime_config_summary is not None
+    assert "av3 provider: llama_cpp" in result.runtime_config_summary
+    assert "base_url: http://localhost:8080/v1" in result.runtime_config_summary
+    assert "api_key: <not required in dry-run>" in result.runtime_config_summary
+    assert "llama-local-secret" not in result.runtime_config_summary
+    assert result.candidate_run_id is None
+    assert repository.created_runs == []
+    assert retriever.calls == [(101, "J1", None)]
+    assert client.calls == []
+
+
+def test_llama_cpp_sequential_execution_is_accepted(tmp_path) -> None:
+    repository = FakeRepository()
+    retriever = FakeRetriever()
+    client = FakeClient()
+    repository.questions_by_dataset["J1"] = [
+        CandidateQuestionRecord(101, "J1", "OAB_Bench", 95, "Questao J1 101.", None)
+    ]
+    retriever.results[("J1", 101)] = _success_result(dataset="J1", question_id=101)
+    service = _service(repository=repository, retriever=retriever, client=client)
+
+    result = service.run(
+        RunCandidatesRagRequest(
+            dataset="J1",
+            model_name="jurema-7b-q4_k_m",
+            provider="remote_http",
+            batch_size=1,
+            question_sequence_start=95,
+            question_sequence_end=95,
+            dry_run=True,
+            candidate_execution_strategy="sequential",
+            audit_log=str(tmp_path / "llama-cpp-sequential.log"),
+            no_audit_animation=True,
+        )
+    )
+
+    assert result.dry_run is True
+    assert result.runtime_config_summary is not None
+    assert "Candidate execution strategy: sequential" in result.runtime_config_summary
+
+
+@pytest.mark.parametrize("strategy", ["parallel", "adaptive"])
+def test_llama_cpp_non_sequential_execution_fails_early(strategy: str, tmp_path) -> None:
+    repository = FakeRepository()
+    retriever = FakeRetriever()
+    client = FakeClient()
+    repository.questions_by_dataset["J1"] = [
+        CandidateQuestionRecord(101, "J1", "OAB_Bench", 95, "Questao J1 101.", None)
+    ]
+    service = _service(repository=repository, retriever=retriever, client=client)
+
+    with pytest.raises(
+        ValueError,
+        match=rf"llama\.cpp candidate assignments must use sequential execution\. Requested strategy: {strategy}\.",
+    ):
+        service.run(
+            RunCandidatesRagRequest(
+                dataset="J1",
+                model_name="jurema-7b-q4_k_m",
+                provider="remote_http",
+                batch_size=1,
+                question_sequence_start=95,
+                question_sequence_end=95,
+                dry_run=True,
+                candidate_execution_strategy=strategy,
+                audit_log=str(tmp_path / f"llama-cpp-{strategy}.log"),
+                no_audit_animation=True,
+            )
+        )
+
+    assert repository.created_runs == []
+    assert repository.updated_runs == []
+    assert retriever.calls == []
+    assert client.calls == []
+
+
 def test_real_run_creates_a_candidate_run(tmp_path) -> None:
     repository = FakeRepository()
     retriever = FakeRetriever()
@@ -1003,6 +1118,47 @@ def test_real_featherless_candidate_execution_uses_featherless_env_config(tmp_pa
 
     assert configured_request.remote_candidate_base_url == "https://api.featherless.ai/v1"
     assert configured_request.remote_candidate_api_key == "featherless-test-key"
+    assert configured_request.remote_candidate_temperature == 0.2
+    assert configured_request.remote_candidate_top_p == 0.9
+    assert configured_request.remote_candidate_max_tokens == 1024
+
+
+def test_real_llama_cpp_candidate_execution_uses_llama_cpp_env_config(tmp_path) -> None:
+    repository = FakeRepository()
+    service = _service(repository=repository)
+    request = RunCandidatesRagRequest(
+        dataset="J1",
+        model_name="jurema-7b-q4_k_m",
+        provider="remote_http",
+        batch_size=1,
+        question_sequence_start=95,
+        question_sequence_end=95,
+        audit_log=str(tmp_path / "llama-cpp.log"),
+        no_audit_animation=True,
+    )
+    provider_config = _resolve_candidate_provider_config(
+        settings=FakeSettings(),
+        assignment=next(
+            assignment
+            for assignment in repository.assignments
+            if assignment.av3_provider_model_id == "jurema-7b-q4_k_m"
+        ),
+        require_api_key=True,
+    )
+    runtime_config = _resolve_candidate_runtime_config(
+        repository=repository,
+        settings=FakeSettings(),
+        request=request,
+        resolved=service.resolve(request),
+        questions=[CandidateQuestionRecord(101, "J1", "OAB_Bench", 95, "Q", None)],
+        require_api_key=True,
+    )
+    configured_request = _with_remote_candidate_config(request, runtime_config)
+
+    assert provider_config.base_url == "http://localhost:8080/v1"
+    assert provider_config.api_key == ""
+    assert configured_request.remote_candidate_base_url == "http://localhost:8080/v1"
+    assert configured_request.remote_candidate_api_key == ""
     assert configured_request.remote_candidate_temperature == 0.2
     assert configured_request.remote_candidate_top_p == 0.9
     assert configured_request.remote_candidate_max_tokens == 1024
@@ -1116,6 +1272,65 @@ def test_real_run_missing_featherless_key_fails_before_creating_candidate_run(tm
                 question_sequence_start=95,
                 question_sequence_end=95,
                 audit_log=str(tmp_path / "missing-featherless-key.log"),
+                no_audit_animation=True,
+            )
+        )
+
+    assert repository.created_runs == []
+    assert repository.updated_runs == []
+
+
+def test_missing_llama_cpp_url_produces_clear_error() -> None:
+    repository = FakeRepository()
+
+    @dataclass
+    class MissingLlamaCppUrlSettings(FakeSettings):
+        llama_cpp_url: str | None = None
+        llama_cpp_api_key: str | None = "llama-local-secret"
+
+    with pytest.raises(ValueError, match="LLAMA_CPP_URL is required for llama.cpp candidate execution") as exc_info:
+        _resolve_candidate_provider_config(
+            settings=MissingLlamaCppUrlSettings(),
+            assignment=next(
+                assignment
+                for assignment in repository.assignments
+                if assignment.av3_provider_model_id == "jurema-7b-q4_k_m"
+            ),
+            require_api_key=True,
+        )
+    assert "llama-local-secret" not in str(exc_info.value)
+
+
+def test_real_run_missing_llama_cpp_url_fails_before_creating_candidate_run(tmp_path) -> None:
+    repository = FakeRepository()
+    repository.questions_by_dataset["J1"] = [
+        CandidateQuestionRecord(101, "J1", "OAB_Bench", 95, "Q", None)
+    ]
+    retriever = FakeRetriever()
+
+    @dataclass
+    class MissingLlamaCppUrlSettings(FakeSettings):
+        llama_cpp_url: str | None = None
+
+    service = RunCandidatesRagService(
+        settings_loader=MissingLlamaCppUrlSettings,
+        connect_func=lambda _: FakeConnection(),
+        repository_factory=lambda _: repository,
+        retriever_factory=lambda _repository, _settings, _dataset: retriever,
+        client_factory=lambda _request, _settings: FakeClient(),
+        snapshot_service_factory=lambda _repository: FakeSnapshotService(),
+    )
+
+    with pytest.raises(ValueError, match="LLAMA_CPP_URL is required for llama.cpp candidate execution"):
+        service.run(
+            RunCandidatesRagRequest(
+                dataset="J1",
+                model_name="jurema-7b-q4_k_m",
+                provider="remote_http",
+                batch_size=1,
+                question_sequence_start=95,
+                question_sequence_end=95,
+                audit_log=str(tmp_path / "missing-llama-cpp-url.log"),
                 no_audit_animation=True,
             )
         )
