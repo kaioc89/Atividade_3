@@ -5115,7 +5115,9 @@ class JudgeRepository:
                 cursor.execute(
                     """
                     UPDATE av3.retrieval_runs
-                    SET metadata_jsonb = metadata_jsonb || %s::jsonb
+                    SET
+                        metadata_jsonb = metadata_jsonb || %s::jsonb,
+                        created_at = NOW()
                     WHERE id_retrieval_run = %s;
                     """,
                     (

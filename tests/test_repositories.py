@@ -303,6 +303,72 @@ def test_rag_source_chunk_replacement_removes_nul_characters() -> None:
     assert insert_params[0][4] == "Texto normativo."
 
 
+def test_embedding_generation_summary_refreshes_retrieval_run_created_at() -> None:
+    cursor = MultiRecordingCursor()
+    repository = JudgeRepository(TransactionConnection(cursor))
+    old_created_at = "2026-06-02T01:20:00"
+    refreshed_created_at = "2026-06-06T16:30:00"
+    summaries = [
+        RagVectorBaseSummary(
+            dataset="J1",
+            dataset_name="OAB_Bench",
+            import_run_id=7,
+            active_curation_run_id=7,
+            matches_active_curation=True,
+            retrieval_run_id=21,
+            retrieval_name="j1_source_urls_v2",
+            retrieval_strategy="source_url_only_v2",
+            embedding_model=None,
+            top_k=5,
+            vector_enabled=True,
+            lexical_enabled=False,
+            rerank_enabled=False,
+            document_count=70,
+            chunk_count=433,
+            embedding_count=0,
+            status="materializada_sem_embeddings",
+            created_at=old_created_at,
+        ),
+        RagVectorBaseSummary(
+            dataset="J1",
+            dataset_name="OAB_Bench",
+            import_run_id=7,
+            active_curation_run_id=7,
+            matches_active_curation=True,
+            retrieval_run_id=21,
+            retrieval_name="j1_source_urls_v2",
+            retrieval_strategy="source_url_only_v2",
+            embedding_model="text-embedding-3-small",
+            top_k=5,
+            vector_enabled=True,
+            lexical_enabled=False,
+            rerank_enabled=False,
+            document_count=70,
+            chunk_count=433,
+            embedding_count=433,
+            status="pronta_com_embeddings",
+            created_at=refreshed_created_at,
+        ),
+    ]
+    repository.get_rag_vector_base_summary = lambda dataset: summaries.pop(0)  # type: ignore[method-assign]
+
+    summary = repository.build_rag_embedding_generation_summary(
+        dataset="J1",
+        embedding_model="text-embedding-3-small",
+        embedding_dimensions=1536,
+        provider="OpenAI",
+        api_base_url="https://api.openai.com/v1",
+        generated_embeddings=433,
+        latency_ms=812,
+    )
+
+    assert "UPDATE av3.retrieval_runs" in cursor.queries[0]
+    assert "metadata_jsonb = metadata_jsonb || %s::jsonb" in cursor.queries[0]
+    assert "created_at = NOW()" in cursor.queries[0]
+    assert cursor.params[0][1] == 21
+    assert summary.created_at == refreshed_created_at
+
+
 def test_evaluation_details_schema_is_auxiliary_and_unique_by_evaluation() -> None:
     cursor = MultiRecordingCursor()
     repository = JudgeRepository(TransactionConnection(cursor))
