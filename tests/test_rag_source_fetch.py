@@ -97,6 +97,22 @@ def test_fetch_source_url_contents_decodes_utf16_html_with_bom(monkeypatch) -> N
     assert report.successes[0].content == "Lei Maria da Penha."
 
 
+def test_fetch_source_url_contents_tolerates_truncated_utf16_html(monkeypatch) -> None:
+    def fake_urlopen(request: urllib.request.Request, timeout: int) -> FakeHttpResponse:
+        html = "<html><body><p>Lei Maria da Penha.</p></body></html>"
+        return FakeHttpResponse(
+            body=html.encode("utf-16") + b" ",
+            content_type="text/html",
+        )
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+
+    report = fetch_source_url_contents(["https://fonte.example/lei"])
+
+    assert not report.failures
+    assert report.successes[0].content.startswith("Lei Maria da Penha.")
+
+
 def test_fetch_source_url_contents_extracts_pdf_text(monkeypatch) -> None:
     class FakePdfPage:
         def __init__(self, text: str | None) -> None:

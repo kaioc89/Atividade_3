@@ -148,9 +148,9 @@ def _content_from_raw(
 
 def _decode_response(raw: bytes, *, content_type: str | None) -> str:
     if raw.startswith((b"\xff\xfe", b"\xfe\xff")):
-        return raw.decode("utf-16")
+        return raw.decode("utf-16", errors="replace")
     if raw.startswith(b"\xef\xbb\xbf"):
-        return raw.decode("utf-8-sig")
+        return raw.decode("utf-8-sig", errors="replace")
     charset_match = re.search(r"charset=([^;\s]+)", content_type or "", flags=re.IGNORECASE)
     encodings = [charset_match.group(1)] if charset_match else []
     encodings.extend(["utf-8", "iso-8859-1"])
