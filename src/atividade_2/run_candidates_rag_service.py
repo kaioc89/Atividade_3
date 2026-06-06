@@ -27,7 +27,7 @@ from .candidate_context_budget import (
 from .candidate_clients.base import CandidateClient
 from .candidate_clients.remote_http import RemoteHttpCandidateClient, RemoteHttpCandidateClientConfig
 from .candidate_runtime_learning import parse_candidate_runtime_observation
-from .candidate_prompts import build_candidate_prompt
+from .candidate_prompts import build_candidate_prompt, build_candidate_prompt_metadata, resolve_candidate_prompt_strategy
 from .config import load_settings
 from .contracts import (
     CandidateAnswerContextChunkRecord,
@@ -862,7 +862,15 @@ class RunCandidatesRagService:
                         top_p=runtime_config.top_p,
                         started_at=started_at,
                         created_by=request.created_by,
-                        metadata=_run_metadata(resolved, vector_base, prompt, request, runtime_config, execution_config),
+                        metadata=_run_metadata(
+                            resolved,
+                            vector_base,
+                            prompt,
+                            request,
+                            questions,
+                            runtime_config,
+                            execution_config,
+                        ),
                     )
                 )
                 audit.event(
@@ -2067,9 +2075,20 @@ def _run_metadata(
     vector_base: Any,
     prompt: CandidatePromptRecord,
     request: RunCandidatesRagRequest,
+    questions: list[CandidateQuestionRecord] | None = None,
     runtime_config: ResolvedCandidateRuntimeConfig | None = None,
     execution_config: ResolvedCandidateExecutionConfig | None = None,
 ) -> dict[str, Any]:
+    prompt_type_counts: dict[str, int] = {}
+    question_type_counts: dict[str, int] = {}
+    for question in questions or []:
+        strategy = resolve_candidate_prompt_strategy(
+            dataset_name=question.dataset,
+            question_type=question.question_type,
+        )
+        prompt_type_counts[strategy.candidate_prompt_type] = prompt_type_counts.get(strategy.candidate_prompt_type, 0) + 1
+        question_type_key = question.question_type if question.question_type is not None else "<null>"
+        question_type_counts[question_type_key] = question_type_counts.get(question_type_key, 0) + 1
     return {
         "retrieval_name": getattr(vector_base, "retrieval_name", None),
         "embedding_model": getattr(vector_base, "embedding_model", None),
@@ -2080,6 +2099,8 @@ def _run_metadata(
             "question_sequence_start": resolved.question_sequence_start,
             "question_sequence_end": resolved.question_sequence_end,
         },
+        "question_type_counts": question_type_counts,
+        "candidate_prompt_type_counts": prompt_type_counts,
         "skip_existing_successful": resolved.skip_existing_successful,
         "save_raw_response": request.save_raw_response,
         "candidate_execution": None
@@ -2132,6 +2153,7 @@ def _render_prompt(
             question_text=question.question_text,
             retrieved_chunks=list(retrieval_result.chunks),
             alternatives=question.alternatives,
+            question_type=question.question_type,
             retrieval_run_id=retrieval_result.retrieval_run_id,
             retrieval_name=retrieval_result.retrieval_name,
             top_k=retrieval_result.top_k,
@@ -2324,6 +2346,12 @@ def _execute_candidate_question_task_inner(
                 rendered_prompt=rendered_prompt,
                 status="failed",
                 error_message=f"Retrieval failed: {retrieval_result.status}",
+                raw_response=_build_candidate_answer_raw_response(
+                    raw_response=None,
+                    retry_metadata=None,
+                    candidate_budget_metadata=None,
+                    prompt_metadata=_candidate_prompt_metadata_for_question(question),
+                ),
             )
         )
         audit.event(
@@ -3150,6 +3178,7 @@ def _execute_candidate_generation(
                 raw_response=raw_response.raw_response if request.save_raw_response else None,
                 retry_metadata=None,
                 candidate_budget_metadata=candidate_budget_metadata,
+                prompt_metadata=_candidate_prompt_metadata_for_question(question),
             ),
         )
         return CandidateGenerationOutcome(
@@ -3292,6 +3321,7 @@ def _execute_candidate_generation(
                             raw_response=retried_response.raw_response if request.save_raw_response else None,
                             retry_metadata=retry_metadata,
                             candidate_budget_metadata=candidate_budget_metadata,
+                            prompt_metadata=_candidate_prompt_metadata_for_question(question),
                         ),
                     )
                     return CandidateGenerationOutcome(
@@ -3333,6 +3363,7 @@ def _execute_candidate_generation(
                     raw_response=None,
                     retry_metadata=retry_metadata,
                     candidate_budget_metadata=candidate_budget_metadata,
+                    prompt_metadata=_candidate_prompt_metadata_for_question(question),
                 ),
             )
         )
@@ -3349,8 +3380,14 @@ def _build_candidate_answer_raw_response(
     raw_response: dict[str, Any] | None,
     retry_metadata: dict[str, Any] | None,
     candidate_budget_metadata: dict[str, Any] | None,
+    prompt_metadata: dict[str, Any] | None,
 ) -> dict[str, Any] | None:
-    if raw_response is None and retry_metadata is None and candidate_budget_metadata is None:
+    if (
+        raw_response is None
+        and retry_metadata is None
+        and candidate_budget_metadata is None
+        and prompt_metadata is None
+    ):
         return None
     payload: dict[str, Any] = {}
     if raw_response is not None:
@@ -3359,7 +3396,22 @@ def _build_candidate_answer_raw_response(
         payload["context_window_retry"] = retry_metadata
     if candidate_budget_metadata is not None:
         payload["candidate_budget"] = candidate_budget_metadata
+    if prompt_metadata is not None:
+        payload["prompt_metadata"] = prompt_metadata
     return payload
+
+
+def _candidate_prompt_metadata_for_question(question: CandidateQuestionRecord) -> dict[str, Any]:
+    return build_candidate_prompt_metadata(
+        CandidatePromptContext(
+            question_id=question.question_id,
+            dataset_name=question.dataset,
+            question_text=question.question_text,
+            retrieved_chunks=[],
+            alternatives=question.alternatives,
+            question_type=question.question_type,
+        )
+    )
 
 
 def _runtime_config_from_profile(

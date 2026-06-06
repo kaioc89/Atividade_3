@@ -192,6 +192,7 @@ def _default_candidate_prompt_config(dataset_code: str) -> dict[str, str]:
         "context": "Questão original:\n```text\n{pergunta_oab}\n```",
         "rag_instruction": (
             "{contexto_rag}\n\n"
+            "{candidate_prompt_type_instruction}\n\n"
             "Use os trechos recuperados apenas como apoio para fundamentar a resposta.\n"
             "- Responda como candidato da OAB, em português.\n"
             "- Se o contexto não for suficiente, reconheça a limitação sem inventar normas, fatos ou jurisprudência.\n"
@@ -4156,6 +4157,7 @@ class JudgeRepository:
                     q.dataset_code,
                     q.question_sequence,
                     q.questao,
+                    q.tipo_questao,
                     q.alternativas_jsonb
                 FROM av3.curadoria_questoes q
                 WHERE {' AND '.join(conditions)}
@@ -4173,7 +4175,8 @@ class JudgeRepository:
                 dataset_name=dataset_name,
                 question_sequence=int(row[2]),
                 question_text=row[3],
-                alternatives=_parse_jsonb(row[4]),
+                alternatives=_parse_jsonb(row[5]),
+                question_type=row[4],
             )
             for row in rows
         ]
@@ -4218,6 +4221,7 @@ class JudgeRepository:
                         q.dataset_code,
                         q.question_sequence,
                         q.questao,
+                        q.tipo_questao,
                         q.alternativas_jsonb
                     FROM av3.curadoria_questoes q
                     WHERE {' AND '.join(conditions)}
@@ -4234,7 +4238,8 @@ class JudgeRepository:
                     dataset_name=dataset_name,
                     question_sequence=int(row[2]),
                     question_text=row[3],
-                    alternatives=_parse_jsonb(row[4]),
+                    alternatives=_parse_jsonb(row[5]),
+                    question_type=row[4],
                 )
                 for row in rows
             ]
@@ -4254,6 +4259,7 @@ class JudgeRepository:
                     q.dataset_code,
                     q.question_sequence,
                     q.questao,
+                    q.tipo_questao,
                     q.alternativas_jsonb
                 FROM av3.curadoria_questoes q
                 WHERE {' AND '.join(conditions)}
@@ -4297,6 +4303,7 @@ class JudgeRepository:
                     dataset_code,
                     question_sequence,
                     questao,
+                    tipo_questao,
                     alternativas_jsonb,
                     has_failed
                 FROM candidate_state
@@ -4325,11 +4332,12 @@ class JudgeRepository:
                 dataset_name=dataset_name,
                 question_sequence=int(row[2]),
                 question_text=row[3],
-                alternatives=_parse_jsonb(row[4]),
+                alternatives=_parse_jsonb(row[5]),
+                question_type=row[4],
             )
             for row in rows
         ]
-        failed_retry_candidates = sum(1 for row in rows if bool(row[5]))
+        failed_retry_candidates = sum(1 for row in rows if bool(row[6]))
         return CandidateQuestionSelectionResult(
             questions=questions,
             summary=CandidateQuestionSelectionSummary(
