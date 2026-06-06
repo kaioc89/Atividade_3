@@ -7,7 +7,12 @@ from typing import Any
 import pytest
 
 from atividade_2.config import load_settings
-from atividade_2.judge_clients.remote_http import RemoteHttpJudgeClient, RemoteJudgeError, UrllibHttpTransport
+from atividade_2.judge_clients.remote_http import (
+    RemoteHttpJudgeClient,
+    RemoteJudgeError,
+    UrllibHttpTransport,
+    is_remote_model_capacity_error,
+)
 
 
 class FakeTransport:
@@ -219,6 +224,56 @@ def test_remote_client_handles_non_2xx() -> None:
         client.judge("prompt", "provider/model")
     assert error.value.status_code == 500
     assert error.value.retryable is True
+
+
+def test_remote_client_classifies_capacity_503_as_non_retryable() -> None:
+    settings = load_settings(
+        dotenv_path=None,
+        env={
+            "REMOTE_JUDGE_BASE_URL": "https://example.invalid/v1",
+            "REMOTE_JUDGE_API_KEY": "secret",
+        },
+    )
+    client = RemoteHttpJudgeClient(
+        settings,
+        transport=FakeTransport(
+            503,
+            {
+                "error": {
+                    "message": (
+                        "Unbabel/M-Prometheus-14B is temporarily at capacity. "
+                        "Please try again shortly."
+                    )
+                }
+            },
+        ),
+    )
+
+    with pytest.raises(RemoteJudgeError, match="HTTP 503") as error:
+        client.judge("prompt", "Unbabel/M-Prometheus-14B")
+    assert error.value.status_code == 503
+    assert error.value.retryable is False
+    assert is_remote_model_capacity_error(error.value) is True
+
+
+def test_capacity_error_detection_accepts_retry_later_wording_for_503() -> None:
+    error = RemoteJudgeError(
+        "Remote judge returned HTTP 503: Please try again shortly.",
+        status_code=503,
+        retryable=True,
+    )
+
+    assert is_remote_model_capacity_error(error) is True
+
+
+def test_capacity_error_detection_does_not_match_generic_503() -> None:
+    error = RemoteJudgeError(
+        "Remote judge returned HTTP 503: upstream unavailable",
+        status_code=503,
+        retryable=True,
+    )
+
+    assert is_remote_model_capacity_error(error) is False
 
 
 def test_remote_client_classifies_auth_and_missing_model_errors_as_non_retryable() -> None:

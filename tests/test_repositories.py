@@ -73,12 +73,13 @@ class TransactionConnection:
 
 
 class MultiRecordingCursor:
-    def __init__(self, *, fetchone_rows=None, fetchall_rows=None) -> None:
+    def __init__(self, *, fetchone_rows=None, fetchall_rows=None, validate_placeholders: bool = False) -> None:
         self.queries = []
         self.params = []
         self.fetchone_rows = list(fetchone_rows or [])
         self.fetchall_rows = list(fetchall_rows or [])
         self.rowcount = 1
+        self.validate_placeholders = validate_placeholders
 
     def __enter__(self):
         return self
@@ -87,6 +88,11 @@ class MultiRecordingCursor:
         return None
 
     def execute(self, query, params=None) -> None:
+        if self.validate_placeholders:
+            expected_placeholders = query.count("%s")
+            actual_params = len(params or [])
+            if expected_placeholders != actual_params:
+                raise TypeError("not all arguments converted during string formatting")
         self.queries.append(query)
         self.params.append(list(params or []))
 
@@ -500,7 +506,7 @@ def test_evaluation_details_schema_is_auxiliary_and_unique_by_evaluation() -> No
 
 
 def test_persist_evaluation_writes_details_after_official_evaluation_insert() -> None:
-    cursor = MultiRecordingCursor(fetchone_rows=[(123,)])
+    cursor = MultiRecordingCursor(fetchone_rows=[(123,)], validate_placeholders=True)
     repository = JudgeRepository(TransactionConnection(cursor))
     repository.ensure_judge_model = lambda model: 10  # type: ignore[method-assign]
 
@@ -544,7 +550,7 @@ def test_persist_evaluation_writes_details_after_official_evaluation_insert() ->
 
 
 def test_persist_evaluation_uses_candidate_answer_identity_for_av3_rows() -> None:
-    cursor = MultiRecordingCursor(fetchone_rows=[(456,)])
+    cursor = MultiRecordingCursor(fetchone_rows=[(456,)], validate_placeholders=True)
     repository = JudgeRepository(TransactionConnection(cursor))
     repository.ensure_judge_model = lambda model: 10  # type: ignore[method-assign]
 
@@ -565,6 +571,30 @@ def test_persist_evaluation_uses_candidate_answer_identity_for_av3_rows() -> Non
 
     assert "INSERT INTO avaliacoes_juiz" in cursor.queries[0]
     assert cursor.params[0][:2] == [None, 41]
+
+
+def test_persist_evaluation_uses_av1_identity_for_av2_rows() -> None:
+    cursor = MultiRecordingCursor(fetchone_rows=[(789,)], validate_placeholders=True)
+    repository = JudgeRepository(TransactionConnection(cursor))
+    repository.ensure_judge_model = lambda model: 10  # type: ignore[method-assign]
+
+    repository.persist_evaluation(
+        EvaluationRecord(
+            av1_answer_id=12,
+            candidate_answer_id=None,
+            judge_model=ModelSpec(requested="judge", provider_model="provider/judge"),
+            prompt_id=2,
+            stored_role="principal",
+            panel_mode="single",
+            trigger_reason="single_mode",
+            score=5,
+            rationale="ok",
+            latency_ms=10,
+        )
+    )
+
+    assert "INSERT INTO avaliacoes_juiz" in cursor.queries[0]
+    assert cursor.params[0][:2] == [12, None]
 
 
 def test_existing_score_uses_av1_identity_for_av2_rows() -> None:

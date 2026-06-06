@@ -22,7 +22,7 @@ from .contracts import (
     StoredJudgeRole,
 )
 from .judge_clients.base import JudgeClient
-from .judge_clients.remote_http import RemoteJudgeError
+from .judge_clients.remote_http import RemoteJudgeError, is_remote_model_capacity_error
 from .parser import parse_judge_output
 from .prompts import allowed_scores_for_context, build_judge_prompt
 from .repositories import JudgeRepositoryProtocol
@@ -372,9 +372,12 @@ class JudgePipeline:
                     allowed_scores=allowed_scores_for_context(answer),
                 )
         except Exception as error:
+            status = "failed"
+            if config.execution_strategy == "adaptive" and is_remote_model_capacity_error(error):
+                status = "skipped"
             self._report_evaluation_progress(
                 EvaluationProgress(
-                    status="failed",
+                    status=status,
                     dataset=answer.dataset_name,
                     question_id=answer.question_id,
                     answer_id=answer.answer_id,
@@ -978,6 +981,10 @@ class _AdaptiveScheduler:
         if isinstance(error, RemoteJudgeError) and error.status_code == 429:
             state.rate_limits += 1
 
+        if is_remote_model_capacity_error(error):
+            self._disable_group_due_to_capacity(error, queued, pending, state)
+            return
+
         if _should_wait_for_global_idle(error, state, active_other_tasks):
             state.wait_for_global_idle = True
             pending.append(
@@ -1061,6 +1068,41 @@ class _AdaptiveScheduler:
             AuditEvent(
                 "adaptive_group_disabled",
                 f"{state.key.label} discarded_pending={discarded} error={error}",
+            )
+        )
+
+    def _disable_group_due_to_capacity(
+        self,
+        error: Exception,
+        queued: _QueuedAdaptiveTask,
+        pending: list[_QueuedAdaptiveTask],
+        state: _AdaptiveGroupState,
+    ) -> None:
+        state.disabled = True
+        discarded = 0
+        index = 0
+        while index < len(pending):
+            if pending[index].group_key == queued.group_key:
+                pending.pop(index)
+                discarded += 1
+                continue
+            index += 1
+        self.pipeline.audit.event(
+            AuditEvent(
+                "judge_model_skipped_due_to_capacity",
+                (
+                    f"{state.key.label} answer_id={queued.task.answer.answer_id} "
+                    f"role={queued.task.stored_role} reason=model_temporarily_at_capacity"
+                ),
+            )
+        )
+        self.pipeline.audit.event(
+            AuditEvent(
+                "adaptive_group_disabled_due_to_capacity",
+                (
+                    f"{state.key.label} discarded_pending={discarded} "
+                    f"reason=model_temporarily_at_capacity error={error}"
+                ),
             )
         )
 
