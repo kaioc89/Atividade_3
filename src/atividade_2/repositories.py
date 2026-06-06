@@ -4713,7 +4713,7 @@ class JudgeRepository:
         *,
         dataset: str,
         source_contents: list[dict[str, Any]],
-        chunking_strategy: str = "source_url_content_v1",
+        chunking_strategy: str = "source_url_content_v2",
         max_chunk_chars: int = 3000,
         overlap_chars: int = 300,
         question_sequence_start: int | None = None,
@@ -5404,7 +5404,7 @@ class JudgeRepository:
         dataset: str,
         retrieval_name: str | None = None,
         top_k: int = 5,
-        chunking_strategy: str = "source_url_only_v1",
+        chunking_strategy: str = "source_url_only_v2",
     ) -> RagBaseMaterializationSummary:
         dataset_code = dataset.upper()
         dataset_name = self.get_dataset_name_for_code(dataset_code)
@@ -5415,7 +5415,7 @@ class JudgeRepository:
         if active_run_id is None:
             raise ValueError(f"No active RAG curation import found for {dataset_code}.")
 
-        retrieval_name = (retrieval_name or f"{dataset_code.lower()}_source_urls_v1").strip()
+        retrieval_name = (retrieval_name or f"{dataset_code.lower()}_source_urls_v2").strip()
         if not retrieval_name:
             raise ValueError("retrieval_name must not be empty.")
 
