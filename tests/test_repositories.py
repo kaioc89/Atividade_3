@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import datetime
 from pathlib import Path
 
@@ -166,13 +167,13 @@ def test_rag_vector_search_does_not_hide_duplicate_chunk_text() -> None:
     )
 
     query = cursor.queries[0]
-    assert "PARTITION BY md5(c.chunk_text)" not in query
+    assert "PARTITION BY c.content_hash" not in query
     assert "WHERE duplicate_rank = 1" not in query
     assert "ORDER BY e.embedding_vector <=> %s::vector ASC, c.id_chunk ASC" in query
 
 
-def test_rag_source_chunk_replacement_skips_duplicate_text_chunks() -> None:
-    cursor = MultiRecordingCursor(fetchall_rows=[[]])
+def test_rag_source_chunk_replacement_skips_duplicate_text_chunks_across_documents() -> None:
+    cursor = MultiRecordingCursor(fetchall_rows=[[]], fetchone_rows=[(501,)])
     repository = JudgeRepository(TransactionConnection(cursor))
     repository.get_rag_vector_base_summary = lambda dataset: RagVectorBaseSummary(  # type: ignore[method-assign]
         dataset=dataset,
@@ -218,8 +219,26 @@ def test_rag_source_chunk_replacement_skips_duplicate_text_chunks() -> None:
         for query in cursor.queries
         if "INSERT INTO av3.rag_chunks" in query
     ]
-    assert inserted == 2
-    assert len(insert_queries) == 2
+    assert inserted == 1
+    assert len(insert_queries) == 1
+    duplicate_updates = [
+        params
+        for query, params in zip(cursor.queries, cursor.params, strict=True)
+        if "metadata_jsonb->'duplicate_sources'" in query
+    ]
+    assert len(duplicate_updates) == 1
+    duplicate_metadata = json.loads(duplicate_updates[0][0])[0]
+    assert duplicate_updates[0][1] == 501
+    assert duplicate_metadata["reason"] == "duplicate_chunk_content"
+    assert duplicate_metadata["content_hash"]
+    assert duplicate_metadata["discarded_document_id"] == 11
+    assert duplicate_metadata["discarded_url"] == "https://fonte.example/b"
+    assert duplicate_metadata["discarded_part"] == 1
+    assert duplicate_metadata["discarded_total_parts"] == 1
+    assert duplicate_metadata["kept_chunk_id"] == 501
+    assert duplicate_metadata["kept_document_id"] == 10
+    assert duplicate_metadata["kept_url"] == "https://fonte.example/a"
+    assert duplicate_metadata["preview"] == "Texto normativo repetido."
 
 
 def test_get_question_for_rag_retrieval_loads_only_candidate_safe_fields() -> None:
@@ -237,6 +256,119 @@ def test_get_question_for_rag_retrieval_loads_only_candidate_safe_fields() -> No
     assert "p.resposta_ouro" not in query
     assert "gabarito_jsonb" not in query
     assert cursor.params[0] == [41, "OAB_Bench"]
+
+
+def test_rag_source_chunk_replacement_removes_nul_characters() -> None:
+    cursor = MultiRecordingCursor(fetchall_rows=[[]], fetchone_rows=[(501,)])
+    repository = JudgeRepository(TransactionConnection(cursor))
+    repository.get_rag_vector_base_summary = lambda dataset: RagVectorBaseSummary(  # type: ignore[method-assign]
+        dataset=dataset,
+        dataset_name="OAB_Bench",
+        import_run_id=7,
+        active_curation_run_id=7,
+        matches_active_curation=True,
+        retrieval_run_id=21,
+        retrieval_name="j1_source_urls_v1",
+        retrieval_strategy="source_url_only_v1",
+        embedding_model="Qwen/Qwen3-Embedding-8B",
+        top_k=5,
+        vector_enabled=True,
+        lexical_enabled=False,
+        rerank_enabled=False,
+        document_count=70,
+        chunk_count=433,
+        embedding_count=433,
+        status="pronta_com_embeddings",
+        created_at="2026-06-02T01:20:00",
+    )
+
+    inserted = repository.replace_rag_source_content_chunks_for_active_vector_base(
+        dataset="J1",
+        source_contents=[
+            {
+                "document_id": 10,
+                "url": "https://fonte.example/a",
+                "content_type": "text/html",
+                "content": "Texto\0 normativo.",
+            },
+        ],
+    )
+
+    insert_params = [
+        params
+        for query, params in zip(cursor.queries, cursor.params, strict=True)
+        if "INSERT INTO av3.rag_chunks" in query
+    ]
+    assert inserted == 1
+    assert insert_params[0][4] == "Texto normativo."
+
+
+def test_embedding_generation_summary_refreshes_retrieval_run_created_at() -> None:
+    cursor = MultiRecordingCursor()
+    repository = JudgeRepository(TransactionConnection(cursor))
+    old_created_at = "2026-06-02T01:20:00"
+    refreshed_created_at = "2026-06-06T16:30:00"
+    summaries = [
+        RagVectorBaseSummary(
+            dataset="J1",
+            dataset_name="OAB_Bench",
+            import_run_id=7,
+            active_curation_run_id=7,
+            matches_active_curation=True,
+            retrieval_run_id=21,
+            retrieval_name="j1_source_urls_v1",
+            retrieval_strategy="source_url_only_v1",
+            embedding_model=None,
+            top_k=5,
+            vector_enabled=True,
+            lexical_enabled=False,
+            rerank_enabled=False,
+            document_count=70,
+            chunk_count=433,
+            embedding_count=0,
+            status="materializada_sem_embeddings",
+            created_at=old_created_at,
+        ),
+        RagVectorBaseSummary(
+            dataset="J1",
+            dataset_name="OAB_Bench",
+            import_run_id=7,
+            active_curation_run_id=7,
+            matches_active_curation=True,
+            retrieval_run_id=22,
+            retrieval_name="j1_source_urls_v2",
+            retrieval_strategy="source_url_only_v2",
+            embedding_model="text-embedding-3-small",
+            top_k=5,
+            vector_enabled=True,
+            lexical_enabled=False,
+            rerank_enabled=False,
+            document_count=70,
+            chunk_count=433,
+            embedding_count=433,
+            status="pronta_com_embeddings",
+            created_at=refreshed_created_at,
+        ),
+    ]
+    repository.get_rag_vector_base_summary = lambda dataset: summaries.pop(0)  # type: ignore[method-assign]
+
+    summary = repository.build_rag_embedding_generation_summary(
+        dataset="J1",
+        embedding_model="text-embedding-3-small",
+        embedding_dimensions=1536,
+        provider="OpenAI",
+        api_base_url="https://api.openai.com/v1",
+        generated_embeddings=433,
+        latency_ms=812,
+    )
+
+    assert "UPDATE av3.retrieval_runs" in cursor.queries[0]
+    assert "metadata_jsonb = metadata_jsonb || %s::jsonb" in cursor.queries[0]
+    assert "created_at = NOW()" in cursor.queries[0]
+    assert cursor.params[0][1] == 21
+    assert summary.retrieval_run_id == 22
+    assert summary.retrieval_name == "j1_source_urls_v2"
+    assert summary.created_at == refreshed_created_at
 
 
 def test_evaluation_details_schema_is_auxiliary_and_unique_by_evaluation() -> None:

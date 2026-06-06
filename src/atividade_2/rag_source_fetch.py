@@ -6,9 +6,11 @@ import re
 import http.client
 import urllib.error
 import urllib.request
+from html import unescape
+from io import BytesIO
 from dataclasses import dataclass
 from html.parser import HTMLParser
-from urllib.parse import urlparse
+from urllib.parse import parse_qsl, unquote, urljoin, urlparse, urlsplit
 
 
 @dataclass(frozen=True)
@@ -17,6 +19,8 @@ class SourceUrlContent:
     content: str
     content_type: str | None
     title: str | None = None
+    suppressed_text_segments: int = 0
+    suppressed_text_chars: int = 0
 
 
 @dataclass(frozen=True)
@@ -70,6 +74,11 @@ class SourceFetchError(RuntimeError):
 
 
 def _fetch_one(*, url: str, timeout_seconds: int, max_bytes: int) -> SourceUrlContent:
+    raw, content_type = _fetch_raw(url=url, timeout_seconds=timeout_seconds, max_bytes=max_bytes)
+    return _content_from_raw(url=url, raw=raw, content_type=content_type, timeout_seconds=timeout_seconds, max_bytes=max_bytes)
+
+
+def _fetch_raw(*, url: str, timeout_seconds: int, max_bytes: int) -> tuple[bytes, str | None]:
     request = urllib.request.Request(
         url,
         headers={"User-Agent": "atividade-2-rag-source-fetch/0.1"},
@@ -94,26 +103,67 @@ def _fetch_one(*, url: str, timeout_seconds: int, max_bytes: int) -> SourceUrlCo
 
     if len(raw) > max_bytes:
         raise SourceFetchError(f"Conteudo excede o limite de {max_bytes} bytes.")
+    return raw, content_type
 
+
+def _content_from_raw(
+    *,
+    url: str,
+    raw: bytes,
+    content_type: str | None,
+    timeout_seconds: int,
+    max_bytes: int,
+) -> SourceUrlContent:
     normalized_type = (content_type or "").split(";", 1)[0].strip().lower()
-    if normalized_type not in {"", "text/html", "application/xhtml+xml", "text/plain"}:
+    if normalized_type not in {"", "text/html", "application/xhtml+xml", "text/plain", "application/pdf"}:
         raise SourceFetchError(f"Tipo de conteudo nao suportado: {normalized_type or 'desconhecido'}.")
+    suppressed_text_segments = 0
+    suppressed_text_chars = 0
 
-    text = _decode_response(raw, content_type=content_type)
-    if normalized_type == "text/plain":
+    if normalized_type == "application/pdf":
+        content = _normalize_whitespace(_extract_pdf_text(raw))
+        title = None
+    elif normalized_type == "text/plain":
+        text = _decode_response(raw, content_type=content_type)
         content = _normalize_whitespace(text)
         title = None
     else:
+        text = _decode_response(raw, content_type=content_type)
         parser = _ReadableHtmlParser()
         parser.feed(text)
         content = _normalize_whitespace(" ".join(parser.parts))
         title = _normalize_whitespace(parser.title or "") or None
+        suppressed_text_segments = parser.suppressed_text_segments
+        suppressed_text_chars = parser.suppressed_text_chars
+        if _looks_like_pdf_viewer_text(content):
+            pdf_url = _extract_pdf_url_from_html(text, base_url=url)
+            if pdf_url is None:
+                raise SourceFetchError("Conteudo de visualizador PDF detectado sem URL direta confiavel do documento.")
+            pdf_raw, pdf_content_type = _fetch_raw(url=pdf_url, timeout_seconds=timeout_seconds, max_bytes=max_bytes)
+            pdf_content_type = _normalized_resolved_pdf_content_type(pdf_url, pdf_content_type)
+            pdf_content = _normalize_whitespace(_extract_pdf_text(pdf_raw))
+            if not pdf_content:
+                raise SourceFetchError("Conteudo textual vazio.")
+            return SourceUrlContent(url=url, content=pdf_content, content_type=pdf_content_type, title=title)
+        if _looks_like_spaced_markup(content):
+            raise SourceFetchError("Conteudo HTML aparenta markup bruto ou decodificacao incorreta.")
     if not content:
         raise SourceFetchError("Conteudo textual vazio.")
-    return SourceUrlContent(url=url, content=content, content_type=content_type, title=title)
+    return SourceUrlContent(
+        url=url,
+        content=content,
+        content_type=content_type,
+        title=title,
+        suppressed_text_segments=suppressed_text_segments,
+        suppressed_text_chars=suppressed_text_chars,
+    )
 
 
 def _decode_response(raw: bytes, *, content_type: str | None) -> str:
+    if raw.startswith((b"\xff\xfe", b"\xfe\xff")):
+        return raw.decode("utf-16", errors="replace")
+    if raw.startswith(b"\xef\xbb\xbf"):
+        return raw.decode("utf-8-sig", errors="replace")
     charset_match = re.search(r"charset=([^;\s]+)", content_type or "", flags=re.IGNORECASE)
     encodings = [charset_match.group(1)] if charset_match else []
     encodings.extend(["utf-8", "iso-8859-1"])
@@ -125,8 +175,77 @@ def _decode_response(raw: bytes, *, content_type: str | None) -> str:
     return raw.decode("utf-8", errors="replace")
 
 
+def _extract_pdf_text(raw: bytes) -> str:
+    try:
+        from pypdf import PdfReader
+    except ImportError as error:
+        raise SourceFetchError("Leitor de PDF indisponivel: instale a dependencia pypdf.") from error
+
+    try:
+        reader = PdfReader(BytesIO(raw))
+        return "\n".join(page.extract_text() or "" for page in reader.pages)
+    except Exception as error:
+        raise SourceFetchError(f"Falha ao extrair texto PDF: {error}.") from error
+
+
+def _looks_like_pdf_viewer_text(content: str) -> bool:
+    normalized = content.lower()
+    signatures = [
+        "thumbnails document outline attachments",
+        "presentation mode open print download",
+        "enter the password to open this pdf file",
+        "pdf version: page count:",
+    ]
+    return sum(1 for signature in signatures if signature in normalized) >= 2
+
+
+def _extract_pdf_url_from_html(text: str, *, base_url: str) -> str | None:
+    decoded = unescape(text)
+    candidates: list[str] = []
+    candidates.extend(
+        match.group(1)
+        for match in re.finditer(
+            r"""(?:href|src|data-url|data-file|file)\s*=\s*["']([^"']+?\.pdf(?:\?[^"']*)?)["']""",
+            decoded,
+            flags=re.IGNORECASE,
+        )
+    )
+    candidates.extend(
+        match.group(0)
+        for match in re.finditer(r"""https?://[^\s"'<>]+?\.pdf(?:\?[^\s"'<>]*)?""", decoded, flags=re.IGNORECASE)
+    )
+    for _key, value in parse_qsl(urlsplit(base_url).query, keep_blank_values=False):
+        if ".pdf" in value.lower():
+            candidates.append(value)
+    for match in re.finditer(r"""[?&]file=([^"'&<>]+?\.pdf(?:[^"'&<>]*)?)""", decoded, flags=re.IGNORECASE):
+        candidates.append(unquote(match.group(1)))
+
+    for candidate in candidates:
+        pdf_url = urljoin(base_url, candidate.strip())
+        if urlsplit(pdf_url).scheme in {"http", "https"} and ".pdf" in urlsplit(pdf_url).path.lower():
+            return pdf_url
+    return None
+
+
+def _normalized_resolved_pdf_content_type(url: str, content_type: str | None) -> str | None:
+    normalized_type = (content_type or "").split(";", 1)[0].strip().lower()
+    if normalized_type in {"", "application/octet-stream"} and urlsplit(url).path.lower().endswith(".pdf"):
+        return "application/pdf"
+    if normalized_type != "application/pdf":
+        raise SourceFetchError(f"URL de visualizador apontou para conteudo nao PDF: {normalized_type or 'desconhecido'}.")
+    return content_type
+
+
+def _looks_like_spaced_markup(content: str) -> bool:
+    normalized = content.lower()
+    if "ÿþ" in normalized:
+        return True
+    spaced_tags = ("< h t m l", "< / p >", "c l a s s = \" m s o n o r m a l", "t e x t - a l i g n")
+    return sum(1 for signature in spaced_tags if signature in normalized) >= 2
+
+
 def _normalize_whitespace(value: str) -> str:
-    return re.sub(r"\s+", " ", value).strip()
+    return re.sub(r"\s+", " ", value.replace("\x00", " ")).strip()
 
 
 class _ReadableHtmlParser(HTMLParser):
@@ -136,24 +255,57 @@ class _ReadableHtmlParser(HTMLParser):
         self.title: str = ""
         self._skip_depth = 0
         self._in_title = False
+        self._obsolete_element_stack: list[str] = []
+        self.suppressed_text_segments = 0
+        self.suppressed_text_chars = 0
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
-        if tag in {"script", "style", "noscript"}:
+        normalized_tag = tag.lower()
+        if normalized_tag in {"script", "style", "noscript"}:
             self._skip_depth += 1
-        if tag == "title":
+        if _is_obsolete_text_element(normalized_tag, attrs):
+            self._obsolete_element_stack.append(normalized_tag)
+        if normalized_tag == "title":
             self._in_title = True
 
     def handle_endtag(self, tag: str) -> None:
-        if tag in {"script", "style", "noscript"} and self._skip_depth:
+        normalized_tag = tag.lower()
+        if normalized_tag in {"script", "style", "noscript"} and self._skip_depth:
             self._skip_depth -= 1
-        if tag == "title":
+        self._close_obsolete_element(normalized_tag)
+        if normalized_tag == "title":
             self._in_title = False
 
     def handle_data(self, data: str) -> None:
         text = data.strip()
         if not text or self._skip_depth:
             return
+        if self._obsolete_element_stack:
+            self.suppressed_text_segments += 1
+            self.suppressed_text_chars += len(text)
+            return
         if self._in_title:
             self.title = f"{self.title} {text}".strip()
         else:
             self.parts.append(text)
+
+    def _close_obsolete_element(self, tag: str) -> None:
+        for index in range(len(self._obsolete_element_stack) - 1, -1, -1):
+            if self._obsolete_element_stack[index] == tag:
+                del self._obsolete_element_stack[index:]
+                return
+
+
+def _is_obsolete_text_element(tag: str, attrs: list[tuple[str, str | None]]) -> bool:
+    return tag in {"strike", "s", "del"} or _has_line_through_style(attrs)
+
+
+def _has_line_through_style(attrs: list[tuple[str, str | None]]) -> bool:
+    for name, value in attrs:
+        if name.lower() == "style" and value is not None:
+            normalized_style = re.sub(r"\s+", "", value.lower())
+            if "line-through" in normalized_style and (
+                "text-decoration:" in normalized_style or "text-decoration-line:" in normalized_style
+            ):
+                return True
+    return False

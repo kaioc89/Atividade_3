@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 from io import BytesIO
 from typing import Any
 
@@ -65,14 +66,203 @@ def test_fetch_source_url_contents_extracts_readable_html(monkeypatch) -> None:
     assert "ignore" not in report.successes[0].content
 
 
-def test_fetch_source_url_contents_reports_unsupported_content_type(monkeypatch) -> None:
+def test_fetch_source_url_contents_removes_nul_characters(monkeypatch) -> None:
+    def fake_urlopen(request: urllib.request.Request, timeout: int) -> FakeHttpResponse:
+        return FakeHttpResponse(
+            body=b"<html><body><p>Texto\x00 da fonte.</p></body></html>",
+            content_type="text/html; charset=utf-8",
+        )
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+
+    report = fetch_source_url_contents(["https://fonte.example/lei"])
+
+    assert not report.failures
+    assert report.successes[0].content == "Texto da fonte."
+
+
+def test_fetch_source_url_contents_omits_strike_markup(monkeypatch) -> None:
+    def fake_urlopen(request: urllib.request.Request, timeout: int) -> FakeHttpResponse:
+        return FakeHttpResponse(
+            body=b"""
+            <html><body>
+              <p>Art. 6 vigente.</p>
+              <p><strike><a href="../Decreto/D10922.htm#art1">(Vide Decreto n. 10.922)</a></strike>
+              Vigencia encerrada</p>
+              <p>Texto final vigente.</p>
+            </body></html>
+            """,
+            content_type="text/html; charset=utf-8",
+        )
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+
+    report = fetch_source_url_contents(["https://fonte.example/lei"])
+
+    assert not report.failures
+    assert report.successes[0].content == "Art. 6 vigente. Vigencia encerrada Texto final vigente."
+    assert "Decreto n. 10.922" not in report.successes[0].content
+    assert report.successes[0].suppressed_text_segments == 1
+    assert report.successes[0].suppressed_text_chars > 0
+
+
+def test_fetch_source_url_contents_omits_line_through_style(monkeypatch) -> None:
+    def fake_urlopen(request: urllib.request.Request, timeout: int) -> FakeHttpResponse:
+        return FakeHttpResponse(
+            body=b"""
+            <html><body>
+              <p>Texto vigente antes.</p>
+              <p><span style="font-size:10pt; text-decoration: line-through">
+                Art. 191 obsoleto.
+              </span></p>
+              <p><span style="text-decoration-line: line-through">Paragrafo unico obsoleto.</span></p>
+              <p>Texto vigente depois.</p>
+            </body></html>
+            """,
+            content_type="text/html; charset=utf-8",
+        )
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+
+    report = fetch_source_url_contents(["https://fonte.example/lei"])
+
+    assert not report.failures
+    assert report.successes[0].content == "Texto vigente antes. Texto vigente depois."
+    assert "Art. 191 obsoleto" not in report.successes[0].content
+    assert "Paragrafo unico obsoleto" not in report.successes[0].content
+    assert report.successes[0].suppressed_text_segments == 2
+    assert report.successes[0].suppressed_text_chars > 0
+
+
+def test_fetch_source_url_contents_decodes_utf16_html_with_bom(monkeypatch) -> None:
+    def fake_urlopen(request: urllib.request.Request, timeout: int) -> FakeHttpResponse:
+        html = "<html><body><p>Lei Maria da Penha.</p></body></html>"
+        return FakeHttpResponse(
+            body=html.encode("utf-16"),
+            content_type="text/html",
+        )
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+
+    report = fetch_source_url_contents(["https://fonte.example/lei"])
+
+    assert not report.failures
+    assert report.successes[0].content == "Lei Maria da Penha."
+
+
+def test_fetch_source_url_contents_tolerates_truncated_utf16_html(monkeypatch) -> None:
+    def fake_urlopen(request: urllib.request.Request, timeout: int) -> FakeHttpResponse:
+        html = "<html><body><p>Lei Maria da Penha.</p></body></html>"
+        return FakeHttpResponse(
+            body=html.encode("utf-16") + b" ",
+            content_type="text/html",
+        )
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+
+    report = fetch_source_url_contents(["https://fonte.example/lei"])
+
+    assert not report.failures
+    assert report.successes[0].content.startswith("Lei Maria da Penha.")
+
+
+def test_fetch_source_url_contents_extracts_pdf_text(monkeypatch) -> None:
+    class FakePdfPage:
+        def __init__(self, text: str | None) -> None:
+            self._text = text
+
+        def extract_text(self) -> str | None:
+            return self._text
+
+    class FakePdfReader:
+        def __init__(self, stream: BytesIO) -> None:
+            assert stream.read() == b"%PDF"
+            self.pages = [FakePdfPage("Codigo de Etica"), FakePdfPage("Disciplina da OAB")]
+
+    class FakePypdfModule:
+        PdfReader = FakePdfReader
+
     def fake_urlopen(request: urllib.request.Request, timeout: int) -> FakeHttpResponse:
         return FakeHttpResponse(body=b"%PDF", content_type="application/pdf")
 
+    monkeypatch.setitem(sys.modules, "pypdf", FakePypdfModule())
     monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
 
     report = fetch_source_url_contents(["https://fonte.example/lei.pdf"])
 
+    assert not report.failures
+    assert report.successes[0].content == "Codigo de Etica Disciplina da OAB"
+
+
+def test_fetch_source_url_contents_rejects_pdf_viewer_without_direct_pdf(monkeypatch) -> None:
+    def fake_urlopen(request: urllib.request.Request, timeout: int) -> FakeHttpResponse:
+        return FakeHttpResponse(
+            body=b"""
+            <html><body>
+              Thumbnails Document Outline Attachments
+              Presentation Mode Open Print Download
+              Enter the password to open this PDF file
+            </body></html>
+            """,
+            content_type="text/html; charset=utf-8",
+        )
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+
+    report = fetch_source_url_contents(["https://www.oab.org.br/visualizador/19/codigo-de-etica-e-disciplina"])
+
     assert not report.successes
-    assert report.failures[0].url == "https://fonte.example/lei.pdf"
+    assert "visualizador PDF detectado" in report.failures[0].reason
+
+
+def test_fetch_source_url_contents_resolves_pdf_viewer_with_direct_pdf(monkeypatch) -> None:
+    class FakePdfPage:
+        def extract_text(self) -> str:
+            return "Codigo de Etica recuperado do PDF"
+
+    class FakePdfReader:
+        def __init__(self, stream: BytesIO) -> None:
+            assert stream.read() == b"%PDF"
+            self.pages = [FakePdfPage()]
+
+    class FakePypdfModule:
+        PdfReader = FakePdfReader
+
+    def fake_urlopen(request: urllib.request.Request, timeout: int) -> FakeHttpResponse:
+        if request.full_url == "https://www.oab.org.br/visualizador/19/codigo-de-etica-e-disciplina":
+            return FakeHttpResponse(
+                body=b"""
+                <html><body>
+                  Thumbnails Document Outline Attachments
+                  Presentation Mode Open Print Download
+                  Enter the password to open this PDF file
+                  <iframe src="/arquivos/codigo-de-etica.pdf"></iframe>
+                </body></html>
+                """,
+                content_type="text/html; charset=utf-8",
+            )
+        assert request.full_url == "https://www.oab.org.br/arquivos/codigo-de-etica.pdf"
+        return FakeHttpResponse(body=b"%PDF", content_type="application/pdf")
+
+    monkeypatch.setitem(sys.modules, "pypdf", FakePypdfModule())
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+
+    report = fetch_source_url_contents(["https://www.oab.org.br/visualizador/19/codigo-de-etica-e-disciplina"])
+
+    assert not report.failures
+    assert report.successes[0].url == "https://www.oab.org.br/visualizador/19/codigo-de-etica-e-disciplina"
+    assert report.successes[0].content_type == "application/pdf"
+    assert report.successes[0].content == "Codigo de Etica recuperado do PDF"
+
+
+def test_fetch_source_url_contents_reports_unsupported_content_type(monkeypatch) -> None:
+    def fake_urlopen(request: urllib.request.Request, timeout: int) -> FakeHttpResponse:
+        return FakeHttpResponse(body=b"ZIP", content_type="application/zip")
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+
+    report = fetch_source_url_contents(["https://fonte.example/arquivo.zip"])
+
+    assert not report.successes
+    assert report.failures[0].url == "https://fonte.example/arquivo.zip"
     assert "Tipo de conteudo nao suportado" in report.failures[0].reason

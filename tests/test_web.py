@@ -1210,7 +1210,19 @@ class FakeRagEmbeddingGenerationService:
                 "total_chunks": 192,
                 "latency_ms": 987,
                 "created_at": "2026-06-01T23:30:00",
-            }
+            },
+            "source_url_summary": {
+                "references": 3,
+                "attempted": 3,
+                "deduplicated": 0,
+                "succeeded": 1,
+                "failed": 2,
+                "inserted_chunks": 5,
+                "failures": [
+                    {"url": "https://fonte.example/fora-1", "reason": "HTTP 404."},
+                    {"url": "https://fonte.example/fora-2", "reason": "Conteudo indisponivel."},
+                ],
+            },
         }
 
 
@@ -1707,6 +1719,9 @@ def test_web_index_contains_rag_curation_tab() -> None:
     assert 'id="rag_embedding_test"' in response.text
     assert 'id="rag_embedding_test_endpoint"' in response.text
     assert 'id="rag_embedding_save"' in response.text
+    assert "function appendRagSourceFailureDetails" in response.text
+    assert "rag-progress-details" in response.text
+    assert "rag-progress-failures" in response.text
     assert "function loadRagCurationOptions" in response.text
     assert "function importRagCurationFile" in response.text
     assert "function activateRagCurationRun" in response.text
@@ -1816,6 +1831,10 @@ def test_rag_curation_endpoints_return_options_import_and_activate() -> None:
     )
     assert generated.status_code == 200
     assert generated.json()["summary"]["generated_embeddings"] == 192
+    assert generated.json()["source_url_summary"]["failures"] == [
+        {"url": "https://fonte.example/fora-1", "reason": "HTTP 404."},
+        {"url": "https://fonte.example/fora-2", "reason": "Conteudo indisponivel."},
+    ]
     assert generation_service.calls[-1] == ("J1", 16, None, None)
 
     preview = client.get("/api/rag-vector/preview", params={"dataset": "J1", "limit": 4})

@@ -9,6 +9,7 @@ requires-python = ">=3.11"
 dependencies = [
   "fastapi",
   "psycopg2-binary",
+  "pypdf",
   "pydantic",
   "uvicorn",
 ]
