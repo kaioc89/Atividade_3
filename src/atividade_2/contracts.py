@@ -188,7 +188,8 @@ class RuntimeJudgeConfig:
 class CandidateAnswerContext:
     """Question, reference, and AV1 answer loaded from PostgreSQL."""
 
-    answer_id: int
+    av1_answer_id: int | None
+    candidate_answer_id: int | None
     question_id: int
     dataset_name: str
     question_text: str
@@ -198,6 +199,20 @@ class CandidateAnswerContext:
     metadata: dict[str, Any] = field(default_factory=dict)
     raw_candidate_answer: str | None = None
     candidate_answer_normalization_flags: dict[str, bool] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        _validate_answer_identity(
+            av1_answer_id=self.av1_answer_id,
+            candidate_answer_id=self.candidate_answer_id,
+            context_name="CandidateAnswerContext",
+        )
+
+    @property
+    def answer_id(self) -> int:
+        if self.av1_answer_id is not None:
+            return self.av1_answer_id
+        assert self.candidate_answer_id is not None
+        return self.candidate_answer_id
 
 
 @dataclass(frozen=True)
@@ -882,7 +897,8 @@ class ParsedJudgeEvaluation:
 class EvaluationRecord:
     """Evaluation row prepared for persistence."""
 
-    answer_id: int
+    av1_answer_id: int | None
+    candidate_answer_id: int | None
     judge_model: ModelSpec
     prompt_id: int | None
     stored_role: StoredJudgeRole
@@ -893,6 +909,20 @@ class EvaluationRecord:
     latency_ms: int
     raw_response: JudgeRawResponse | None = None
     parsed_evaluation: ParsedJudgeEvaluation | None = None
+
+    def __post_init__(self) -> None:
+        _validate_answer_identity(
+            av1_answer_id=self.av1_answer_id,
+            candidate_answer_id=self.candidate_answer_id,
+            context_name="EvaluationRecord",
+        )
+
+    @property
+    def answer_id(self) -> int:
+        if self.av1_answer_id is not None:
+            return self.av1_answer_id
+        assert self.candidate_answer_id is not None
+        return self.candidate_answer_id
 
 
 @dataclass(frozen=True)
@@ -949,3 +979,15 @@ class EvaluationProgress:
     prompt: str | None = None
     raw_response: str | None = None
     rationale: str | None = None
+
+
+def _validate_answer_identity(
+    *,
+    av1_answer_id: int | None,
+    candidate_answer_id: int | None,
+    context_name: str,
+) -> None:
+    if (av1_answer_id is None) == (candidate_answer_id is None):
+        raise ValueError(
+            f"{context_name} requires exactly one of av1_answer_id or candidate_answer_id"
+        )

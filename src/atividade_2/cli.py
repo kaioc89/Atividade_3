@@ -55,6 +55,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Run judge API calls sequentially or in parallel within each answer.",
     )
     run_judge.add_argument(
+        "--judge-input-source",
+        choices=["av2", "av3_j1_com_rag"],
+        default="av2",
+        help="Answer source for judge selection. av2 uses respostas_atividade_1; av3_j1_com_rag uses AV3 J1 Com_RAG candidate answers.",
+    )
+    run_judge.add_argument(
         "--dataset",
         choices=["J1", "J2", "OAB_Bench", "OAB_Exames"],
         default="J2",
@@ -316,6 +322,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 def run_judge_command(args: argparse.Namespace) -> int:
     """Run or dry-run the judge pipeline."""
     request = RunJudgeRequest(
+        judge_input_source=args.judge_input_source,
         judge_provider=args.judge_provider,
         panel_mode=args.panel_mode,
         judge_model=args.judge_model,

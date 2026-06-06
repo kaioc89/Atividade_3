@@ -267,7 +267,8 @@ class RecordingAudit:
 
 def answer() -> CandidateAnswerContext:
     return CandidateAnswerContext(
-        answer_id=1,
+        av1_answer_id=1,
+        candidate_answer_id=None,
         question_id=1,
         dataset_name="OAB_Bench",
         question_text="Enunciado",
@@ -279,7 +280,8 @@ def answer() -> CandidateAnswerContext:
 
 def j2_answer() -> CandidateAnswerContext:
     return CandidateAnswerContext(
-        answer_id=1,
+        av1_answer_id=1,
+        candidate_answer_id=None,
         question_id=101,
         dataset_name="OAB_Exames",
         question_text="Qual alternativa correta?",
@@ -292,7 +294,8 @@ def j2_answer() -> CandidateAnswerContext:
 def answer_with_id(answer_id: int) -> CandidateAnswerContext:
     base_answer = answer()
     return CandidateAnswerContext(
-        answer_id=answer_id,
+        av1_answer_id=answer_id,
+        candidate_answer_id=None,
         question_id=base_answer.question_id,
         dataset_name=base_answer.dataset_name,
         question_text=base_answer.question_text,
@@ -310,7 +313,8 @@ def _record_for_existing_score(
     score: int = 5,
 ) -> EvaluationRecord:
     return EvaluationRecord(
-        answer_id=answer_id,
+        av1_answer_id=answer_id,
+        candidate_answer_id=None,
         judge_model=judge_model,
         prompt_id=None,
         stored_role=stored_role,

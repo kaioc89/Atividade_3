@@ -7,7 +7,8 @@ from atividade_2.prompts import build_judge_prompt
 def test_prompt_contains_required_legal_context() -> None:
     prompt = build_judge_prompt(
         CandidateAnswerContext(
-            answer_id=1,
+            av1_answer_id=1,
+            candidate_answer_id=None,
             question_id=10,
             dataset_name="OAB_Bench",
             question_text="Elabore a peça cabível.",
@@ -31,7 +32,8 @@ def test_prompt_contains_required_legal_context() -> None:
 def test_j2_prompt_uses_binary_multiple_choice_scale() -> None:
     prompt = build_judge_prompt(
         CandidateAnswerContext(
-            answer_id=1,
+            av1_answer_id=1,
+            candidate_answer_id=None,
             question_id=101,
             dataset_name="OAB_Exames",
             question_text="Qual alternativa correta?",
@@ -54,7 +56,8 @@ def test_j2_prompt_uses_binary_multiple_choice_scale() -> None:
 def test_j1_prompt_keeps_ordinal_open_ended_scale() -> None:
     prompt = build_judge_prompt(
         CandidateAnswerContext(
-            answer_id=1,
+            av1_answer_id=1,
+            candidate_answer_id=None,
             question_id=10,
             dataset_name="OAB_Bench",
             question_text="Elabore a peça cabível.",
@@ -78,7 +81,8 @@ def test_j1_prompt_keeps_ordinal_open_ended_scale() -> None:
 def test_j1_prompt_adds_piece_specific_criteria_when_present() -> None:
     prompt = build_judge_prompt(
         CandidateAnswerContext(
-            answer_id=1,
+            av1_answer_id=1,
+            candidate_answer_id=None,
             question_id=10,
             dataset_name="OAB_Bench",
             question_text="PEÇA PRÁTICO-PROFISSIONAL\n\nElabore a peça cabível.",

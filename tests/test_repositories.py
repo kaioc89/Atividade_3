@@ -4,7 +4,10 @@ import json
 from datetime import datetime
 from pathlib import Path
 
+import pytest
+
 from atividade_2.contracts import (
+    CandidateAnswerContext,
     CandidateAnswerContextChunkRecord,
     CandidateAnswerRecord,
     CandidateModelRuntimeProfileRecord,
@@ -12,6 +15,7 @@ from atividade_2.contracts import (
     CandidateQuestionSelectionResult,
     CandidateQuestionSelectionSummary,
     CandidateRunRecord,
+    EligibilitySummary,
     EvaluationRecord,
     ModelSpec,
     ParsedJudgeEvaluation,
@@ -125,6 +129,116 @@ def test_pending_answer_selection_takes_a_batch_per_required_judge() -> None:
     assert "required.papel_juiz" in query
     assert "WHERE required_rank <= %s" in query
     assert connection.cursor_instance.params[-1] == 2
+
+
+def test_av3_pending_answer_selection_uses_candidate_identity_and_raw_answer() -> None:
+    cursor = MultiRecordingCursor(
+        fetchall_rows=[
+            [
+                (
+                    301,
+                    77,
+                    "OAB_Bench",
+                    "Enunciado AV3",
+                    "Gabarito AV3",
+                    "Resposta crua do candidato",
+                    "openai/gpt-5",
+                    {
+                        "dataset_code": "J1",
+                        "question_sequence": 77,
+                        "tipo_questao": "QUESTÃO",
+                        "candidate_owner": "Diego",
+                        "candidate_provider": "openrouter",
+                    },
+                )
+            ]
+        ]
+    )
+    repository = JudgeRepository(TransactionConnection(cursor))
+    repository.ensure_judge_model = lambda model: 11  # type: ignore[method-assign]
+
+    answers = repository.select_pending_candidate_answers(
+        dataset="J1",
+        batch_size=1,
+        required_evaluations=((ModelSpec(requested="judge-1", provider_model="provider/judge-1"), "principal", "single"),),
+        judge_input_source="av3_j1_com_rag",
+    )
+
+    query = cursor.queries[0]
+    assert "FROM av3.candidate_answers a" in query
+    assert "JOIN av3.candidate_runs r ON r.id_candidate_run = a.id_candidate_run" in query
+    assert "JOIN av3.retrieval_runs rr ON rr.id_retrieval_run = r.id_retrieval_run" in query
+    assert "LEFT JOIN av3.curadoria_questoes cq" in query
+    assert "LEFT JOIN LATERAL (" in query
+    assert "assignment.owner" in query
+    assert "r.dataset_code = %s" in query
+    assert "d.nome_dataset = 'OAB_Bench'" in query
+    assert "a.status = 'success'" in query
+    assert "a.answer_text IS NOT NULL" in query
+    assert "FROM av3.candidate_answer_context_chunks context_chunk" in query
+    assert "evaluation.id_candidate_answer = a.id_candidate_answer" in query
+    assert cursor.params[0] == [11, "principal", "single:%", "J1", 1]
+    assert answers == [
+        CandidateAnswerContext(
+            av1_answer_id=None,
+            candidate_answer_id=301,
+            question_id=77,
+            dataset_name="OAB_Bench",
+            question_text="Enunciado AV3",
+            reference_answer="Gabarito AV3",
+            candidate_answer="Resposta crua do candidato",
+            candidate_model="openai/gpt-5",
+            metadata={
+                "dataset_code": "J1",
+                "question_sequence": 77,
+                "tipo_questao": "QUESTÃO",
+                "candidate_owner": "Diego",
+                "candidate_provider": "openrouter",
+            },
+        )
+    ]
+
+
+def test_av3_pending_answer_selection_rejects_non_j1_dataset() -> None:
+    repository = JudgeRepository(RecordingConnection())
+    repository.ensure_judge_model = lambda model: 11  # type: ignore[method-assign]
+
+    with pytest.raises(ValueError, match="requires dataset J1/OAB_Bench"):
+        repository.select_pending_candidate_answers(
+            dataset="J2",
+            batch_size=1,
+            required_evaluations=((ModelSpec(requested="judge-1", provider_model="provider/judge-1"), "principal", "single"),),
+            judge_input_source="av3_j1_com_rag",
+        )
+
+
+def test_av3_eligibility_summary_uses_candidate_answer_identity() -> None:
+    cursor = MultiRecordingCursor(fetchone_rows=[(4, 1, 2)])
+    repository = JudgeRepository(TransactionConnection(cursor))
+    repository.ensure_judge_model = lambda model: 17  # type: ignore[method-assign]
+
+    summary = repository.summarize_eligibility(
+        dataset="J1",
+        batch_size=3,
+        required_evaluations=((ModelSpec(requested="judge-1", provider_model="provider/judge-1"), "principal", "2plus1"),),
+        judge_input_source="av3_j1_com_rag",
+    )
+
+    query = cursor.queries[0]
+    assert "WITH required_evaluations" in query
+    assert "FROM av3.candidate_answers a" in query
+    assert "answer.id_candidate_answer" in query
+    assert "evaluation.id_candidate_answer = answer.id_candidate_answer" in query
+    assert "a.status = 'success'" in query
+    assert "FROM av3.candidate_answer_context_chunks context_chunk" in query
+    assert cursor.params[0] == [17, "principal", "2plus1:%", "J1", 1, 1, 1]
+    assert summary == EligibilitySummary(
+        missing=2,
+        failed=1,
+        successful=4,
+        batch_size=3,
+        will_process=3,
+    )
 
 
 def test_default_j1_prompt_matches_professor_style_persona_and_rubric() -> None:
@@ -392,7 +506,8 @@ def test_persist_evaluation_writes_details_after_official_evaluation_insert() ->
 
     repository.persist_evaluation(
         EvaluationRecord(
-            answer_id=1,
+            av1_answer_id=1,
+            candidate_answer_id=None,
             judge_model=ModelSpec(requested="judge", provider_model="provider/judge"),
             prompt_id=2,
             stored_role="principal",
@@ -417,13 +532,107 @@ def test_persist_evaluation_writes_details_after_official_evaluation_insert() ->
     official_sql = cursor.queries[0]
     details_sql = cursor.queries[1]
     assert "INSERT INTO avaliacoes_juiz" in official_sql
+    assert "id_candidate_answer" in official_sql
     assert "RETURNING id_avaliacao" in official_sql
+    assert cursor.params[0][:2] == [1, None]
     assert "INSERT INTO avaliacao_juiz_detalhes" in details_sql
     assert "ON CONFLICT (id_avaliacao) DO UPDATE" in details_sql
     assert cursor.params[1][0] == 123
     assert cursor.params[1][1:5] == ["alta", "baixo", "aderente", False]
     assert "citation_quality" in cursor.params[1][5]
     assert "<redacted>" in cursor.params[1][6]
+
+
+def test_persist_evaluation_uses_candidate_answer_identity_for_av3_rows() -> None:
+    cursor = MultiRecordingCursor(fetchone_rows=[(456,)])
+    repository = JudgeRepository(TransactionConnection(cursor))
+    repository.ensure_judge_model = lambda model: 10  # type: ignore[method-assign]
+
+    repository.persist_evaluation(
+        EvaluationRecord(
+            av1_answer_id=None,
+            candidate_answer_id=41,
+            judge_model=ModelSpec(requested="judge", provider_model="provider/judge"),
+            prompt_id=2,
+            stored_role="principal",
+            panel_mode="single",
+            trigger_reason="single_mode",
+            score=4,
+            rationale="ok",
+            latency_ms=10,
+        )
+    )
+
+    assert "INSERT INTO avaliacoes_juiz" in cursor.queries[0]
+    assert cursor.params[0][:2] == [None, 41]
+
+
+def test_existing_score_uses_av1_identity_for_av2_rows() -> None:
+    cursor = MultiRecordingCursor(fetchone_rows=[(5,)])
+    repository = JudgeRepository(TransactionConnection(cursor))
+    repository.ensure_judge_model = lambda model: 10  # type: ignore[method-assign]
+
+    score = repository.existing_score(
+        av1_answer_id=7,
+        candidate_answer_id=None,
+        judge_model=ModelSpec(requested="judge", provider_model="provider/judge"),
+        stored_role="principal",
+        panel_mode="single",
+    )
+
+    assert score == 5
+    assert "WHERE id_resposta_ativa1 = %s" in cursor.queries[0]
+    assert "id_candidate_answer = %s" not in cursor.queries[0]
+    assert cursor.params[0][0] == 7
+
+
+def test_existing_score_uses_candidate_identity_for_av3_rows() -> None:
+    cursor = MultiRecordingCursor(fetchone_rows=[(4,)])
+    repository = JudgeRepository(TransactionConnection(cursor))
+    repository.ensure_judge_model = lambda model: 10  # type: ignore[method-assign]
+
+    score = repository.existing_score(
+        av1_answer_id=None,
+        candidate_answer_id=41,
+        judge_model=ModelSpec(requested="judge", provider_model="provider/judge"),
+        stored_role="principal",
+        panel_mode="single",
+    )
+
+    assert score == 4
+    assert "WHERE id_candidate_answer = %s" in cursor.queries[0]
+    assert "id_resposta_ativa1 = %s" not in cursor.queries[0]
+    assert cursor.params[0][0] == 41
+
+
+def test_answer_identity_contract_rejects_both_or_neither_ids() -> None:
+    with pytest.raises(ValueError, match="exactly one"):
+        EvaluationRecord(
+            av1_answer_id=1,
+            candidate_answer_id=41,
+            judge_model=ModelSpec(requested="judge", provider_model="provider/judge"),
+            prompt_id=None,
+            stored_role="principal",
+            panel_mode="single",
+            trigger_reason="single_mode",
+            score=5,
+            rationale="invalid",
+            latency_ms=1,
+        )
+
+    with pytest.raises(ValueError, match="exactly one"):
+        EvaluationRecord(
+            av1_answer_id=None,
+            candidate_answer_id=None,
+            judge_model=ModelSpec(requested="judge", provider_model="provider/judge"),
+            prompt_id=None,
+            stored_role="principal",
+            panel_mode="single",
+            trigger_reason="single_mode",
+            score=5,
+            rationale="invalid",
+            latency_ms=1,
+        )
 
 
 def test_details_rollback_drops_only_auxiliary_table() -> None:
@@ -581,6 +790,20 @@ def test_candidate_rag_schema_is_idempotent_on_repeated_calls() -> None:
     assert all("DROP TABLE" not in query for query in cursor.queries)
 
 
+def test_av3_evaluation_identity_schema_is_additive_and_idempotent() -> None:
+    cursor = MultiRecordingCursor()
+    repository = JudgeRepository(TransactionConnection(cursor))
+
+    repository._ensure_av3_evaluation_identity_schema(cursor)
+
+    sql_statements = "\n".join(cursor.queries)
+    assert "ALTER TABLE avaliacoes_juiz ADD COLUMN IF NOT EXISTS id_candidate_answer INTEGER;" in sql_statements
+    assert "ALTER TABLE avaliacoes_juiz ALTER COLUMN id_resposta_ativa1 DROP NOT NULL;" in sql_statements
+    assert "avaliacoes_juiz_id_candidate_answer_fkey" in sql_statements
+    assert "avaliacoes_juiz_exactly_one_answer_identity_check" in sql_statements
+    assert "CREATE INDEX IF NOT EXISTS idx_avaliacoes_candidate_answer" in sql_statements
+
+
 def test_ensure_schema_invokes_candidate_rag_schema_after_vector_schema() -> None:
     cursor = MultiRecordingCursor()
     repository = JudgeRepository(TransactionConnection(cursor))
@@ -593,6 +816,7 @@ def test_ensure_schema_invokes_candidate_rag_schema_after_vector_schema() -> Non
     repository._ensure_rag_curation_schema = lambda inner_cursor: calls.append("rag-curation")  # type: ignore[method-assign]
     repository._ensure_rag_vector_schema = lambda inner_cursor: calls.append("rag-vector")  # type: ignore[method-assign]
     repository._ensure_candidate_rag_schema = lambda inner_cursor: calls.append("candidate-rag")  # type: ignore[method-assign]
+    repository._ensure_av3_evaluation_identity_schema = lambda inner_cursor: calls.append("av3-evaluation-identity")  # type: ignore[method-assign]
 
     repository.ensure_schema()
 
@@ -604,12 +828,18 @@ def test_ensure_schema_invokes_candidate_rag_schema_after_vector_schema() -> Non
         "rag-curation",
         "rag-vector",
         "candidate-rag",
+        "av3-evaluation-identity",
     ]
 
 
 def test_candidate_schema_is_present_in_project_ddl() -> None:
     ddl = Path("database/ddl_banco/ddl_atividade_2.sql").read_text(encoding="utf-8")
 
+    assert "id_candidate_answer INTEGER" in ddl
+    assert "CHECK (" in ddl
+    assert "id_candidate_answer IS NULL" in ddl
+    assert "id_candidate_answer IS NOT NULL" in ddl
+    assert "CREATE INDEX idx_avaliacoes_candidate_answer" in ddl
     assert "CREATE TABLE av3.prompt_candidatos (" in ddl
     assert "CREATE TABLE av3.candidate_model_assignments (" in ddl
     assert "CREATE TABLE av3.candidate_model_assignment_ranges (" in ddl
