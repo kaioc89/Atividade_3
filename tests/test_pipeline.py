@@ -712,6 +712,36 @@ def test_duplicate_evaluation_is_skipped() -> None:
     assert len(repo.records) == 1
 
 
+def test_pipeline_keeps_already_persisted_evaluations_when_later_answer_fails() -> None:
+    settings = load_settings(dotenv_path=None, env=BASE_ENV)
+    config = resolve_runtime_config(settings, panel_mode="single")
+    repo = InMemoryJudgeRepository()
+
+    class FailingSecondCallClient(FakeJudgeClient):
+        def judge(
+            self,
+            prompt: str,
+            model: str,
+            *,
+            requested_model: str | None = None,
+            endpoint_key: str | None = None,
+        ) -> JudgeRawResponse:
+            if len(self.calls) == 1:
+                self.calls.append(model)
+                self.endpoint_keys.append(endpoint_key)
+                raise RemoteJudgeError("second answer failed", status_code=503, retryable=True)
+            return super().judge(prompt, model, requested_model=requested_model, endpoint_key=endpoint_key)
+
+    client = FailingSecondCallClient({"openai/gpt-oss-120b": 5})
+
+    with pytest.raises(RemoteJudgeError, match="second answer failed"):
+        JudgePipeline(repo, client).run([answer_with_id(1), answer_with_id(2)], config)
+
+    assert len(repo.records) == 1
+    assert repo.records[0].av1_answer_id == 1
+    assert repo.records[0].score == 5
+
+
 def test_primary_only_supports_parallel_strategy() -> None:
     env = dict(BASE_ENV)
     env["JUDGE_EXECUTION_STRATEGY"] = "parallel"
