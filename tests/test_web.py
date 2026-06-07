@@ -2377,6 +2377,7 @@ def test_execution_form_uses_model_selects_and_mode_blocks() -> None:
     assert response.status_code == 200
     assert '<select id="judge_input_source">' in response.text
     assert '<option value="av3_j1_com_rag">AV3 J1 Com_RAG</option>' in response.text
+    assert '<option value="av3_j2_com_rag">AV3 J2 Com_RAG</option>' in response.text
     assert '<select id="judge_model"></select>' in response.text
     assert '<select id="secondary_judge_model"></select>' in response.text
     assert '<select id="arbiter_judge_model"></select>' in response.text
@@ -2384,6 +2385,7 @@ def test_execution_form_uses_model_selects_and_mode_blocks() -> None:
     assert 'id="arbiter_block" class="judge-block" data-judge-block="arbiter"' in response.text
     assert "function renderJudgeBlocks()" in response.text
     assert "function renderJudgeInputSource()" in response.text
+    assert 'source === "av3_j2_com_rag"' in response.text
 
 
 def test_dry_run_returns_secret_safe_preview() -> None:
@@ -2466,6 +2468,28 @@ def test_dry_run_accepts_av3_j1_com_rag_input_source() -> None:
     request = service.requests[-1]
     assert request.judge_input_source == "av3_j1_com_rag"
     assert request.dataset == "J1"
+
+
+def test_dry_run_accepts_av3_j2_com_rag_input_source() -> None:
+    service = FakeRunJudgeService()
+    client = TestClient(create_app(service))
+    token = client.get("/api/config").json()["csrf_token"]
+
+    response = client.post(
+        "/api/runs/dry-run",
+        headers={"x-csrf-token": token},
+        json={
+            "judge_input_source": "av3_j2_com_rag",
+            "panel_mode": "single",
+            "dataset": "J2",
+            "batch_size": 1,
+        },
+    )
+
+    assert response.status_code == 200
+    request = service.requests[-1]
+    assert request.judge_input_source == "av3_j2_com_rag"
+    assert request.dataset == "J2"
 
 
 def test_dry_run_accepts_endpoint_copy_sources_without_target_secrets() -> None:

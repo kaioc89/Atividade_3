@@ -88,6 +88,21 @@ def test_dry_run_does_not_connect_to_database(tmp_path) -> None:
     assert "--dry-run" in result.command_preview
 
 
+def test_describe_config_exposes_av3_j2_source_and_preset() -> None:
+    service = RunJudgeService(settings_loader=lambda: load_settings(dotenv_path=None, env=BASE_ENV))
+
+    description = service.describe_config()
+
+    assert "av3_j2_com_rag" in description["supported"]["judge_input_sources"]
+    assert {
+        "name": "AV3 J2 Com_RAG",
+        "panel_mode": "single",
+        "dataset": "J2",
+        "judge_input_source": "av3_j2_com_rag",
+        "batch_size": 1,
+    } in description["presets"]
+
+
 def test_preflight_report_does_not_connect_to_database(tmp_path) -> None:
     env = dict(BASE_ENV)
     env["JUDGE_EXECUTION_STRATEGY"] = "adaptive"
@@ -335,6 +350,22 @@ def test_resolve_rejects_av3_source_for_non_j1_dataset() -> None:
         raise AssertionError("expected invalid AV3 source/dataset combination to fail")
 
 
+def test_resolve_rejects_av3_j2_source_for_non_j2_dataset() -> None:
+    service = RunJudgeService(settings_loader=lambda: load_settings(dotenv_path=None, env=BASE_ENV))
+
+    try:
+        service.resolve(
+            RunJudgeRequest(
+                judge_input_source="av3_j2_com_rag",
+                dataset="J1",
+            )
+        )
+    except ValueError as error:
+        assert "requires dataset J2/OAB_Exames" in str(error)
+    else:
+        raise AssertionError("expected invalid AV3 J2 source/dataset combination to fail")
+
+
 def test_real_run_passes_av3_input_source_to_repository(tmp_path) -> None:
     repository = EligibilityRepository()
     service = RunJudgeService(
@@ -361,4 +392,33 @@ def test_real_run_passes_av3_input_source_to_repository(tmp_path) -> None:
         ("av3_j1_com_rag", "J1", 1),
         ("av3_j1_com_rag", "J1", 1),
         ("av3_j1_com_rag", "J1", 1),
+    ]
+
+
+def test_real_run_passes_av3_j2_input_source_to_repository(tmp_path) -> None:
+    repository = EligibilityRepository()
+    service = RunJudgeService(
+        settings_loader=lambda: load_settings(dotenv_path=None, env=BASE_ENV),
+        connect_func=lambda database_url: FakeConnection(),
+        repository_factory=lambda connection: repository,
+        client_factory=FakeClient,
+    )
+
+    result = service.run(
+        RunJudgeRequest(
+            judge_input_source="av3_j2_com_rag",
+            dataset="J2",
+            panel_mode="single",
+            batch_size=1,
+            audit_log=str(tmp_path / "av3-j2-run.log"),
+            no_audit_animation=True,
+        )
+    )
+
+    assert result.summary is not None
+    assert repository.select_calls == [("av3_j2_com_rag", "J2", 1)]
+    assert repository.eligibility_sources == [
+        ("av3_j2_com_rag", "J2", 1),
+        ("av3_j2_com_rag", "J2", 1),
+        ("av3_j2_com_rag", "J2", 1),
     ]

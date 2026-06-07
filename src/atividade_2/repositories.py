@@ -28,6 +28,9 @@ from .contracts import (
     MetaEvaluationRecord,
     MetaEvaluationSubject,
     ModelSpec,
+    JUDGE_INPUT_SOURCE_AV2,
+    JUDGE_INPUT_SOURCE_AV3_J1_COM_RAG,
+    JUDGE_INPUT_SOURCE_AV3_J2_COM_RAG,
     RagCurationDatasetSummary,
     RagCurationImportRunRecord,
     RagCurationItemDetail,
@@ -39,6 +42,7 @@ from .contracts import (
     RagVectorBaseSummary,
     RagVectorRunRecord,
     StoredJudgeRole,
+    get_judge_input_source_descriptor,
 )
 from .candidate_runtime_learning import normalize_provider_model_key
 from .evaluation_details import EvaluationDetails, jsonb_dumps
@@ -48,8 +52,6 @@ DATASET_ALIASES = {
     "J1": "OAB_Bench",
     "J2": "OAB_Exames",
 }
-JUDGE_INPUT_SOURCE_AV2 = "av2"
-JUDGE_INPUT_SOURCE_AV3_J1_COM_RAG = "av3_j1_com_rag"
 
 
 def _default_prompt_config(dataset_name: str) -> dict[str, str]:
@@ -166,6 +168,23 @@ def _default_prompt_config(dataset_name: str) -> dict[str, str]:
             "}"
         ),
     }
+
+
+def _resolve_av3_judge_input_source(judge_input_source: str, dataset: str):
+    """Validate the AV3 source and return its fixed dataset mapping."""
+
+    descriptor = get_judge_input_source_descriptor(judge_input_source)
+    if not descriptor.is_av3:
+        raise ValueError(f"Unsupported AV3 judge_input_source={judge_input_source!r}.")
+    dataset_code = dataset.upper()
+    assert descriptor.dataset_code is not None
+    assert descriptor.dataset_name is not None
+    if dataset_code not in {descriptor.dataset_code, descriptor.dataset_name.upper()}:
+        raise ValueError(
+            f"{descriptor.label} judge selection requires dataset "
+            f"{descriptor.dataset_code}/{descriptor.dataset_name}."
+        )
+    return descriptor
 
 
 def _default_candidate_prompt_config(dataset_code: str) -> dict[str, str]:
@@ -1368,6 +1387,8 @@ class JudgeRepository:
             CREATE TABLE IF NOT EXISTS av3.candidate_runs (
                 id_candidate_run SERIAL PRIMARY KEY,
                 dataset_code VARCHAR(10) NOT NULL,
+                id_assignment INTEGER
+                    REFERENCES av3.candidate_model_assignments(id_assignment),
                 id_retrieval_run INTEGER NOT NULL
                     REFERENCES av3.retrieval_runs(id_retrieval_run),
                 id_prompt_candidato INTEGER NOT NULL
@@ -1520,6 +1541,32 @@ class JudgeRepository:
         )
         cursor.execute(
             """
+            ALTER TABLE av3.candidate_runs
+            ADD COLUMN IF NOT EXISTS id_assignment INTEGER;
+            """
+        )
+        cursor.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_candidate_runs_assignment_created
+            ON av3.candidate_runs (id_assignment, dataset_code, created_at DESC);
+            """
+        )
+        cursor.execute(
+            """
+            ALTER TABLE av3.candidate_runs
+            DROP CONSTRAINT IF EXISTS candidate_runs_id_assignment_fkey;
+            """
+        )
+        cursor.execute(
+            """
+            ALTER TABLE av3.candidate_runs
+            ADD CONSTRAINT candidate_runs_id_assignment_fkey
+            FOREIGN KEY (id_assignment)
+            REFERENCES av3.candidate_model_assignments(id_assignment);
+            """
+        )
+        cursor.execute(
+            """
             CREATE INDEX IF NOT EXISTS idx_candidate_answer_context_chunks_answer_rank
             ON av3.candidate_answer_context_chunks (id_candidate_answer, rank);
             """
@@ -1661,11 +1708,12 @@ class JudgeRepository:
         judge_input_source: str = JUDGE_INPUT_SOURCE_AV2,
     ) -> list[CandidateAnswerContext]:
         """Select candidate answers with at least one missing required evaluation."""
-        if judge_input_source == JUDGE_INPUT_SOURCE_AV3_J1_COM_RAG:
+        if judge_input_source in {JUDGE_INPUT_SOURCE_AV3_J1_COM_RAG, JUDGE_INPUT_SOURCE_AV3_J2_COM_RAG}:
             return self._select_pending_av3_candidate_answers(
                 dataset=dataset,
                 batch_size=batch_size,
                 required_evaluations=required_evaluations,
+                judge_input_source=judge_input_source,
             )
         if judge_input_source != JUDGE_INPUT_SOURCE_AV2:
             raise ValueError(f"Unsupported judge_input_source={judge_input_source!r}.")
@@ -1787,11 +1835,10 @@ class JudgeRepository:
         dataset: str,
         batch_size: int,
         required_evaluations: Iterable[tuple[ModelSpec, StoredJudgeRole, str]],
+        judge_input_source: str,
     ) -> list[CandidateAnswerContext]:
-        """Select successful AV3 J1 Com_RAG answers still missing judge evaluations."""
-        dataset_code = dataset.upper()
-        if dataset_code not in {"J1", "OAB_BENCH"}:
-            raise ValueError("AV3 J1 Com_RAG judge selection requires dataset J1/OAB_Bench.")
+        """Select successful AV3 Com_RAG answers still missing judge evaluations."""
+        descriptor = _resolve_av3_judge_input_source(judge_input_source, dataset)
         required = tuple(required_evaluations)
         if not required:
             return []
@@ -1802,7 +1849,7 @@ class JudgeRepository:
         for model_id, (_, role, panel_mode) in zip(model_ids, required, strict=True):
             required_params.extend([model_id, role, f"{panel_mode}:%"])
 
-        params: list[Any] = [*required_params, "J1", batch_size]
+        params: list[Any] = [*required_params, descriptor.dataset_code, descriptor.dataset_name, batch_size]
         with self.connection.cursor() as cursor:
             cursor.execute(
                 f"""
@@ -1825,7 +1872,28 @@ class JudgeRepository:
                                 'question_sequence', cq.question_sequence,
                                 'tipo_questao', cq.tipo_questao,
                                 'candidate_provider', r.provider,
-                                'candidate_owner', assignment.owner
+                                'candidate_owner', COALESCE(assignment_direct.owner, assignment_legacy.owner),
+                                'candidate_assignment_id', COALESCE(
+                                    assignment_direct.id_assignment,
+                                    assignment_legacy.id_assignment
+                                ),
+                                'candidate_av2_model_id', COALESCE(
+                                    assignment_direct.id_modelo_av2,
+                                    assignment_legacy.id_modelo_av2
+                                ),
+                                'candidate_av2_model_name', COALESCE(
+                                    assignment_direct.av2_model_name,
+                                    assignment_legacy.av2_model_name
+                                ),
+                                'candidate_original_provider_model_id', COALESCE(
+                                    assignment_direct.original_provider_model_id,
+                                    assignment_legacy.original_provider_model_id
+                                ),
+                                'candidate_provider_model_id', COALESCE(
+                                    assignment_direct.av3_provider_model_id,
+                                    assignment_legacy.av3_provider_model_id,
+                                    a.model_name
+                                )
                             )
                         ) AS metadados,
                         ROW_NUMBER() OVER (
@@ -1844,12 +1912,21 @@ class JudgeRepository:
                       ON cq.id_import_run = rr.id_import_run
                      AND cq.dataset_code = r.dataset_code
                      AND cq.id_pergunta = a.id_pergunta
+                    LEFT JOIN av3.candidate_model_assignments assignment_direct
+                      ON assignment_direct.id_assignment = r.id_assignment
                     LEFT JOIN LATERAL (
-                        SELECT assignment.owner
+                        SELECT
+                            assignment.id_assignment,
+                            assignment.id_modelo_av2,
+                            assignment.owner,
+                            assignment.av2_model_name,
+                            assignment.original_provider_model_id,
+                            assignment.av3_provider_model_id
                         FROM av3.candidate_model_assignments assignment
                         JOIN av3.candidate_model_assignment_ranges assignment_range
                           ON assignment_range.id_assignment = assignment.id_assignment
                         WHERE assignment.active
+                          AND r.id_assignment IS NULL
                           AND assignment.av3_provider = r.provider
                           AND assignment.av3_provider_model_id = a.model_name
                           AND assignment_range.dataset_code = r.dataset_code
@@ -1858,10 +1935,10 @@ class JudgeRepository:
                               AND assignment_range.question_sequence_end
                         ORDER BY assignment.updated_at DESC, assignment.id_assignment DESC
                         LIMIT 1
-                    ) assignment ON TRUE
+                    ) assignment_legacy ON TRUE
                     CROSS JOIN required_evaluations required
                     WHERE r.dataset_code = %s
-                      AND d.nome_dataset = 'OAB_Bench'
+                      AND d.nome_dataset = %s
                       AND a.status = 'success'
                       AND a.answer_text IS NOT NULL
                       AND EXISTS (
@@ -1937,11 +2014,12 @@ class JudgeRepository:
         judge_input_source: str = JUDGE_INPUT_SOURCE_AV2,
     ) -> EligibilitySummary:
         """Count missing, failed, successful, and next-batch answer totals."""
-        if judge_input_source == JUDGE_INPUT_SOURCE_AV3_J1_COM_RAG:
+        if judge_input_source in {JUDGE_INPUT_SOURCE_AV3_J1_COM_RAG, JUDGE_INPUT_SOURCE_AV3_J2_COM_RAG}:
             return self._summarize_av3_eligibility(
                 dataset=dataset,
                 batch_size=batch_size,
                 required_evaluations=required_evaluations,
+                judge_input_source=judge_input_source,
             )
         if judge_input_source != JUDGE_INPUT_SOURCE_AV2:
             raise ValueError(f"Unsupported judge_input_source={judge_input_source!r}.")
@@ -2042,11 +2120,10 @@ class JudgeRepository:
         dataset: str,
         batch_size: int,
         required_evaluations: Iterable[tuple[ModelSpec, StoredJudgeRole, str]],
+        judge_input_source: str,
     ) -> EligibilitySummary:
-        """Count AV3 J1 Com_RAG answer-level eligibility before selecting the execution batch."""
-        dataset_code = dataset.upper()
-        if dataset_code not in {"J1", "OAB_BENCH"}:
-            raise ValueError("AV3 J1 Com_RAG judge selection requires dataset J1/OAB_Bench.")
+        """Count AV3 Com_RAG answer-level eligibility before selecting the execution batch."""
+        descriptor = _resolve_av3_judge_input_source(judge_input_source, dataset)
         required = tuple(required_evaluations)
         if not required:
             return EligibilitySummary(missing=0, failed=0, successful=0, batch_size=batch_size, will_process=0)
@@ -2057,7 +2134,7 @@ class JudgeRepository:
         for model_id, (_, role, panel_mode) in zip(model_ids, required, strict=True):
             required_params.extend([model_id, role, f"{panel_mode}:%"])
 
-        params: list[Any] = [*required_params, "J1", len(required)]
+        params: list[Any] = [*required_params, descriptor.dataset_code, descriptor.dataset_name, len(required)]
         with self.connection.cursor() as cursor:
             cursor.execute(
                 f"""
@@ -2072,7 +2149,7 @@ class JudgeRepository:
                     JOIN perguntas p ON p.id_pergunta = a.id_pergunta
                     JOIN datasets d ON d.id_dataset = p.id_dataset
                     WHERE r.dataset_code = %s
-                      AND d.nome_dataset = 'OAB_Bench'
+                      AND d.nome_dataset = %s
                       AND a.status = 'success'
                       AND a.answer_text IS NOT NULL
                       AND EXISTS (
@@ -3548,6 +3625,7 @@ class JudgeRepository:
                     INSERT INTO av3.candidate_runs
                         (
                             dataset_code,
+                            id_assignment,
                             id_retrieval_run,
                             id_prompt_candidato,
                             model_name,
@@ -3562,10 +3640,11 @@ class JudgeRepository:
                             created_by,
                             metadata_jsonb
                         )
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb)
                     RETURNING
                         id_candidate_run,
                         dataset_code,
+                        id_assignment,
                         id_retrieval_run,
                         id_prompt_candidato,
                         model_name,
@@ -3583,6 +3662,7 @@ class JudgeRepository:
                     """,
                     (
                         run.dataset.upper(),
+                        run.assignment_id,
                         run.retrieval_run_id,
                         run.prompt_id,
                         run.model_name,
@@ -4022,6 +4102,7 @@ class JudgeRepository:
                 SELECT
                     id_candidate_run,
                     dataset_code,
+                    id_assignment,
                     id_retrieval_run,
                     id_prompt_candidato,
                     model_name,
@@ -4563,11 +4644,14 @@ class JudgeRepository:
         *,
         dataset: str,
         model_name: str,
+        assignment_id: int | None,
         batch_size: int,
         question_sequence_start: int | None,
         question_sequence_end: int | None,
         question_id: int | None,
         skip_existing_successful: bool,
+        assignment_ranges: tuple[CandidateModelAssignmentRange, ...] | None = None,
+        allow_legacy_model_name_fallback: bool = True,
     ) -> CandidateQuestionSelectionResult:
         """Select model-aware pending/retry candidate questions before applying the batch limit."""
         dataset_code = dataset.upper()
@@ -4586,6 +4670,17 @@ class JudgeRepository:
         if question_sequence_end is not None:
             conditions.append("q.question_sequence <= %s")
             params.append(int(question_sequence_end))
+        assignment_range_filter, assignment_range_params = _candidate_assignment_range_filter_sql(
+            alias="q",
+            assignment_ranges=tuple(
+                assignment_range
+                for assignment_range in (assignment_ranges or ())
+                if assignment_range.dataset_code == dataset_code
+            ),
+        )
+        if assignment_range_filter is not None:
+            conditions.append(assignment_range_filter)
+            params.extend(assignment_range_params)
 
         limit = max(1, int(batch_size))
         dataset_name = DATASET_ALIASES.get(dataset_code, dataset_code)
@@ -4629,6 +4724,21 @@ class JudgeRepository:
                 ),
             )
 
+        success_identity_clause = "r.id_assignment = %s"
+        success_identity_params: list[Any] = [assignment_id]
+        failed_identity_clause = "r.id_assignment = %s"
+        failed_identity_params: list[Any] = [assignment_id]
+        if assignment_id is None:
+            success_identity_clause = "a.model_name = %s"
+            success_identity_params = [model_name]
+            failed_identity_clause = "a.model_name = %s"
+            failed_identity_params = [model_name]
+        elif allow_legacy_model_name_fallback:
+            success_identity_clause = "(r.id_assignment = %s OR (r.id_assignment IS NULL AND a.model_name = %s))"
+            success_identity_params = [assignment_id, model_name]
+            failed_identity_clause = "(r.id_assignment = %s OR (r.id_assignment IS NULL AND a.model_name = %s))"
+            failed_identity_params = [assignment_id, model_name]
+
         scoped_questions_cte = f"""
             WITH scoped_questions AS (
                 SELECT
@@ -4649,7 +4759,7 @@ class JudgeRepository:
                         FROM av3.candidate_answers a
                         JOIN av3.candidate_runs r ON r.id_candidate_run = a.id_candidate_run
                         WHERE r.dataset_code = %s
-                          AND a.model_name = %s
+                          AND {success_identity_clause}
                           AND a.id_pergunta = scoped.id_pergunta
                           AND a.status = 'success'
                           AND EXISTS (
@@ -4663,14 +4773,20 @@ class JudgeRepository:
                         FROM av3.candidate_answers a
                         JOIN av3.candidate_runs r ON r.id_candidate_run = a.id_candidate_run
                         WHERE r.dataset_code = %s
-                          AND a.model_name = %s
+                          AND {failed_identity_clause}
                           AND a.id_pergunta = scoped.id_pergunta
                           AND a.status = 'failed'
                     ) AS has_failed
                 FROM scoped_questions scoped
             )
         """
-        state_params = [*params, dataset_code, model_name, dataset_code, model_name]
+        state_params = [
+            *params,
+            dataset_code,
+            *success_identity_params,
+            dataset_code,
+            *failed_identity_params,
+        ]
         with self.connection.cursor() as cursor:
             cursor.execute(
                 f"""
@@ -4732,11 +4848,22 @@ class JudgeRepository:
         *,
         dataset: str,
         model_name: str,
+        assignment_id: int | None,
         question_id: int,
         exclude_candidate_run_id: int | None = None,
+        allow_legacy_model_name_fallback: bool = True,
     ) -> bool:
         """Return whether a successful answer already exists for this dataset/model/question."""
-        params: list[Any] = [dataset.upper(), model_name, question_id]
+        dataset_code = dataset.upper()
+        identity_clause = "a.model_name = %s"
+        identity_params: list[Any] = [model_name]
+        if assignment_id is not None:
+            identity_clause = "r.id_assignment = %s"
+            identity_params = [assignment_id]
+            if allow_legacy_model_name_fallback:
+                identity_clause = "(r.id_assignment = %s OR (r.id_assignment IS NULL AND a.model_name = %s))"
+                identity_params = [assignment_id, model_name]
+        params: list[Any] = [dataset_code, *identity_params, question_id]
         exclusion_clause = ""
         if exclude_candidate_run_id is not None:
             exclusion_clause = "AND r.id_candidate_run <> %s"
@@ -4748,7 +4875,7 @@ class JudgeRepository:
                 FROM av3.candidate_answers a
                 JOIN av3.candidate_runs r ON r.id_candidate_run = a.id_candidate_run
                 WHERE r.dataset_code = %s
-                  AND a.model_name = %s
+                  AND {identity_clause}
                   AND a.id_pergunta = %s
                   AND a.status = 'success'
                   AND EXISTS (
@@ -6365,6 +6492,26 @@ def _rag_chunk_question_scope_sql(
     )
 
 
+def _candidate_assignment_range_filter_sql(
+    *,
+    alias: str,
+    assignment_ranges: tuple[CandidateModelAssignmentRange, ...] | None,
+) -> tuple[str | None, list[Any]]:
+    if not assignment_ranges:
+        return None, []
+    clauses: list[str] = []
+    params: list[Any] = []
+    for assignment_range in assignment_ranges:
+        clauses.append(f"({alias}.question_sequence >= %s AND {alias}.question_sequence <= %s)")
+        params.extend(
+            [
+                int(assignment_range.question_sequence_start),
+                int(assignment_range.question_sequence_end),
+            ]
+        )
+    return f"({' OR '.join(clauses)})", params
+
+
 def _rough_token_count(value: str) -> int:
     return len([part for part in value.split() if part.strip()])
 
@@ -6521,20 +6668,21 @@ def _row_to_candidate_run(row: Any) -> CandidateRunRecord:
     return CandidateRunRecord(
         candidate_run_id=int(row[0]),
         dataset=row[1],
-        retrieval_run_id=int(row[2]),
-        prompt_id=int(row[3]),
-        model_name=row[4],
-        provider=row[5],
-        temperature=float(row[6]) if row[6] is not None else None,
-        max_tokens=int(row[7]) if row[7] is not None else None,
-        top_p=float(row[8]) if row[8] is not None else None,
-        batch_size=int(row[9]),
-        run_status=row[10],
-        started_at=row[11].isoformat() if row[11] is not None else None,
-        finished_at=row[12].isoformat() if row[12] is not None else None,
-        created_by=row[13],
-        metadata=_normalize_metadata(row[14]),
-        created_at=row[15].isoformat() if row[15] is not None else None,
+        assignment_id=int(row[2]) if row[2] is not None else None,
+        retrieval_run_id=int(row[3]),
+        prompt_id=int(row[4]),
+        model_name=row[5],
+        provider=row[6],
+        temperature=float(row[7]) if row[7] is not None else None,
+        max_tokens=int(row[8]) if row[8] is not None else None,
+        top_p=float(row[9]) if row[9] is not None else None,
+        batch_size=int(row[10]),
+        run_status=row[11],
+        started_at=row[12].isoformat() if row[12] is not None else None,
+        finished_at=row[13].isoformat() if row[13] is not None else None,
+        created_by=row[14],
+        metadata=_normalize_metadata(row[15]),
+        created_at=row[16].isoformat() if row[16] is not None else None,
     )
 
 

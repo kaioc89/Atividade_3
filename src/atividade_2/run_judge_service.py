@@ -21,12 +21,17 @@ from .contracts import (
     BatchProgress,
     EvaluationProgress,
     EligibilitySummary,
+    JUDGE_INPUT_SOURCE_AV2,
+    JUDGE_INPUT_SOURCE_AV3_J1_COM_RAG,
+    JUDGE_INPUT_SOURCE_AV3_J2_COM_RAG,
     JudgeSettings,
     ModelSpec,
     PipelineSummary,
     RemoteJudgeEndpoint,
     RuntimeJudgeConfig,
+    SUPPORTED_JUDGE_INPUT_SOURCES,
     StoredJudgeRole,
+    get_judge_input_source_descriptor,
 )
 from .db import connect
 from .judge_clients.remote_http import RemoteHttpJudgeClient
@@ -39,7 +44,7 @@ from .repositories import JudgeRepository
 class RunJudgeRequest:
     """User-provided run options before env/default resolution."""
 
-    judge_input_source: str = "av2"
+    judge_input_source: str = JUDGE_INPUT_SOURCE_AV2
     judge_provider: str | None = None
     panel_mode: str | None = None
     judge_model: str | None = None
@@ -121,7 +126,7 @@ class RunJudgeService:
             return _config_error_description(str(error))
         base = {
             "defaults": {
-                "judge_input_source": "av2",
+                "judge_input_source": JUDGE_INPUT_SOURCE_AV2,
                 "panel_mode": settings.judge_panel_mode,
                 "dataset": "J2",
                 "batch_size": settings.judge_batch_size,
@@ -141,7 +146,7 @@ class RunJudgeService:
             "supported": {
                 "panel_modes": ["single", "primary_only", "2plus1"],
                 "datasets": ["J1", "J2"],
-                "judge_input_sources": ["av2", "av3_j1_com_rag"],
+                "judge_input_sources": list(SUPPORTED_JUDGE_INPUT_SOURCES),
                 "judge_execution_strategies": ["sequential", "parallel", "adaptive"],
             },
             "endpoints": _endpoint_overview(settings),
@@ -152,7 +157,14 @@ class RunJudgeService:
                     "name": "AV3 J1 Com_RAG",
                     "panel_mode": "single",
                     "dataset": "J1",
-                    "judge_input_source": "av3_j1_com_rag",
+                    "judge_input_source": JUDGE_INPUT_SOURCE_AV3_J1_COM_RAG,
+                    "batch_size": 1,
+                },
+                {
+                    "name": "AV3 J2 Com_RAG",
+                    "panel_mode": "single",
+                    "dataset": "J2",
+                    "judge_input_source": JUDGE_INPUT_SOURCE_AV3_J2_COM_RAG,
                     "batch_size": 1,
                 },
                 {"name": "Comparacao primaria", "panel_mode": "primary_only"},
@@ -571,7 +583,7 @@ def build_command_preview(request: RunJudgeRequest, config: RuntimeJudgeConfig, 
         "--judge-execution-strategy",
         config.execution_strategy,
     ]
-    if request.judge_input_source != "av2":
+    if request.judge_input_source != JUDGE_INPUT_SOURCE_AV2:
         args.extend(["--judge-input-source", request.judge_input_source])
     if config.panel_mode == "single":
         assert config.single_judge is not None
@@ -622,14 +634,16 @@ def _safe_emit_eligibility(
 
 
 def _validate_judge_input_source(request: RunJudgeRequest) -> None:
-    supported_sources = {"av2", "av3_j1_com_rag"}
-    if request.judge_input_source not in supported_sources:
+    descriptor = get_judge_input_source_descriptor(request.judge_input_source)
+    if not descriptor.is_av3:
+        return
+    assert descriptor.dataset_code is not None
+    assert descriptor.dataset_name is not None
+    if request.dataset.upper() not in {descriptor.dataset_code, descriptor.dataset_name.upper()}:
         raise ValueError(
-            f"Unsupported judge_input_source={request.judge_input_source!r}. "
-            "Supported values: av2, av3_j1_com_rag."
+            f"judge_input_source={request.judge_input_source} requires dataset "
+            f"{descriptor.dataset_code}/{descriptor.dataset_name}."
         )
-    if request.judge_input_source == "av3_j1_com_rag" and request.dataset.upper() not in {"J1", "OAB_BENCH"}:
-        raise ValueError("judge_input_source=av3_j1_com_rag requires dataset J1/OAB_Bench.")
 
 
 def _required_evaluations(config: RuntimeJudgeConfig) -> tuple[tuple[ModelSpec, StoredJudgeRole, str], ...]:

@@ -128,6 +128,24 @@ def test_run_judge_help_exposes_batch_size(capsys: pytest.CaptureFixture[str]) -
     assert exit_error.value.code == 0
     assert "--batch-size" in output
     assert "--preflight-report" in output
+    assert "av3_j2_com_rag" in output
+
+
+def test_build_parser_accepts_av3_j2_judge_input_source() -> None:
+    parser = cli.build_parser()
+
+    args = parser.parse_args(
+        [
+            "run-judge",
+            "--judge-input-source",
+            "av3_j2_com_rag",
+            "--dataset",
+            "J2",
+        ]
+    )
+
+    assert args.judge_input_source == "av3_j2_com_rag"
+    assert args.dataset == "J2"
 
 
 def test_build_parser_exposes_run_candidates_rag() -> None:

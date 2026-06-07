@@ -41,6 +41,50 @@ from atividade_2.run_candidates_rag_service import (
 from atividade_2.repositories import _default_candidate_model_assignments
 
 
+def _assign_ids(assignments: tuple[CandidateModelAssignment, ...]) -> tuple[CandidateModelAssignment, ...]:
+    return tuple(
+        assignment if assignment.assignment_id is not None else CandidateModelAssignment(
+            assignment_id=index,
+            id_modelo_av2=assignment.id_modelo_av2,
+            owner=assignment.owner,
+            original_provider_model_id=assignment.original_provider_model_id,
+            original_runtime=assignment.original_runtime,
+            av3_provider=assignment.av3_provider,
+            artifact_format=assignment.artifact_format,
+            match_type=assignment.match_type,
+            validation_status=assignment.validation_status,
+            av2_model_name=assignment.av2_model_name,
+            av3_provider_model_id=assignment.av3_provider_model_id,
+            hf_model_id=assignment.hf_model_id,
+            original_quantization=assignment.original_quantization,
+            av3_quantization=assignment.av3_quantization,
+            notes=assignment.notes,
+            active=assignment.active,
+            ranges=assignment.ranges,
+            created_at=assignment.created_at,
+            updated_at=assignment.updated_at,
+        )
+        for index, assignment in enumerate(assignments, start=1)
+    )
+
+
+def _assignment_id_for(
+    repository: "FakeRepository",
+    *,
+    model_name: str,
+    dataset: str,
+    question_sequence: int,
+) -> int:
+    for assignment in repository.assignments:
+        if (
+            assignment.assignment_id is not None
+            and (assignment.av3_provider_model_id or "") == model_name
+            and assignment.covers(dataset=dataset, question_sequence=question_sequence)
+        ):
+            return int(assignment.assignment_id)
+    raise AssertionError(f"No assignment found for {dataset} {model_name} sequence={question_sequence}")
+
+
 @dataclass
 class FakeSettings:
     database_url: str = "postgresql://example.invalid/app"
@@ -80,7 +124,7 @@ class FakeRepository:
     def __init__(self) -> None:
         self.ensure_schema_calls = 0
         self.select_calls: list[dict[str, object]] = []
-        self.success_exists_calls: list[tuple[str, str, int, int | None]] = []
+        self.success_exists_calls: list[tuple[str, str, int | None, int, int | None, bool]] = []
         self.created_runs: list[CandidateRunRecord] = []
         self.updated_runs: list[dict[str, object]] = []
         self.persisted_answers: list[CandidateAnswerRecord] = []
@@ -144,13 +188,13 @@ class FakeRepository:
                 )
             ],
         }
-        self.existing_successes: set[tuple[str, str, int]] = set()
-        self.existing_failures: set[tuple[str, str, int]] = set()
+        self.existing_successes: set[tuple[str, object, int]] = set()
+        self.existing_failures: set[tuple[str, object, int]] = set()
         self._lock = threading.Lock()
-        self.assignments = _default_candidate_model_assignments()
+        self.assignments = _assign_ids(_default_candidate_model_assignments())
         self.assignments += (
             CandidateModelAssignment(
-                assignment_id=None,
+                assignment_id=1001,
                 id_modelo_av2=1001,
                 owner="Tests",
                 original_provider_model_id="candidate-j1",
@@ -168,7 +212,7 @@ class FakeRepository:
                 ),
             ),
             CandidateModelAssignment(
-                assignment_id=None,
+                assignment_id=1002,
                 id_modelo_av2=1002,
                 owner="Tests",
                 original_provider_model_id="candidate-j2",
@@ -186,7 +230,7 @@ class FakeRepository:
                 ),
             ),
             CandidateModelAssignment(
-                assignment_id=None,
+                assignment_id=1003,
                 id_modelo_av2=1003,
                 owner="Tests",
                 original_provider_model_id="openai/gpt-5.4",
@@ -205,7 +249,7 @@ class FakeRepository:
                 ),
             ),
             CandidateModelAssignment(
-                assignment_id=None,
+                assignment_id=1004,
                 id_modelo_av2=1004,
                 owner="Tests",
                 original_provider_model_id="google/gemma-2-2b-it",
@@ -219,7 +263,7 @@ class FakeRepository:
                 original_quantization="provider_default",
                 av3_quantization="provider_default",
                 ranges=(
-                    CandidateModelAssignmentRange(None, None, "J1", 1, 2000),
+                    CandidateModelAssignmentRange(None, None, "J1", 1, 70),
                 ),
             ),
         )
@@ -290,6 +334,7 @@ class FakeRepository:
         stored = CandidateRunRecord(
             candidate_run_id=self.next_candidate_run_id,
             dataset=run.dataset,
+            assignment_id=run.assignment_id,
             retrieval_run_id=run.retrieval_run_id,
             prompt_id=run.prompt_id,
             model_name=run.model_name,
@@ -353,27 +398,49 @@ class FakeRepository:
         *,
         dataset: str,
         model_name: str,
+        assignment_id: int | None,
         batch_size: int,
         question_sequence_start: int | None,
         question_sequence_end: int | None,
         question_id: int | None,
         skip_existing_successful: bool,
+        assignment_ranges: tuple[CandidateModelAssignmentRange, ...] | None = None,
+        allow_legacy_model_name_fallback: bool = True,
     ) -> CandidateQuestionSelectionResult:
         self.select_calls.append(
             {
                 "dataset": dataset,
                 "model_name": model_name,
+                "assignment_id": assignment_id,
                 "batch_size": batch_size,
                 "question_sequence_start": question_sequence_start,
                 "question_sequence_end": question_sequence_end,
                 "question_id": question_id,
                 "skip_existing_successful": skip_existing_successful,
+                "assignment_ranges": assignment_ranges,
+                "allow_legacy_model_name_fallback": allow_legacy_model_name_fallback,
             }
         )
         if self.pending_selection_result is not None:
             return self.pending_selection_result
 
         questions = list(self.questions_by_dataset.get(dataset, []))
+        if assignment_ranges is not None:
+            dataset_ranges = tuple(
+                assignment_range
+                for assignment_range in assignment_ranges
+                if assignment_range.dataset_code == dataset
+            )
+            questions = [
+                question
+                for question in questions
+                if any(
+                    assignment_range.question_sequence_start
+                    <= question.question_sequence
+                    <= assignment_range.question_sequence_end
+                    for assignment_range in dataset_ranges
+                )
+            ]
         if question_id is not None:
             questions = [question for question in questions if question.question_id == question_id]
         if question_sequence_start is not None:
@@ -397,12 +464,18 @@ class FakeRepository:
         successful_excluded = 0
         retry_candidates: list[CandidateQuestionRecord] = []
         unanswered_candidates: list[CandidateQuestionRecord] = []
+        identity = assignment_id if assignment_id is not None else model_name
         for question in questions:
-            key = (dataset, model_name, question.question_id)
-            if key in self.existing_successes:
+            key = (dataset, identity, question.question_id)
+            legacy_key = (dataset, model_name, question.question_id)
+            if key in self.existing_successes or (
+                allow_legacy_model_name_fallback and assignment_id is not None and legacy_key in self.existing_successes
+            ):
                 successful_excluded += 1
                 continue
-            if key in self.existing_failures:
+            if key in self.existing_failures or (
+                allow_legacy_model_name_fallback and assignment_id is not None and legacy_key in self.existing_failures
+            ):
                 retry_candidates.append(question)
             else:
                 unanswered_candidates.append(question)
@@ -411,7 +484,14 @@ class FakeRepository:
         unanswered_candidates.sort(key=lambda question: (question.question_sequence, question.question_id))
         selected = [*retry_candidates, *unanswered_candidates][:batch_size]
         failed_selected = sum(
-            1 for question in selected if (dataset, model_name, question.question_id) in self.existing_failures
+            1
+            for question in selected
+            if (dataset, identity, question.question_id) in self.existing_failures
+            or (
+                allow_legacy_model_name_fallback
+                and assignment_id is not None
+                and (dataset, model_name, question.question_id) in self.existing_failures
+            )
         )
         return CandidateQuestionSelectionResult(
             questions=selected,
@@ -430,11 +510,22 @@ class FakeRepository:
         *,
         dataset: str,
         model_name: str,
+        assignment_id: int | None,
         question_id: int,
         exclude_candidate_run_id: int | None = None,
+        allow_legacy_model_name_fallback: bool = True,
     ) -> bool:
-        self.success_exists_calls.append((dataset, model_name, question_id, exclude_candidate_run_id))
-        return (dataset, model_name, question_id) in self.existing_successes
+        self.success_exists_calls.append(
+            (dataset, model_name, assignment_id, question_id, exclude_candidate_run_id, allow_legacy_model_name_fallback)
+        )
+        identity = assignment_id if assignment_id is not None else model_name
+        if (dataset, identity, question_id) in self.existing_successes:
+            return True
+        return bool(
+            allow_legacy_model_name_fallback
+            and assignment_id is not None
+            and (dataset, model_name, question_id) in self.existing_successes
+        )
 
     def persist_candidate_answer(self, *, answer: CandidateAnswerRecord) -> CandidateAnswerRecord:
         with self._lock:
@@ -1072,7 +1163,11 @@ def test_real_openrouter_candidate_execution_uses_openrouter_env_config(tmp_path
         settings=FakeSettings(),
         request=request,
         resolved=service.resolve(request),
-        questions=[CandidateQuestionRecord(101, "J1", "OAB_Bench", 119, "Q", None)],
+        assignment=next(
+            assignment
+            for assignment in repository.assignments
+            if assignment.av3_provider_model_id == "x-ai/grok-4.3"
+        ),
         require_api_key=True,
     )
     configured_request = _with_remote_candidate_config(request, runtime_config)
@@ -1111,7 +1206,11 @@ def test_real_featherless_candidate_execution_uses_featherless_env_config(tmp_pa
         settings=FakeSettings(),
         request=request,
         resolved=service.resolve(request),
-        questions=[CandidateQuestionRecord(101, "J1", "OAB_Bench", 95, "Q", None)],
+        assignment=next(
+            assignment
+            for assignment in repository.assignments
+            if assignment.av3_provider_model_id == "Qwen/Qwen2.5-7B-Instruct"
+        ),
         require_api_key=True,
     )
     configured_request = _with_remote_candidate_config(request, runtime_config)
@@ -1150,7 +1249,11 @@ def test_real_llama_cpp_candidate_execution_uses_llama_cpp_env_config(tmp_path) 
         settings=FakeSettings(),
         request=request,
         resolved=service.resolve(request),
-        questions=[CandidateQuestionRecord(101, "J1", "OAB_Bench", 95, "Q", None)],
+        assignment=next(
+            assignment
+            for assignment in repository.assignments
+            if assignment.av3_provider_model_id == "jurema-7b-q4_k_m"
+        ),
         require_api_key=True,
     )
     configured_request = _with_remote_candidate_config(request, runtime_config)
@@ -1452,7 +1555,12 @@ def test_runtime_config_uses_db_profile_before_static_fallback() -> None:
         settings=FakeSettings(),
         request=request,
         resolved=service.resolve(request),
-        questions=[CandidateQuestionRecord(101, "J1", "OAB_Bench", 71, "Q", None)],
+        assignment=next(
+            assignment
+            for assignment in repository.assignments
+            if assignment.av3_provider_model_id == "google/gemma-2-2b-it"
+            and assignment.covers(dataset="J1", question_sequence=71)
+        ),
         require_api_key=True,
     )
 
@@ -1498,7 +1606,12 @@ def test_runtime_config_uses_env_override_before_db_profile() -> None:
         settings=FakeSettings(),
         request=request,
         resolved=service.resolve(request),
-        questions=[CandidateQuestionRecord(101, "J1", "OAB_Bench", 71, "Q", None)],
+        assignment=next(
+            assignment
+            for assignment in repository.assignments
+            if assignment.av3_provider_model_id == "google/gemma-2-2b-it"
+            and assignment.covers(dataset="J1", question_sequence=71)
+        ),
         require_api_key=True,
     )
 
@@ -1524,7 +1637,12 @@ def test_runtime_config_uses_explicit_candidate_max_tokens_for_gemma() -> None:
         settings=FakeSettings(),
         request=request,
         resolved=service.resolve(request),
-        questions=[CandidateQuestionRecord(101, "J1", "OAB_Bench", 71, "Q", None)],
+        assignment=next(
+            assignment
+            for assignment in repository.assignments
+            if assignment.av3_provider_model_id == "google/gemma-2-2b-it"
+            and assignment.covers(dataset="J1", question_sequence=71)
+        ),
         require_api_key=True,
     )
 
@@ -1579,6 +1697,9 @@ def test_provider_keys_are_not_logged_in_audit_file(tmp_path) -> None:
 
 def test_context_window_failure_records_observation_and_upserts_profile(tmp_path) -> None:
     repository = FakeRepository()
+    repository.questions_by_dataset["J1"] = [
+        CandidateQuestionRecord(101, "J1", "OAB_Bench", 71, "Questao J1 101.", None)
+    ]
     retriever = FakeRetriever()
     retriever.results[("J1", 101)] = _success_result(dataset="J1", question_id=101, chunk_text="A" * 800)
     client = FakeClient(
@@ -1594,6 +1715,8 @@ def test_context_window_failure_records_observation_and_upserts_profile(tmp_path
             model_name="google/gemma-2-2b-it",
             provider="remote_http",
             batch_size=1,
+            question_sequence_start=71,
+            question_sequence_end=71,
             audit_log=str(tmp_path / "context-window-learning.log"),
             no_audit_animation=True,
         )
@@ -1610,6 +1733,9 @@ def test_context_window_failure_records_observation_and_upserts_profile(tmp_path
 
 def test_context_window_failure_retries_once_when_enabled(tmp_path) -> None:
     repository = FakeRepository()
+    repository.questions_by_dataset["J1"] = [
+        CandidateQuestionRecord(101, "J1", "OAB_Bench", 71, "Questao J1 101.", None)
+    ]
     retriever = FakeRetriever()
     retriever.results[("J1", 101)] = _success_result(dataset="J1", question_id=101, chunk_text="A" * 20000)
     client = FakeClient(
@@ -1631,6 +1757,8 @@ def test_context_window_failure_retries_once_when_enabled(tmp_path) -> None:
             model_name="google/gemma-2-2b-it",
             provider="remote_http",
             batch_size=1,
+            question_sequence_start=71,
+            question_sequence_end=71,
             remote_candidate_retry_on_context_window=True,
             audit_log=str(tmp_path / "context-window-retry.log"),
             no_audit_animation=True,
@@ -1649,6 +1777,9 @@ def test_context_window_failure_retries_once_when_enabled(tmp_path) -> None:
 
 def test_context_window_failure_does_not_retry_when_disabled(tmp_path) -> None:
     repository = FakeRepository()
+    repository.questions_by_dataset["J1"] = [
+        CandidateQuestionRecord(101, "J1", "OAB_Bench", 71, "Questao J1 101.", None)
+    ]
     retriever = FakeRetriever()
     retriever.results[("J1", 101)] = _success_result(dataset="J1", question_id=101, chunk_text="A" * 800)
     client = FakeClient(
@@ -1662,6 +1793,8 @@ def test_context_window_failure_does_not_retry_when_disabled(tmp_path) -> None:
             model_name="google/gemma-2-2b-it",
             provider="remote_http",
             batch_size=1,
+            question_sequence_start=71,
+            question_sequence_end=71,
             audit_log=str(tmp_path / "context-window-no-retry.log"),
             no_audit_animation=True,
         )
@@ -1672,6 +1805,9 @@ def test_context_window_failure_does_not_retry_when_disabled(tmp_path) -> None:
 
 def test_non_context_error_does_not_retry(tmp_path) -> None:
     repository = FakeRepository()
+    repository.questions_by_dataset["J1"] = [
+        CandidateQuestionRecord(101, "J1", "OAB_Bench", 71, "Questao J1 101.", None)
+    ]
     retriever = FakeRetriever()
     retriever.results[("J1", 101)] = _success_result(dataset="J1", question_id=101)
     client = FakeClient(failures={0: RuntimeError("Provider model is gated for this API key.")})
@@ -1683,6 +1819,8 @@ def test_non_context_error_does_not_retry(tmp_path) -> None:
             model_name="google/gemma-2-2b-it",
             provider="remote_http",
             batch_size=1,
+            question_sequence_start=71,
+            question_sequence_end=71,
             remote_candidate_retry_on_context_window=True,
             audit_log=str(tmp_path / "non-context-error.log"),
             no_audit_animation=True,
@@ -1728,7 +1866,11 @@ def test_runtime_config_formatter_redacts_missing_key_in_dry_run() -> None:
                     question_sequence_end=119,
                 )
             ),
-            questions=[CandidateQuestionRecord(101, "J1", "OAB_Bench", 119, "Q", None)],
+            assignment=next(
+                assignment
+                for assignment in FakeRepository().assignments
+                if assignment.av3_provider_model_id == "x-ai/grok-4.3"
+            ),
             require_api_key=False,
         ),
         api_key_state="<not required in dry-run>",
@@ -1776,6 +1918,126 @@ def test_selects_j2_questions(tmp_path) -> None:
     )
 
     assert repository.select_calls[0]["dataset"] == "J2"
+
+
+def test_duplicate_provider_model_requires_assignment_narrowing(tmp_path) -> None:
+    repository = FakeRepository()
+    service = _service(repository=repository, retriever=FakeRetriever())
+
+    with pytest.raises(
+        ValueError,
+        match=r"Candidate model google/gemma-2-2b-it maps to multiple AV3 assignments for dataset=J2\.",
+    ):
+        service.run(
+            RunCandidatesRagRequest(
+                dataset="J2",
+                model_name="google/gemma-2-2b-it",
+                provider="remote_http",
+                batch_size=2,
+                audit_log=str(tmp_path / "j2-ambiguous-assignment.log"),
+                no_audit_animation=True,
+            )
+        )
+
+
+def test_j2_selection_is_constrained_to_one_assignment_range(tmp_path) -> None:
+    repository = FakeRepository()
+    repository.questions_by_dataset["J2"] = [
+        CandidateQuestionRecord(201, "J2", "OAB_Exames", 700, "Q700", {"A": "A"}),
+        CandidateQuestionRecord(202, "J2", "OAB_Exames", 740, "Q740", {"A": "A"}),
+        CandidateQuestionRecord(203, "J2", "OAB_Exames", 741, "Q741", {"A": "A"}),
+    ]
+    retriever = FakeRetriever()
+    retriever.results[("J2", 202)] = _success_result(dataset="J2", question_id=202)
+    retriever.results[("J2", 203)] = _success_result(dataset="J2", question_id=203)
+    service = _service(repository=repository, retriever=retriever)
+
+    result = service.run(
+        RunCandidatesRagRequest(
+            dataset="J2",
+            model_name="google/gemma-2-2b-it",
+            provider="remote_http",
+            batch_size=2,
+            question_sequence_start=739,
+            question_sequence_end=861,
+            audit_log=str(tmp_path / "j2-assignment-range.log"),
+            no_audit_animation=True,
+        )
+    )
+
+    assert retriever.calls == [(202, "J2", None), (203, "J2", None)]
+    assert result.summary is not None
+    assert result.summary.selected_questions == 2
+    assert repository.select_calls[0]["assignment_ranges"] == (
+        CandidateModelAssignmentRange(None, None, "J2", 739, 861),
+    )
+
+
+def test_j2_explicit_out_of_assignment_range_fails_fast(tmp_path) -> None:
+    repository = FakeRepository()
+    service = _service(repository=repository, retriever=FakeRetriever())
+
+    with pytest.raises(
+        ValueError,
+        match=r"Requested J2 question range 700-750 is outside the AV3 assignment scope for candidate model google/gemma-2-2b-it\.",
+    ):
+        service.run(
+            RunCandidatesRagRequest(
+                dataset="J2",
+                model_name="google/gemma-2-2b-it",
+                provider="remote_http",
+                batch_size=2,
+                question_sequence_start=700,
+                question_sequence_end=750,
+                audit_log=str(tmp_path / "j2-out-of-range.log"),
+                no_audit_animation=True,
+            )
+        )
+
+    assert repository.created_runs == []
+    assert repository.select_calls == []
+
+
+def test_j2_failed_first_and_skip_existing_stay_inside_assignment_scope(tmp_path) -> None:
+    repository = FakeRepository()
+    repository.questions_by_dataset["J2"] = [
+        CandidateQuestionRecord(201, "J2", "OAB_Exames", 700, "Q700", {"A": "A"}),
+        CandidateQuestionRecord(202, "J2", "OAB_Exames", 740, "Q740", {"A": "A"}),
+        CandidateQuestionRecord(203, "J2", "OAB_Exames", 741, "Q741", {"A": "A"}),
+        CandidateQuestionRecord(204, "J2", "OAB_Exames", 742, "Q742", {"A": "A"}),
+    ]
+    assignment_id = _assignment_id_for(
+        repository,
+        model_name="google/gemma-2-2b-it",
+        dataset="J2",
+        question_sequence=740,
+    )
+    repository.existing_successes.add(("J2", assignment_id, 203))
+    repository.existing_failures.add(("J2", assignment_id, 204))
+    retriever = FakeRetriever()
+    retriever.results[("J2", 204)] = _success_result(dataset="J2", question_id=204)
+    retriever.results[("J2", 202)] = _success_result(dataset="J2", question_id=202)
+    service = _service(repository=repository, retriever=retriever)
+
+    result = service.run(
+        RunCandidatesRagRequest(
+            dataset="J2",
+            model_name="google/gemma-2-2b-it",
+            provider="remote_http",
+            batch_size=2,
+            question_sequence_start=739,
+            question_sequence_end=861,
+            audit_log=str(tmp_path / "j2-failed-first.log"),
+            no_audit_animation=True,
+        )
+    )
+
+    assert retriever.calls == [(204, "J2", None), (202, "J2", None)]
+    assert result.summary is not None
+    assert result.summary.selected_questions == 2
+    assert result.summary.successful_answers == 2
+    assert result.summary.failed_answers == 0
+    assert result.summary.skipped_questions == 0
 
 
 def test_respects_batch_size(tmp_path) -> None:
@@ -1897,6 +2159,7 @@ def test_rerun_selection_processes_later_failed_and_pending_questions(tmp_path) 
 
 def test_skips_existing_successful_answers(tmp_path) -> None:
     repository = FakeRepository()
+    assignment_id = _assignment_id_for(repository, model_name="candidate-j1", dataset="J1", question_sequence=1)
     repository.pending_selection_result = CandidateQuestionSelectionResult(
         questions=[CandidateQuestionRecord(101, "J1", "OAB_Bench", 1, "Q1", None)],
         summary=CandidateQuestionSelectionSummary(
@@ -1908,7 +2171,7 @@ def test_skips_existing_successful_answers(tmp_path) -> None:
             successful_excluded=0,
         ),
     )
-    repository.existing_successes.add(("J1", "candidate-j1", 101))
+    repository.existing_successes.add(("J1", assignment_id, 101))
     retriever = FakeRetriever()
     service = _service(repository=repository, retriever=retriever)
 
@@ -2155,6 +2418,8 @@ def test_budgeted_context_snapshot_uses_included_text_and_metadata(tmp_path) -> 
             model_name="google/gemma-2-2b-it",
             provider="remote_http",
             batch_size=1,
+            question_sequence_start=71,
+            question_sequence_end=71,
             remote_candidate_max_tokens=1024,
             remote_candidate_context_window_tokens=2400,
             remote_candidate_context_safety_margin_tokens=128,
@@ -2186,6 +2451,8 @@ def test_run_metadata_records_candidate_budget(tmp_path) -> None:
             model_name="google/gemma-2-2b-it",
             provider="remote_http",
             batch_size=1,
+            question_sequence_start=71,
+            question_sequence_end=71,
             remote_candidate_max_tokens=1024,
             remote_candidate_context_window_tokens=2400,
             remote_candidate_context_safety_margin_tokens=128,
@@ -2261,6 +2528,8 @@ def test_budget_failure_fails_before_creating_run_or_provider_call(tmp_path) -> 
                 model_name="google/gemma-2-2b-it",
                 provider="remote_http",
                 batch_size=1,
+                question_sequence_start=71,
+                question_sequence_end=71,
                 remote_candidate_max_tokens=80,
                 remote_candidate_context_window_tokens=900,
                 remote_candidate_context_safety_margin_tokens=20,
@@ -2430,6 +2699,7 @@ def test_parallel_path_persists_failed_answer_and_continues_other_questions(tmp_
 
 def test_parallel_defensive_skip_existing_still_works_after_selection(tmp_path) -> None:
     repository = FakeRepository()
+    assignment_id = _assignment_id_for(repository, model_name="candidate-j1", dataset="J1", question_sequence=1)
     repository.pending_selection_result = CandidateQuestionSelectionResult(
         questions=[
             CandidateQuestionRecord(101, "J1", "OAB_Bench", 1, "Q1", None),
@@ -2444,7 +2714,7 @@ def test_parallel_defensive_skip_existing_still_works_after_selection(tmp_path) 
             successful_excluded=0,
         ),
     )
-    repository.existing_successes.add(("J1", "candidate-j1", 102))
+    repository.existing_successes.add(("J1", assignment_id, 102))
     retriever = FakeRetriever()
     retriever.results[("J1", 101)] = _success_result(dataset="J1", question_id=101)
     client = ThreadCountingClient()
@@ -2909,6 +3179,7 @@ def test_fails_before_creating_run_when_model_has_no_runnable_assignment(tmp_pat
 
 def test_emits_audit_events_for_run_question_retrieval_generation_persistence_skip_and_finish(tmp_path) -> None:
     repository = FakeRepository()
+    assignment_id = _assignment_id_for(repository, model_name="candidate-j1", dataset="J1", question_sequence=1)
     repository.questions_by_dataset["J1"] = [
         CandidateQuestionRecord(101, "J1", "OAB_Bench", 1, "Q1", None),
         CandidateQuestionRecord(102, "J1", "OAB_Bench", 2, "Q2", None),
@@ -2927,7 +3198,7 @@ def test_emits_audit_events_for_run_question_retrieval_generation_persistence_sk
             successful_excluded=0,
         ),
     )
-    repository.existing_successes.add(("J1", "candidate-j1", 102))
+    repository.existing_successes.add(("J1", assignment_id, 102))
     retriever = FakeRetriever()
     retriever.results[("J1", 101)] = _success_result(dataset="J1", question_id=101)
     audit_path = tmp_path / "audit.log"
@@ -3065,6 +3336,7 @@ def test_failed_question_emits_candidate_question_failed_progress_event(tmp_path
 
 def test_skipped_existing_success_emits_candidate_question_skipped_progress_event(tmp_path) -> None:
     repository = FakeRepository()
+    assignment_id = _assignment_id_for(repository, model_name="candidate-j1", dataset="J1", question_sequence=1)
     repository.pending_selection_result = CandidateQuestionSelectionResult(
         questions=[CandidateQuestionRecord(101, "J1", "OAB_Bench", 1, "Q1", None)],
         summary=CandidateQuestionSelectionSummary(
@@ -3076,7 +3348,7 @@ def test_skipped_existing_success_emits_candidate_question_skipped_progress_even
             successful_excluded=0,
         ),
     )
-    repository.existing_successes.add(("J1", "candidate-j1", 101))
+    repository.existing_successes.add(("J1", assignment_id, 101))
     service = _service(repository=repository, retriever=FakeRetriever())
     events: list[CandidateProgressEvent] = []
 

@@ -12,6 +12,7 @@ JudgeRole = Literal["single", "primary", "arbiter"]
 StoredJudgeRole = Literal["principal", "controle", "arbitro"]
 JudgeExecutionStrategy = Literal["sequential", "parallel", "adaptive"]
 CandidateExecutionStrategy = Literal["sequential", "parallel", "adaptive"]
+JudgeInputSource = Literal["av2", "av3_j1_com_rag", "av3_j2_com_rag"]
 AppEnvironment = Literal["dev", "test", "prod"]
 CandidateRunStatus = Literal["created", "running", "completed", "failed", "cancelled"]
 CandidateAnswerStatus = Literal["created", "running", "success", "failed", "skipped"]
@@ -96,6 +97,14 @@ VALIDATION_STATUS_VALUES: tuple[ValidationStatus, ...] = (
 
 PROMPT_VERSION = "av2-judge-v3"
 RUBRIC_VERSION = "av2-legal-rubric-v2"
+JUDGE_INPUT_SOURCE_AV2 = "av2"
+JUDGE_INPUT_SOURCE_AV3_J1_COM_RAG = "av3_j1_com_rag"
+JUDGE_INPUT_SOURCE_AV3_J2_COM_RAG = "av3_j2_com_rag"
+SUPPORTED_JUDGE_INPUT_SOURCES: tuple[JudgeInputSource, ...] = (
+    JUDGE_INPUT_SOURCE_AV2,
+    JUDGE_INPUT_SOURCE_AV3_J1_COM_RAG,
+    JUDGE_INPUT_SOURCE_AV3_J2_COM_RAG,
+)
 
 
 @dataclass(frozen=True)
@@ -104,6 +113,52 @@ class ModelSpec:
 
     requested: str
     provider_model: str
+
+
+@dataclass(frozen=True)
+class JudgeInputSourceDescriptor:
+    """User-facing source option plus its fixed AV3 dataset, when applicable."""
+
+    source_id: JudgeInputSource
+    label: str
+    dataset_code: CandidateDatasetCode | None = None
+    dataset_name: str | None = None
+
+    @property
+    def is_av3(self) -> bool:
+        return self.dataset_code is not None
+
+
+JUDGE_INPUT_SOURCE_DESCRIPTORS: dict[JudgeInputSource, JudgeInputSourceDescriptor] = {
+    JUDGE_INPUT_SOURCE_AV2: JudgeInputSourceDescriptor(
+        source_id=JUDGE_INPUT_SOURCE_AV2,
+        label="AV2 baseline",
+    ),
+    JUDGE_INPUT_SOURCE_AV3_J1_COM_RAG: JudgeInputSourceDescriptor(
+        source_id=JUDGE_INPUT_SOURCE_AV3_J1_COM_RAG,
+        label="AV3 J1 Com_RAG",
+        dataset_code="J1",
+        dataset_name="OAB_Bench",
+    ),
+    JUDGE_INPUT_SOURCE_AV3_J2_COM_RAG: JudgeInputSourceDescriptor(
+        source_id=JUDGE_INPUT_SOURCE_AV3_J2_COM_RAG,
+        label="AV3 J2 Com_RAG",
+        dataset_code="J2",
+        dataset_name="OAB_Exames",
+    ),
+}
+
+
+def get_judge_input_source_descriptor(source_id: str) -> JudgeInputSourceDescriptor:
+    """Return the source descriptor or raise a stable validation error."""
+
+    descriptor = JUDGE_INPUT_SOURCE_DESCRIPTORS.get(source_id)
+    if descriptor is None:
+        supported = ", ".join(SUPPORTED_JUDGE_INPUT_SOURCES)
+        raise ValueError(
+            f"Unsupported judge_input_source={source_id!r}. Supported values: {supported}."
+        )
+    return descriptor
 
 
 @dataclass(frozen=True)
@@ -580,6 +635,7 @@ class CandidateRunRecord:
 
     candidate_run_id: int | None
     dataset: str
+    assignment_id: int | None
     retrieval_run_id: int
     prompt_id: int
     model_name: str
