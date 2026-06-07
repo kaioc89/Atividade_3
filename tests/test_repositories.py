@@ -176,8 +176,13 @@ def test_av3_pending_answer_selection_uses_candidate_identity_and_raw_answer() -
     assert "JOIN av3.candidate_runs r ON r.id_candidate_run = a.id_candidate_run" in query
     assert "JOIN av3.retrieval_runs rr ON rr.id_retrieval_run = r.id_retrieval_run" in query
     assert "LEFT JOIN av3.curadoria_questoes cq" in query
+    assert "LEFT JOIN public.modelos av2_model_direct" in query
     assert "LEFT JOIN LATERAL (" in query
+    assert "LEFT JOIN public.modelos av2_model" in query
     assert "assignment.owner" in query
+    assert "av2_model_direct.nome_modelo" in query
+    assert "av2_model.nome_modelo AS av2_model_name" in query
+    assert "assignment.av2_model_name" not in query
     assert "r.dataset_code = %s" in query
     assert "d.nome_dataset = %s" in query
     assert "a.status = 'success'" in query
@@ -238,6 +243,8 @@ def test_av3_j2_pending_answer_selection_uses_dataset_code_and_candidate_identit
                         "candidate_owner": "Marina",
                         "candidate_provider": "openrouter",
                         "candidate_assignment_id": 13,
+                        "candidate_av2_model_id": 21,
+                        "candidate_av2_model_name": None,
                     },
                 )
             ]
@@ -256,6 +263,9 @@ def test_av3_j2_pending_answer_selection_uses_dataset_code_and_candidate_identit
     query = cursor.queries[0]
     assert "r.dataset_code = %s" in query
     assert "d.nome_dataset = %s" in query
+    assert "LEFT JOIN public.modelos av2_model_direct" in query
+    assert "LEFT JOIN public.modelos av2_model" in query
+    assert "assignment.av2_model_name" not in query
     assert "a.status = 'success'" in query
     assert "FROM av3.candidate_answer_context_chunks context_chunk" in query
     assert "evaluation.id_candidate_answer = a.id_candidate_answer" in query
@@ -270,16 +280,18 @@ def test_av3_j2_pending_answer_selection_uses_dataset_code_and_candidate_identit
             reference_answer="Alternativa B",
             candidate_answer="Resposta candidata J2",
             candidate_model="openai/gpt-5",
-            metadata={
-                "dataset_code": "J2",
-                "question_sequence": 88,
-                "tipo_questao": "MULTIPLA_ESCOLHA",
-                "candidate_owner": "Marina",
-                "candidate_provider": "openrouter",
-                "candidate_assignment_id": 13,
-            },
-        )
-    ]
+                metadata={
+                    "dataset_code": "J2",
+                    "question_sequence": 88,
+                    "tipo_questao": "MULTIPLA_ESCOLHA",
+                    "candidate_owner": "Marina",
+                    "candidate_provider": "openrouter",
+                    "candidate_assignment_id": 13,
+                    "candidate_av2_model_id": 21,
+                    "candidate_av2_model_name": None,
+                },
+            )
+        ]
 
 
 def test_av3_eligibility_summary_uses_candidate_answer_identity() -> None:

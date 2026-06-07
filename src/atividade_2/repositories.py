@@ -1882,7 +1882,7 @@ class JudgeRepository:
                                     assignment_legacy.id_modelo_av2
                                 ),
                                 'candidate_av2_model_name', COALESCE(
-                                    assignment_direct.av2_model_name,
+                                    av2_model_direct.nome_modelo,
                                     assignment_legacy.av2_model_name
                                 ),
                                 'candidate_original_provider_model_id', COALESCE(
@@ -1914,17 +1914,21 @@ class JudgeRepository:
                      AND cq.id_pergunta = a.id_pergunta
                     LEFT JOIN av3.candidate_model_assignments assignment_direct
                       ON assignment_direct.id_assignment = r.id_assignment
+                    LEFT JOIN public.modelos av2_model_direct
+                      ON av2_model_direct.id_modelo = assignment_direct.id_modelo_av2
                     LEFT JOIN LATERAL (
                         SELECT
                             assignment.id_assignment,
                             assignment.id_modelo_av2,
                             assignment.owner,
-                            assignment.av2_model_name,
+                            av2_model.nome_modelo AS av2_model_name,
                             assignment.original_provider_model_id,
                             assignment.av3_provider_model_id
                         FROM av3.candidate_model_assignments assignment
                         JOIN av3.candidate_model_assignment_ranges assignment_range
                           ON assignment_range.id_assignment = assignment.id_assignment
+                        LEFT JOIN public.modelos av2_model
+                          ON av2_model.id_modelo = assignment.id_modelo_av2
                         WHERE assignment.active
                           AND r.id_assignment IS NULL
                           AND assignment.av3_provider = r.provider
