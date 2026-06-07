@@ -50,9 +50,17 @@ class RecordingCursor:
 class RecordingConnection:
     def __init__(self) -> None:
         self.cursor_instance = RecordingCursor()
+        self.commit_count = 0
+        self.rollback_count = 0
 
     def cursor(self) -> RecordingCursor:
         return self.cursor_instance
+
+    def commit(self) -> None:
+        self.commit_count += 1
+
+    def rollback(self) -> None:
+        self.rollback_count += 1
 
 
 class TransactionConnection:
@@ -60,6 +68,8 @@ class TransactionConnection:
         self.cursor_instance = cursor
         self.enter_count = 0
         self.exit_exceptions = []
+        self.commit_count = 0
+        self.rollback_count = 0
 
     def __enter__(self):
         self.enter_count += 1
@@ -71,6 +81,12 @@ class TransactionConnection:
 
     def cursor(self):
         return self.cursor_instance
+
+    def commit(self) -> None:
+        self.commit_count += 1
+
+    def rollback(self) -> None:
+        self.rollback_count += 1
 
 
 class MultiRecordingCursor:
@@ -611,7 +627,8 @@ def test_evaluation_details_schema_is_auxiliary_and_unique_by_evaluation() -> No
 
 def test_persist_evaluation_writes_details_after_official_evaluation_insert() -> None:
     cursor = MultiRecordingCursor(fetchone_rows=[(123,)], validate_placeholders=True)
-    repository = JudgeRepository(TransactionConnection(cursor))
+    connection = TransactionConnection(cursor)
+    repository = JudgeRepository(connection)
     repository.ensure_judge_model = lambda model: 10  # type: ignore[method-assign]
 
     repository.persist_evaluation(
@@ -651,6 +668,8 @@ def test_persist_evaluation_writes_details_after_official_evaluation_insert() ->
     assert cursor.params[1][1:5] == ["alta", "baixo", "aderente", False]
     assert "citation_quality" in cursor.params[1][5]
     assert "<redacted>" in cursor.params[1][6]
+    assert connection.commit_count == 1
+    assert connection.rollback_count == 0
 
 
 def test_persist_evaluation_uses_candidate_answer_identity_for_av3_rows() -> None:
@@ -703,7 +722,8 @@ def test_persist_evaluation_uses_av1_identity_for_av2_rows() -> None:
 
 def test_existing_score_uses_av1_identity_for_av2_rows() -> None:
     cursor = MultiRecordingCursor(fetchone_rows=[(5,)])
-    repository = JudgeRepository(TransactionConnection(cursor))
+    connection = TransactionConnection(cursor)
+    repository = JudgeRepository(connection)
     repository.ensure_judge_model = lambda model: 10  # type: ignore[method-assign]
 
     score = repository.existing_score(
@@ -718,11 +738,13 @@ def test_existing_score_uses_av1_identity_for_av2_rows() -> None:
     assert "WHERE id_resposta_ativa1 = %s" in cursor.queries[0]
     assert "id_candidate_answer = %s" not in cursor.queries[0]
     assert cursor.params[0][0] == 7
+    assert connection.rollback_count == 1
 
 
 def test_existing_score_uses_candidate_identity_for_av3_rows() -> None:
     cursor = MultiRecordingCursor(fetchone_rows=[(4,)])
-    repository = JudgeRepository(TransactionConnection(cursor))
+    connection = TransactionConnection(cursor)
+    repository = JudgeRepository(connection)
     repository.ensure_judge_model = lambda model: 10  # type: ignore[method-assign]
 
     score = repository.existing_score(
@@ -737,6 +759,21 @@ def test_existing_score_uses_candidate_identity_for_av3_rows() -> None:
     assert "WHERE id_candidate_answer = %s" in cursor.queries[0]
     assert "id_resposta_ativa1 = %s" not in cursor.queries[0]
     assert cursor.params[0][0] == 41
+    assert connection.rollback_count == 1
+
+
+def test_get_prompt_template_rolls_back_read_transaction() -> None:
+    cursor = MultiRecordingCursor(
+        fetchone_rows=[(11, "OAB_Bench", 3, "agent", "prompt", "persona", "context", "rubric", "output")]
+    )
+    connection = TransactionConnection(cursor)
+    repository = JudgeRepository(connection)
+
+    template = repository.get_prompt_template(dataset_name="OAB_Bench")
+
+    assert template is not None
+    assert template.prompt_id == 11
+    assert connection.rollback_count == 1
 
 
 def test_answer_identity_contract_rejects_both_or_neither_ids() -> None:

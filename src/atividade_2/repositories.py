@@ -669,6 +669,22 @@ class JudgeRepository:
     def __init__(self, connection: Any) -> None:
         self.connection = connection
 
+    def _rollback_read_transaction(self) -> None:
+        """End implicit read-only transactions before remote judge calls."""
+        rollback = getattr(self.connection, "rollback", None)
+        if callable(rollback):
+            rollback()
+
+    def _commit_transaction(self) -> None:
+        commit = getattr(self.connection, "commit", None)
+        if callable(commit):
+            commit()
+
+    def _rollback_transaction(self) -> None:
+        rollback = getattr(self.connection, "rollback", None)
+        if callable(rollback):
+            rollback()
+
     def _table_exists(self, cursor: Any, table_name: str) -> bool:
         cursor.execute(
             """
@@ -1742,9 +1758,10 @@ class JudgeRepository:
 
         dataset_name = DATASET_ALIASES.get(dataset.upper(), dataset)
         params: list[Any] = [*required_params, dataset_name, batch_size]
-        with self.connection.cursor() as cursor:
-            cursor.execute(
-                f"""
+        try:
+            with self.connection.cursor() as cursor:
+                cursor.execute(
+                    f"""
                 WITH required_evaluations(id_modelo_juiz, papel_juiz, motivo_pattern) AS (
                     VALUES {values_sql}
                 ),
@@ -1809,10 +1826,12 @@ class JudgeRepository:
                     id_pergunta,
                     nome_modelo,
                     id_resposta;
-                """,
-                params,
-            )
-            rows = cursor.fetchall()
+                    """,
+                    params,
+                )
+                rows = cursor.fetchall()
+        finally:
+            self._rollback_read_transaction()
 
         return [
             CandidateAnswerContext(
@@ -1850,9 +1869,10 @@ class JudgeRepository:
             required_params.extend([model_id, role, f"{panel_mode}:%"])
 
         params: list[Any] = [*required_params, descriptor.dataset_code, descriptor.dataset_name, batch_size]
-        with self.connection.cursor() as cursor:
-            cursor.execute(
-                f"""
+        try:
+            with self.connection.cursor() as cursor:
+                cursor.execute(
+                    f"""
                 WITH required_evaluations(id_modelo_juiz, papel_juiz, motivo_pattern) AS (
                     VALUES {values_sql}
                 ),
@@ -1989,10 +2009,12 @@ class JudgeRepository:
                     id_pergunta,
                     model_name,
                     id_candidate_answer;
-                """,
-                params,
-            )
-            rows = cursor.fetchall()
+                    """,
+                    params,
+                )
+                rows = cursor.fetchall()
+        finally:
+            self._rollback_read_transaction()
 
         return [
             CandidateAnswerContext(
@@ -2053,9 +2075,10 @@ class JudgeRepository:
 
         dataset_name = DATASET_ALIASES.get(dataset.upper(), dataset)
         params: list[Any] = [*required_params, dataset_name, len(required)]
-        with self.connection.cursor() as cursor:
-            cursor.execute(
-                f"""
+        try:
+            with self.connection.cursor() as cursor:
+                cursor.execute(
+                    f"""
                 WITH required_evaluations(id_modelo_juiz, papel_juiz, motivo_pattern) AS (
                     VALUES {values_sql}
                 ),
@@ -2102,10 +2125,12 @@ class JudgeRepository:
                     COUNT(*) FILTER (WHERE successful_required < %s AND failed_required > 0) AS failed,
                     COUNT(*) FILTER (WHERE successful_required < %s AND failed_required = 0) AS missing
                 FROM answer_status;
-                """,
-                [*params, len(required), len(required)],
-            )
-            row = cursor.fetchone()
+                    """,
+                    [*params, len(required), len(required)],
+                )
+                row = cursor.fetchone()
+        finally:
+            self._rollback_read_transaction()
 
         successful = int(row[0] or 0)
         failed = int(row[1] or 0)
@@ -2139,9 +2164,10 @@ class JudgeRepository:
             required_params.extend([model_id, role, f"{panel_mode}:%"])
 
         params: list[Any] = [*required_params, descriptor.dataset_code, descriptor.dataset_name, len(required)]
-        with self.connection.cursor() as cursor:
-            cursor.execute(
-                f"""
+        try:
+            with self.connection.cursor() as cursor:
+                cursor.execute(
+                    f"""
                 WITH required_evaluations(id_modelo_juiz, papel_juiz, motivo_pattern) AS (
                     VALUES {values_sql}
                 ),
@@ -2202,10 +2228,12 @@ class JudgeRepository:
                     COUNT(*) FILTER (WHERE successful_required < %s AND failed_required > 0) AS failed,
                     COUNT(*) FILTER (WHERE successful_required < %s AND failed_required = 0) AS missing
                 FROM answer_status;
-                """,
-                [*params, len(required), len(required)],
-            )
-            row = cursor.fetchone()
+                    """,
+                    [*params, len(required), len(required)],
+                )
+                row = cursor.fetchone()
+        finally:
+            self._rollback_read_transaction()
 
         successful = int(row[0] or 0)
         failed = int(row[1] or 0)
@@ -2252,27 +2280,30 @@ class JudgeRepository:
             av1_answer_id=av1_answer_id,
             candidate_answer_id=candidate_answer_id,
         )
-        with self.connection.cursor() as cursor:
-            cursor.execute(
-                f"""
-                SELECT nota_atribuida
-                FROM avaliacoes_juiz
-                WHERE {where_sql}
-                  AND id_modelo_juiz = %s
-                  AND COALESCE(papel_juiz, '') = %s
-                  AND COALESCE(motivo_acionamento, '') LIKE %s
-                  AND COALESCE(status_avaliacao, 'success') = 'success'
-                ORDER BY id_avaliacao DESC
-                LIMIT 1;
-                """,
-                (answer_param, model_id, stored_role, f"{panel_mode}:%"),
-            )
-            row = cursor.fetchone()
+        try:
+            with self.connection.cursor() as cursor:
+                cursor.execute(
+                    f"""
+                    SELECT nota_atribuida
+                    FROM avaliacoes_juiz
+                    WHERE {where_sql}
+                      AND id_modelo_juiz = %s
+                      AND COALESCE(papel_juiz, '') = %s
+                      AND COALESCE(motivo_acionamento, '') LIKE %s
+                      AND COALESCE(status_avaliacao, 'success') = 'success'
+                    ORDER BY id_avaliacao DESC
+                    LIMIT 1;
+                    """,
+                    (answer_param, model_id, stored_role, f"{panel_mode}:%"),
+                )
+                row = cursor.fetchone()
+        finally:
+            self._rollback_read_transaction()
         return int(row[0]) if row else None
 
     def persist_evaluation(self, record: EvaluationRecord) -> None:
         model_id = self.ensure_judge_model(record.judge_model)
-        with self.connection:
+        try:
             with self.connection.cursor() as cursor:
                 cursor.execute(
                     """
@@ -2320,6 +2351,10 @@ class JudgeRepository:
                         ),
                         cursor=cursor,
                     )
+            self._commit_transaction()
+        except Exception:
+            self._rollback_transaction()
+            raise
 
     def persist_evaluation_details(
         self,
@@ -2619,29 +2654,32 @@ class JudgeRepository:
         *,
         dataset_name: str,
     ) -> JudgePromptTemplate | None:
-        with self.connection.cursor() as cursor:
-            cursor.execute(
-                """
-                SELECT
-                    p.id_prompt_juiz,
-                    d.nome_dataset,
-                    p.versao,
-                    p.created_by,
-                    p.ds_prompt,
-                    p.ds_persona,
-                    p.ds_contexto,
-                    p.ds_rubrica,
-                    p.ds_saida
-                FROM prompt_juizes p
-                JOIN datasets d ON d.id_dataset = p.id_dataset
-                WHERE d.nome_dataset = %s
-                  AND p.ativo = TRUE
-                ORDER BY p.versao DESC
-                LIMIT 1;
-                """,
-                (dataset_name,),
-            )
-            row = cursor.fetchone()
+        try:
+            with self.connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT
+                        p.id_prompt_juiz,
+                        d.nome_dataset,
+                        p.versao,
+                        p.created_by,
+                        p.ds_prompt,
+                        p.ds_persona,
+                        p.ds_contexto,
+                        p.ds_rubrica,
+                        p.ds_saida
+                    FROM prompt_juizes p
+                    JOIN datasets d ON d.id_dataset = p.id_dataset
+                    WHERE d.nome_dataset = %s
+                      AND p.ativo = TRUE
+                    ORDER BY p.versao DESC
+                    LIMIT 1;
+                    """,
+                    (dataset_name,),
+                )
+                row = cursor.fetchone()
+        finally:
+            self._rollback_read_transaction()
         if not row:
             return None
         return JudgePromptTemplate(
