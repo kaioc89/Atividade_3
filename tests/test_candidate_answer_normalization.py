@@ -10,7 +10,8 @@ from atividade_2.prompts import build_judge_prompt
 
 def _j1_context(candidate_answer: str, *, question_text: str = "QUESTÃO\n\nExplique a medida cabível.") -> CandidateAnswerContext:
     return CandidateAnswerContext(
-        answer_id=1,
+        av1_answer_id=1,
+        candidate_answer_id=None,
         question_id=101,
         dataset_name="OAB_Bench",
         question_text=question_text,

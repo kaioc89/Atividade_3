@@ -68,7 +68,7 @@ def _env_flag(name: str, *, default: bool = False) -> bool:
 
 
 class RunPayload(BaseModel):
-    judge_input_source: Literal["av2", "av3_j1_com_rag"] = "av2"
+    judge_input_source: Literal["av2", "av3_j1_com_rag", "av3_j2_com_rag"] = "av2"
     panel_mode: Literal["single", "primary_only", "2plus1"] | None = None
     dataset: Literal["J1", "J2", "OAB_Bench", "OAB_Exames"] = "J2"
     batch_size: int | None = Field(default=None, ge=1)
@@ -1843,6 +1843,7 @@ _INDEX_HTML = """
         <select id="judge_input_source">
           <option value="av2">AV2 baseline</option>
           <option value="av3_j1_com_rag">AV3 J1 Com_RAG</option>
+          <option value="av3_j2_com_rag">AV3 J2 Com_RAG</option>
         </select>
       </label>
       <label>Modo
@@ -3128,9 +3129,10 @@ _INDEX_HTML = """
     function renderJudgeInputSource() {
       const source = value("judge_input_source");
       const datasetSelect = document.getElementById("dataset");
-      const isAv3ComRag = source === "av3_j1_com_rag";
+      const fixedDataset = source === "av3_j1_com_rag" ? "J1" : source === "av3_j2_com_rag" ? "J2" : null;
+      const isAv3ComRag = fixedDataset !== null;
       if (isAv3ComRag) {
-        datasetSelect.value = "J1";
+        datasetSelect.value = fixedDataset;
       }
       datasetSelect.disabled = isAv3ComRag;
     }

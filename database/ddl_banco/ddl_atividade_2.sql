@@ -406,6 +406,8 @@ CREATE TABLE av3.candidate_model_assignment_ranges (
 CREATE TABLE av3.candidate_runs (
     id_candidate_run SERIAL PRIMARY KEY,
     dataset_code VARCHAR(10) NOT NULL,
+    id_assignment INTEGER
+        REFERENCES av3.candidate_model_assignments(id_assignment),
     id_retrieval_run INTEGER NOT NULL
         REFERENCES av3.retrieval_runs(id_retrieval_run),
     id_prompt_candidato INTEGER NOT NULL
@@ -618,6 +620,9 @@ ON av3.candidate_model_assignment_ranges(dataset_code, question_sequence_start, 
 -- Candidate runs by dataset and recency.
 CREATE INDEX idx_candidate_runs_dataset_created
 ON av3.candidate_runs(dataset_code, created_at DESC);
+
+CREATE INDEX idx_candidate_runs_assignment_questioning
+ON av3.candidate_runs(id_assignment, dataset_code, created_at DESC);
 
 -- Candidate answers by run and status.
 CREATE INDEX idx_candidate_answers_run_status

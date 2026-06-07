@@ -6,7 +6,7 @@ import hashlib
 import threading
 import time
 from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from pathlib import Path
@@ -33,6 +33,7 @@ from .contracts import (
     CandidateAnswerContextChunkRecord,
     CandidateAnswerRecord,
     CandidateModelAssignment,
+    CandidateModelAssignmentRange,
     CandidateProgressCallback,
     CandidateProgressEvent,
     CandidateModelRuntimeObservationRecord,
@@ -145,9 +146,19 @@ class ResolvedCandidateProviderConfig:
 
 
 @dataclass(frozen=True)
+class ResolvedCandidateAssignmentScope:
+    """Runnable candidate assignment plus the effective question ranges for selection."""
+
+    assignment: CandidateModelAssignment
+    selection_ranges: tuple[CandidateModelAssignmentRange, ...]
+    allow_legacy_model_name_fallback: bool
+
+
+@dataclass(frozen=True)
 class ResolvedCandidateRuntimeConfig:
     """Resolved candidate runtime config after assignment and env handling."""
 
+    assignment: CandidateModelAssignment
     model_name: str
     technical_provider: str
     av3_provider: str
@@ -595,11 +606,14 @@ class CandidateRunRepositoryProtocol(Protocol):
         *,
         dataset: str,
         model_name: str,
+        assignment_id: int | None,
         batch_size: int,
         question_sequence_start: int | None,
         question_sequence_end: int | None,
         question_id: int | None,
         skip_existing_successful: bool,
+        assignment_ranges: tuple[CandidateModelAssignmentRange, ...] | None = None,
+        allow_legacy_model_name_fallback: bool = True,
     ) -> CandidateQuestionSelectionResult:
         """Select model-aware pending candidate-safe questions for one execution batch."""
 
@@ -608,8 +622,10 @@ class CandidateRunRepositoryProtocol(Protocol):
         *,
         dataset: str,
         model_name: str,
+        assignment_id: int | None,
         question_id: int,
         exclude_candidate_run_id: int | None = None,
+        allow_legacy_model_name_fallback: bool = True,
     ) -> bool:
         """Return whether a successful answer already exists for this dataset/model/question."""
 
@@ -750,6 +766,14 @@ class RunCandidatesRagService:
                     dataset=resolved.dataset,
                     prompt_id=resolved.prompt_id,
                 )
+                assignment_scope = _resolve_candidate_assignment_scope(
+                    repository=repository,
+                    dataset=resolved.dataset,
+                    model_name=resolved.model_name,
+                    question_sequence_start=resolved.question_sequence_start,
+                    question_sequence_end=resolved.question_sequence_end,
+                    question_id=resolved.question_id,
+                )
                 with audit.step(
                     f"Selecting candidate questions for {resolved.dataset}",
                     detail=(
@@ -762,11 +786,14 @@ class RunCandidatesRagService:
                     selection_result = repository.select_pending_candidate_questions(
                         dataset=resolved.dataset,
                         model_name=resolved.model_name,
+                        assignment_id=assignment_scope.assignment.assignment_id,
                         batch_size=resolved.batch_size,
                         question_sequence_start=resolved.question_sequence_start,
                         question_sequence_end=resolved.question_sequence_end,
                         question_id=resolved.question_id,
                         skip_existing_successful=resolved.skip_existing_successful,
+                        assignment_ranges=assignment_scope.selection_ranges,
+                        allow_legacy_model_name_fallback=assignment_scope.allow_legacy_model_name_fallback,
                     )
                     questions = selection_result.questions
                 selection_summary = _format_candidate_question_selection(selection_result.summary)
@@ -789,6 +816,7 @@ class RunCandidatesRagService:
                     settings=settings,
                     request=request,
                     resolved=resolved,
+                    assignment=assignment_scope.assignment,
                     questions=questions,
                     require_api_key=not request.dry_run,
                 )
@@ -851,6 +879,7 @@ class RunCandidatesRagService:
                     run=CandidateRunRecord(
                         candidate_run_id=None,
                         dataset=resolved.dataset,
+                        assignment_id=assignment_scope.assignment.assignment_id,
                         retrieval_run_id=int(vector_base.retrieval_run_id),
                         prompt_id=int(prompt.prompt_id),
                         model_name=resolved.model_name,
@@ -867,6 +896,7 @@ class RunCandidatesRagService:
                             vector_base,
                             prompt,
                             request,
+                            assignment_scope.assignment,
                             questions,
                             runtime_config,
                             execution_config,
@@ -2075,6 +2105,7 @@ def _run_metadata(
     vector_base: Any,
     prompt: CandidatePromptRecord,
     request: RunCandidatesRagRequest,
+    assignment: CandidateModelAssignment,
     questions: list[CandidateQuestionRecord] | None = None,
     runtime_config: ResolvedCandidateRuntimeConfig | None = None,
     execution_config: ResolvedCandidateExecutionConfig | None = None,
@@ -2101,6 +2132,7 @@ def _run_metadata(
         },
         "question_type_counts": question_type_counts,
         "candidate_prompt_type_counts": prompt_type_counts,
+        "assignment_identity": _candidate_assignment_identity_metadata(assignment),
         "skip_existing_successful": resolved.skip_existing_successful,
         "save_raw_response": request.save_raw_response,
         "candidate_execution": None
@@ -2277,8 +2309,10 @@ def _execute_candidate_question_task_inner(
     if resolved.skip_existing_successful and repository.successful_candidate_answer_exists(
         dataset=resolved.dataset,
         model_name=resolved.model_name,
+        assignment_id=runtime_config.assignment.assignment_id,
         question_id=question.question_id,
         exclude_candidate_run_id=candidate_run_id,
+        allow_legacy_model_name_fallback=False,
     ):
         audit.event(
             AuditEvent(
@@ -2350,6 +2384,7 @@ def _execute_candidate_question_task_inner(
                     raw_response=None,
                     retry_metadata=None,
                     candidate_budget_metadata=None,
+                    assignment_metadata=_candidate_assignment_identity_metadata(runtime_config.assignment),
                     prompt_metadata=_candidate_prompt_metadata_for_question(question),
                 ),
             )
@@ -2742,15 +2777,10 @@ def _resolve_candidate_runtime_config(
     settings: Any,
     request: RunCandidatesRagRequest,
     resolved: ResolvedRunCandidatesRag,
-    questions: list[CandidateQuestionRecord],
+    assignment: CandidateModelAssignment,
+    questions: list[CandidateQuestionRecord] | None = None,
     require_api_key: bool,
 ) -> ResolvedCandidateRuntimeConfig:
-    assignment = _resolve_candidate_assignment(
-        repository=repository,
-        dataset=resolved.dataset,
-        model_name=resolved.model_name,
-        questions=questions,
-    )
     provider_config = _resolve_candidate_provider_config(
         settings=settings,
         assignment=assignment,
@@ -2806,6 +2836,7 @@ def _resolve_candidate_runtime_config(
             )
 
     return ResolvedCandidateRuntimeConfig(
+        assignment=assignment,
         model_name=resolved.model_name,
         technical_provider=resolved.provider,
         av3_provider=provider_config.av3_provider,
@@ -2828,13 +2859,15 @@ def _resolve_candidate_runtime_config(
     )
 
 
-def _resolve_candidate_assignment(
+def _resolve_candidate_assignment_scope(
     *,
     repository: CandidateRunRepositoryProtocol,
     dataset: str,
     model_name: str,
-    questions: list[CandidateQuestionRecord],
-) -> CandidateModelAssignment:
+    question_sequence_start: int | None,
+    question_sequence_end: int | None,
+    question_id: int | None,
+) -> ResolvedCandidateAssignmentScope:
     normalized_model_name = model_name.strip().casefold()
     assignments = tuple(
         assignment
@@ -2848,18 +2881,6 @@ def _resolve_candidate_assignment(
             f"No AV3 candidate assignment found for dataset={dataset} and candidate_model={model_name}."
         )
 
-    if questions:
-        question_sequences = {question.question_sequence for question in questions}
-        assignments = tuple(
-            assignment
-            for assignment in assignments
-            if any(assignment.covers(dataset=dataset, question_sequence=sequence) for sequence in question_sequences)
-        )
-        if not assignments:
-            raise ValueError(
-                f"Candidate model {model_name} does not cover the selected {dataset} question range."
-            )
-
     runnable_assignments = tuple(assignment for assignment in assignments if assignment.is_runnable())
     if not runnable_assignments:
         raise ValueError(f"Candidate model {model_name} has no runnable AV3 assignment for dataset={dataset}.")
@@ -2870,7 +2891,166 @@ def _resolve_candidate_assignment(
             f"Candidate model {model_name} resolved to multiple AV3 providers for dataset={dataset}: "
             f"{', '.join(sorted(providers))}."
         )
-    return runnable_assignments[0]
+    merged_ranges = _merge_candidate_assignment_ranges(
+        assignment_range
+        for assignment in runnable_assignments
+        for assignment_range in assignment.ranges
+        if assignment_range.dataset_code == dataset
+    )
+    if question_id is not None:
+        scoped_question = repository.select_candidate_questions(
+            dataset=dataset,
+            batch_size=1,
+            question_sequence_start=None,
+            question_sequence_end=None,
+            question_id=question_id,
+        )
+        if scoped_question:
+            question = scoped_question[0]
+            if not any(
+                assignment_range.question_sequence_start
+                <= question.question_sequence
+                <= assignment_range.question_sequence_end
+                for assignment_range in merged_ranges
+            ):
+                raise ValueError(
+                    f"Requested {dataset} question_id={question_id} sequence={question.question_sequence} "
+                    f"is outside the AV3 assignment scope for candidate model {model_name}."
+                )
+            question_sequence = question.question_sequence
+        else:
+            question_sequence = None
+    else:
+        question_sequence = None
+
+    scoped_assignments: list[tuple[CandidateModelAssignment, tuple[CandidateModelAssignmentRange, ...]]] = []
+    for assignment in runnable_assignments:
+        assignment_dataset_ranges = tuple(
+            assignment_range for assignment_range in assignment.ranges if assignment_range.dataset_code == dataset
+        )
+        if question_sequence_start is not None and question_sequence_end is not None and not any(
+            assignment_range.question_sequence_start <= question_sequence_start
+            and question_sequence_end <= assignment_range.question_sequence_end
+            for assignment_range in assignment_dataset_ranges
+        ):
+            continue
+        if question_sequence_start is not None and question_sequence_end is None and not any(
+            assignment_range.question_sequence_start <= question_sequence_start <= assignment_range.question_sequence_end
+            for assignment_range in assignment_dataset_ranges
+        ):
+            continue
+        if question_sequence_end is not None and question_sequence_start is None and not any(
+            assignment_range.question_sequence_start <= question_sequence_end <= assignment_range.question_sequence_end
+            for assignment_range in assignment_dataset_ranges
+        ):
+            continue
+        clipped_ranges = _clip_candidate_assignment_ranges(
+            assignment_dataset_ranges,
+            question_sequence_start=question_sequence_start,
+            question_sequence_end=question_sequence_end,
+        )
+        if not clipped_ranges:
+            continue
+        if question_sequence is not None and not any(
+            assignment_range.question_sequence_start <= question_sequence <= assignment_range.question_sequence_end
+            for assignment_range in clipped_ranges
+        ):
+            continue
+        scoped_assignments.append((assignment, clipped_ranges))
+
+    if not scoped_assignments:
+        if question_sequence_start is not None and question_sequence_end is not None:
+            raise ValueError(
+                f"Requested {dataset} question range "
+                f"{question_sequence_start}-{question_sequence_end} is outside the AV3 assignment scope "
+                f"for candidate model {model_name}."
+            )
+        if question_sequence_start is not None:
+            raise ValueError(
+                f"Requested {dataset} question_sequence_start={question_sequence_start} is outside the AV3 "
+                f"assignment scope for candidate model {model_name}."
+            )
+        if question_sequence_end is not None:
+            raise ValueError(
+                f"Requested {dataset} question_sequence_end={question_sequence_end} is outside the AV3 "
+                f"assignment scope for candidate model {model_name}."
+            )
+        raise ValueError(f"Candidate model {model_name} has no runnable AV3 assignment range for dataset={dataset}.")
+
+    if len(scoped_assignments) > 1:
+        raise ValueError(
+            f"Candidate model {model_name} maps to multiple AV3 assignments for dataset={dataset}. "
+            "Provide a narrower question range or question_id so one assignment lineage is selected."
+        )
+
+    assignment, selection_ranges = scoped_assignments[0]
+
+    return ResolvedCandidateAssignmentScope(
+        assignment=assignment,
+        selection_ranges=selection_ranges,
+        allow_legacy_model_name_fallback=len(runnable_assignments) == 1,
+    )
+
+
+def _merge_candidate_assignment_ranges(
+    ranges: Iterable[CandidateModelAssignmentRange],
+) -> tuple[CandidateModelAssignmentRange, ...]:
+    ordered_ranges = sorted(
+        tuple(ranges),
+        key=lambda assignment_range: (
+            assignment_range.dataset_code,
+            assignment_range.question_sequence_start,
+            assignment_range.question_sequence_end,
+        ),
+    )
+    merged_ranges: list[CandidateModelAssignmentRange] = []
+    for assignment_range in ordered_ranges:
+        if not merged_ranges:
+            merged_ranges.append(assignment_range)
+            continue
+        current = merged_ranges[-1]
+        if (
+            current.dataset_code == assignment_range.dataset_code
+            and assignment_range.question_sequence_start <= current.question_sequence_end + 1
+        ):
+            merged_ranges[-1] = CandidateModelAssignmentRange(
+                assignment_range_id=None,
+                assignment_id=None,
+                dataset_code=current.dataset_code,
+                question_sequence_start=current.question_sequence_start,
+                question_sequence_end=max(current.question_sequence_end, assignment_range.question_sequence_end),
+            )
+            continue
+        merged_ranges.append(assignment_range)
+    return tuple(merged_ranges)
+
+
+def _clip_candidate_assignment_ranges(
+    assignment_ranges: tuple[CandidateModelAssignmentRange, ...],
+    *,
+    question_sequence_start: int | None,
+    question_sequence_end: int | None,
+) -> tuple[CandidateModelAssignmentRange, ...]:
+    clipped_ranges: list[CandidateModelAssignmentRange] = []
+    for assignment_range in assignment_ranges:
+        start = assignment_range.question_sequence_start
+        end = assignment_range.question_sequence_end
+        if question_sequence_start is not None:
+            start = max(start, question_sequence_start)
+        if question_sequence_end is not None:
+            end = min(end, question_sequence_end)
+        if start > end:
+            continue
+        clipped_ranges.append(
+            CandidateModelAssignmentRange(
+                assignment_range_id=None,
+                assignment_id=None,
+                dataset_code=assignment_range.dataset_code,
+                question_sequence_start=start,
+                question_sequence_end=end,
+            )
+        )
+    return tuple(clipped_ranges)
 
 
 def resolve_candidate_max_tokens(
@@ -3178,6 +3358,7 @@ def _execute_candidate_generation(
                 raw_response=raw_response.raw_response if request.save_raw_response else None,
                 retry_metadata=None,
                 candidate_budget_metadata=candidate_budget_metadata,
+                assignment_metadata=_candidate_assignment_identity_metadata(runtime_config.assignment),
                 prompt_metadata=_candidate_prompt_metadata_for_question(question),
             ),
         )
@@ -3321,6 +3502,7 @@ def _execute_candidate_generation(
                             raw_response=retried_response.raw_response if request.save_raw_response else None,
                             retry_metadata=retry_metadata,
                             candidate_budget_metadata=candidate_budget_metadata,
+                            assignment_metadata=_candidate_assignment_identity_metadata(runtime_config.assignment),
                             prompt_metadata=_candidate_prompt_metadata_for_question(question),
                         ),
                     )
@@ -3363,6 +3545,7 @@ def _execute_candidate_generation(
                     raw_response=None,
                     retry_metadata=retry_metadata,
                     candidate_budget_metadata=candidate_budget_metadata,
+                    assignment_metadata=_candidate_assignment_identity_metadata(runtime_config.assignment),
                     prompt_metadata=_candidate_prompt_metadata_for_question(question),
                 ),
             )
@@ -3380,12 +3563,14 @@ def _build_candidate_answer_raw_response(
     raw_response: dict[str, Any] | None,
     retry_metadata: dict[str, Any] | None,
     candidate_budget_metadata: dict[str, Any] | None,
+    assignment_metadata: dict[str, Any] | None,
     prompt_metadata: dict[str, Any] | None,
 ) -> dict[str, Any] | None:
     if (
         raw_response is None
         and retry_metadata is None
         and candidate_budget_metadata is None
+        and assignment_metadata is None
         and prompt_metadata is None
     ):
         return None
@@ -3396,9 +3581,23 @@ def _build_candidate_answer_raw_response(
         payload["context_window_retry"] = retry_metadata
     if candidate_budget_metadata is not None:
         payload["candidate_budget"] = candidate_budget_metadata
+    if assignment_metadata is not None:
+        payload["assignment_identity"] = assignment_metadata
     if prompt_metadata is not None:
         payload["prompt_metadata"] = prompt_metadata
     return payload
+
+
+def _candidate_assignment_identity_metadata(assignment: CandidateModelAssignment) -> dict[str, Any]:
+    return {
+        "assignment_id": assignment.assignment_id,
+        "id_modelo_av2": assignment.id_modelo_av2,
+        "owner": assignment.owner,
+        "av2_model_name": assignment.av2_model_name,
+        "original_provider_model_id": assignment.original_provider_model_id,
+        "av3_provider": assignment.av3_provider,
+        "av3_provider_model_id": assignment.av3_provider_model_id,
+    }
 
 
 def _candidate_prompt_metadata_for_question(question: CandidateQuestionRecord) -> dict[str, Any]:

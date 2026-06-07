@@ -8,6 +8,7 @@ from collections.abc import Sequence
 
 from .audit_log_parser import DEFAULT_PROD_LOGS_MANIFEST, format_audit_parse_report, parse_prod_logs_manifest
 from .config import ConfigurationError
+from .contracts import SUPPORTED_JUDGE_INPUT_SOURCES
 from .judge_clients.remote_http import RemoteJudgeError
 from .parser import JudgeParseError
 from .config import load_env, load_settings
@@ -56,9 +57,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     run_judge.add_argument(
         "--judge-input-source",
-        choices=["av2", "av3_j1_com_rag"],
+        choices=SUPPORTED_JUDGE_INPUT_SOURCES,
         default="av2",
-        help="Answer source for judge selection. av2 uses respostas_atividade_1; av3_j1_com_rag uses AV3 J1 Com_RAG candidate answers.",
+        help=(
+            "Answer source for judge selection. av2 uses respostas_atividade_1; "
+            "av3_j1_com_rag uses AV3 J1 Com_RAG candidate answers; "
+            "av3_j2_com_rag uses AV3 J2 Com_RAG candidate answers."
+        ),
     )
     run_judge.add_argument(
         "--dataset",

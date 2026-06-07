@@ -10,6 +10,7 @@ from atividade_2.contracts import (
     CandidateAnswerContext,
     CandidateAnswerContextChunkRecord,
     CandidateAnswerRecord,
+    CandidateModelAssignmentRange,
     CandidateModelRuntimeProfileRecord,
     CandidateQuestionRecord,
     CandidateQuestionSelectionResult,
@@ -178,12 +179,12 @@ def test_av3_pending_answer_selection_uses_candidate_identity_and_raw_answer() -
     assert "LEFT JOIN LATERAL (" in query
     assert "assignment.owner" in query
     assert "r.dataset_code = %s" in query
-    assert "d.nome_dataset = 'OAB_Bench'" in query
+    assert "d.nome_dataset = %s" in query
     assert "a.status = 'success'" in query
     assert "a.answer_text IS NOT NULL" in query
     assert "FROM av3.candidate_answer_context_chunks context_chunk" in query
     assert "evaluation.id_candidate_answer = a.id_candidate_answer" in query
-    assert cursor.params[0] == [11, "principal", "single:%", "J1", 1]
+    assert cursor.params[0] == [11, "principal", "single:%", "J1", "OAB_Bench", 1]
     assert answers == [
         CandidateAnswerContext(
             av1_answer_id=None,
@@ -218,6 +219,69 @@ def test_av3_pending_answer_selection_rejects_non_j1_dataset() -> None:
         )
 
 
+def test_av3_j2_pending_answer_selection_uses_dataset_code_and_candidate_identity() -> None:
+    cursor = MultiRecordingCursor(
+        fetchall_rows=[
+            [
+                (
+                    401,
+                    88,
+                    "OAB_Exames",
+                    "Enunciado AV3 J2",
+                    "Alternativa B",
+                    "Resposta candidata J2",
+                    "openai/gpt-5",
+                    {
+                        "dataset_code": "J2",
+                        "question_sequence": 88,
+                        "tipo_questao": "MULTIPLA_ESCOLHA",
+                        "candidate_owner": "Marina",
+                        "candidate_provider": "openrouter",
+                        "candidate_assignment_id": 13,
+                    },
+                )
+            ]
+        ]
+    )
+    repository = JudgeRepository(TransactionConnection(cursor))
+    repository.ensure_judge_model = lambda model: 11  # type: ignore[method-assign]
+
+    answers = repository.select_pending_candidate_answers(
+        dataset="J2",
+        batch_size=1,
+        required_evaluations=((ModelSpec(requested="judge-1", provider_model="provider/judge-1"), "principal", "single"),),
+        judge_input_source="av3_j2_com_rag",
+    )
+
+    query = cursor.queries[0]
+    assert "r.dataset_code = %s" in query
+    assert "d.nome_dataset = %s" in query
+    assert "a.status = 'success'" in query
+    assert "FROM av3.candidate_answer_context_chunks context_chunk" in query
+    assert "evaluation.id_candidate_answer = a.id_candidate_answer" in query
+    assert cursor.params[0] == [11, "principal", "single:%", "J2", "OAB_Exames", 1]
+    assert answers == [
+        CandidateAnswerContext(
+            av1_answer_id=None,
+            candidate_answer_id=401,
+            question_id=88,
+            dataset_name="OAB_Exames",
+            question_text="Enunciado AV3 J2",
+            reference_answer="Alternativa B",
+            candidate_answer="Resposta candidata J2",
+            candidate_model="openai/gpt-5",
+            metadata={
+                "dataset_code": "J2",
+                "question_sequence": 88,
+                "tipo_questao": "MULTIPLA_ESCOLHA",
+                "candidate_owner": "Marina",
+                "candidate_provider": "openrouter",
+                "candidate_assignment_id": 13,
+            },
+        )
+    ]
+
+
 def test_av3_eligibility_summary_uses_candidate_answer_identity() -> None:
     cursor = MultiRecordingCursor(fetchone_rows=[(4, 1, 2)])
     repository = JudgeRepository(TransactionConnection(cursor))
@@ -237,13 +301,41 @@ def test_av3_eligibility_summary_uses_candidate_answer_identity() -> None:
     assert "evaluation.id_candidate_answer = answer.id_candidate_answer" in query
     assert "a.status = 'success'" in query
     assert "FROM av3.candidate_answer_context_chunks context_chunk" in query
-    assert cursor.params[0] == [17, "principal", "2plus1:%", "J1", 1, 1, 1]
+    assert cursor.params[0] == [17, "principal", "2plus1:%", "J1", "OAB_Bench", 1, 1, 1]
     assert summary == EligibilitySummary(
         missing=2,
         failed=1,
         successful=4,
         batch_size=3,
         will_process=3,
+    )
+
+
+def test_av3_j2_eligibility_summary_uses_candidate_answer_identity() -> None:
+    cursor = MultiRecordingCursor(fetchone_rows=[(5, 0, 3)])
+    repository = JudgeRepository(TransactionConnection(cursor))
+    repository.ensure_judge_model = lambda model: 17  # type: ignore[method-assign]
+
+    summary = repository.summarize_eligibility(
+        dataset="J2",
+        batch_size=2,
+        required_evaluations=((ModelSpec(requested="judge-1", provider_model="provider/judge-1"), "principal", "single"),),
+        judge_input_source="av3_j2_com_rag",
+    )
+
+    query = cursor.queries[0]
+    assert "FROM av3.candidate_answers a" in query
+    assert "r.dataset_code = %s" in query
+    assert "d.nome_dataset = %s" in query
+    assert "answer.id_candidate_answer" in query
+    assert "evaluation.id_candidate_answer = answer.id_candidate_answer" in query
+    assert cursor.params[0] == [17, "principal", "single:%", "J2", "OAB_Exames", 1, 1, 1]
+    assert summary == EligibilitySummary(
+        missing=3,
+        failed=0,
+        successful=5,
+        batch_size=2,
+        will_process=2,
     )
 
 
@@ -814,10 +906,31 @@ def test_candidate_rag_schema_is_idempotent_on_repeated_calls() -> None:
     repository._ensure_candidate_rag_schema(cursor)
     repository._ensure_candidate_rag_schema(cursor)
 
-    assert len(cursor.queries) == 48
+    assert len(cursor.queries) == 56
     assert any("ALTER TABLE av3.candidate_model_runtime_profiles" in query for query in cursor.queries)
     assert any("ALTER TABLE av3.candidate_model_runtime_observations" in query for query in cursor.queries)
+    assert any("ALTER TABLE av3.candidate_runs" in query for query in cursor.queries)
     assert all("DROP TABLE" not in query for query in cursor.queries)
+
+
+def test_candidate_runs_id_assignment_migration_precedes_index_and_fk() -> None:
+    cursor = MultiRecordingCursor()
+    repository = JudgeRepository(TransactionConnection(cursor))
+
+    repository._ensure_candidate_rag_schema(cursor)
+
+    add_column_index = next(
+        index for index, query in enumerate(cursor.queries) if "ADD COLUMN IF NOT EXISTS id_assignment" in query
+    )
+    create_index_index = next(
+        index for index, query in enumerate(cursor.queries) if "idx_candidate_runs_assignment_created" in query
+    )
+    add_fk_index = next(
+        index for index, query in enumerate(cursor.queries) if "candidate_runs_id_assignment_fkey" in query
+    )
+
+    assert add_column_index < create_index_index
+    assert add_column_index < add_fk_index
 
 
 def test_av3_evaluation_identity_schema_is_additive_and_idempotent() -> None:
@@ -893,6 +1006,7 @@ def test_create_candidate_run_persists_metadata_json_and_returns_record() -> Non
             (
                 17,
                 "J1",
+                44,
                 31,
                 7,
                 "candidate-model",
@@ -916,6 +1030,7 @@ def test_create_candidate_run_persists_metadata_json_and_returns_record() -> Non
         run=CandidateRunRecord(
             candidate_run_id=None,
             dataset="j1",
+            assignment_id=44,
             retrieval_run_id=31,
             prompt_id=7,
             model_name="candidate-model",
@@ -933,6 +1048,7 @@ def test_create_candidate_run_persists_metadata_json_and_returns_record() -> Non
     assert "metadata_jsonb" in cursor.queries[0]
     assert cursor.params[0] == [
         "J1",
+        44,
         31,
         7,
         "candidate-model",
@@ -950,6 +1066,7 @@ def test_create_candidate_run_persists_metadata_json_and_returns_record() -> Non
     assert record == CandidateRunRecord(
         candidate_run_id=17,
         dataset="J1",
+        assignment_id=44,
         retrieval_run_id=31,
         prompt_id=7,
         model_name="candidate-model",
@@ -1294,6 +1411,7 @@ def test_list_candidate_runs_filters_by_dataset_and_status() -> None:
                 (
                     17,
                     "J2",
+                    None,
                     31,
                     7,
                     "candidate-model",
@@ -1323,6 +1441,7 @@ def test_list_candidate_runs_filters_by_dataset_and_status() -> None:
         CandidateRunRecord(
             candidate_run_id=17,
             dataset="J2",
+            assignment_id=None,
             retrieval_run_id=31,
             prompt_id=7,
             model_name="candidate-model",
@@ -1540,6 +1659,7 @@ def test_select_pending_candidate_questions_excludes_successes_before_limit() ->
     result = repository.select_pending_candidate_questions(
         dataset="J1",
         model_name="model-a",
+        assignment_id=None,
         batch_size=2,
         question_sequence_start=1,
         question_sequence_end=5,
@@ -1608,6 +1728,7 @@ def test_select_pending_candidate_questions_prioritizes_failed_before_unanswered
     result = repository.select_pending_candidate_questions(
         dataset="J1",
         model_name="model-a",
+        assignment_id=None,
         batch_size=3,
         question_sequence_start=None,
         question_sequence_end=None,
@@ -1647,6 +1768,7 @@ def test_select_pending_candidate_questions_success_wins_over_failed() -> None:
     result = repository.select_pending_candidate_questions(
         dataset="J1",
         model_name="model-a",
+        assignment_id=None,
         batch_size=1,
         question_sequence_start=None,
         question_sequence_end=None,
@@ -1687,6 +1809,7 @@ def test_select_pending_candidate_questions_filters_state_by_current_dataset_and
     result = repository.select_pending_candidate_questions(
         dataset="J1",
         model_name="model-a",
+        assignment_id=None,
         batch_size=1,
         question_sequence_start=None,
         question_sequence_end=None,
@@ -1727,6 +1850,7 @@ def test_select_pending_candidate_questions_skip_false_preserves_sequence_policy
     result = repository.select_pending_candidate_questions(
         dataset="J1",
         model_name="model-a",
+        assignment_id=None,
         batch_size=1,
         question_sequence_start=None,
         question_sequence_end=None,
@@ -1773,6 +1897,7 @@ def test_select_pending_candidate_questions_applies_question_id_and_sequence_fil
     repository.select_pending_candidate_questions(
         dataset="J1",
         model_name="model-a",
+        assignment_id=None,
         batch_size=1,
         question_sequence_start=7,
         question_sequence_end=9,
@@ -1786,6 +1911,50 @@ def test_select_pending_candidate_questions_applies_question_id_and_sequence_fil
     assert cursor.params[0] == ["J1", 31, 101, 7, 9, "J1", "model-a", "J1", "model-a", 1]
 
 
+def test_select_pending_candidate_questions_applies_assignment_ranges() -> None:
+    cursor = MultiRecordingCursor(fetchone_rows=[(0,)], fetchall_rows=[[(101, "J2", 740, "Q740", "QUESTÃO", None, False)]])
+    repository = JudgeRepository(TransactionConnection(cursor))
+    repository.get_rag_vector_base_summary = lambda dataset: RagVectorBaseSummary(  # type: ignore[method-assign]
+        dataset=dataset,
+        dataset_name="OAB_Exames",
+        import_run_id=31,
+        active_curation_run_id=31,
+        matches_active_curation=True,
+        retrieval_run_id=21,
+        retrieval_name="j2_source_urls_v1",
+        retrieval_strategy="source_url_only_v1",
+        embedding_model="text-embedding-3-small",
+        top_k=5,
+        vector_enabled=True,
+        lexical_enabled=False,
+        rerank_enabled=False,
+        document_count=10,
+        chunk_count=50,
+        embedding_count=50,
+        status="pronta_com_embeddings",
+        created_at="2026-06-04T12:00:00",
+    )
+
+    repository.select_pending_candidate_questions(
+        dataset="J2",
+        model_name="model-a",
+        assignment_id=None,
+        batch_size=1,
+        question_sequence_start=None,
+        question_sequence_end=None,
+        question_id=None,
+        skip_existing_successful=True,
+        assignment_ranges=(
+            CandidateModelAssignmentRange(None, None, "J2", 739, 861),
+            CandidateModelAssignmentRange(None, None, "J2", 900, 950),
+        ),
+    )
+
+    assert "(q.question_sequence >= %s AND q.question_sequence <= %s)" in cursor.queries[0]
+    assert "OR (q.question_sequence >= %s AND q.question_sequence <= %s)" in cursor.queries[0]
+    assert cursor.params[0] == ["J2", 31, 739, 861, 900, 950, "J2", "model-a", "J2", "model-a", 1]
+
+
 def test_successful_candidate_answer_exists_filters_by_dataset_model_question_and_status() -> None:
     cursor = MultiRecordingCursor(fetchone_rows=[(1,)])
     repository = JudgeRepository(TransactionConnection(cursor))
@@ -1793,6 +1962,7 @@ def test_successful_candidate_answer_exists_filters_by_dataset_model_question_an
     exists = repository.successful_candidate_answer_exists(
         dataset="j1",
         model_name="candidate-model",
+        assignment_id=None,
         question_id=77,
         exclude_candidate_run_id=17,
     )

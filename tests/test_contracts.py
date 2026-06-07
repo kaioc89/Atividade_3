@@ -46,6 +46,7 @@ def test_candidate_rag_contracts_capture_optional_fields_and_defaults() -> None:
     run = CandidateRunRecord(
         candidate_run_id=11,
         dataset="J1",
+        assignment_id=17,
         retrieval_run_id=21,
         prompt_id=7,
         model_name="candidate-model",
