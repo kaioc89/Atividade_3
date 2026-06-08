@@ -19,6 +19,7 @@ DATASET_LABELS = {
     "OAB_Exames": "J2",
 }
 DEFAULT_SPEARMAN_UNAVAILABLE = "Referência humana/gabarito/rubrica indisponível para o filtro selecionado."
+COMPARATIVE_EXCLUDED_JUDGES = frozenset({"openai/gpt-oss-120b"})
 
 
 @dataclass(frozen=True)
@@ -58,6 +59,63 @@ class DashboardService:
         finally:
             connection.close()
         return build_dashboard_payload(rows, expected_answers=expected_answers, filters=filters, options=options)
+
+
+class AV3DashboardService:
+    """Read PostgreSQL AV3 evaluation data and expose dashboard-ready aggregates."""
+
+    def __init__(
+        self,
+        *,
+        settings_loader: Callable[[], Any] = load_settings,
+        connect_func: Callable[[str], Any] = connect,
+    ) -> None:
+        self._settings_loader = settings_loader
+        self._connect = connect_func
+
+    def load(self, filters: DashboardFilters) -> dict[str, Any]:
+        """Return filtered AV3 dashboard metrics."""
+        settings = self._settings_loader()
+        connection = self._connect(settings.database_url)
+        try:
+            with connection.cursor() as cursor:
+                rows = _fetch_av3_evaluation_rows(cursor, filters)
+                expected_answers = _fetch_av3_expected_answers(cursor, filters)
+                options = _fetch_av3_filter_options(cursor)
+        finally:
+            connection.close()
+        return build_dashboard_payload(rows, expected_answers=expected_answers, filters=filters, options=options)
+
+
+class ComparativeDashboardService:
+    """Read PostgreSQL AV2/AV3 comparison data and expose paired indicators."""
+
+    def __init__(
+        self,
+        *,
+        settings_loader: Callable[[], Any] = load_settings,
+        connect_func: Callable[[str], Any] = connect,
+    ) -> None:
+        self._settings_loader = settings_loader
+        self._connect = connect_func
+
+    def load(self, filters: DashboardFilters) -> dict[str, Any]:
+        """Return filtered AV2 Sem_RAG vs AV3 Com_RAG indicators."""
+        settings = self._settings_loader()
+        connection = self._connect(settings.database_url)
+        try:
+            with connection.cursor() as cursor:
+                rows = _fetch_comparative_rows(cursor, filters)
+                agreement_rows = _fetch_comparative_agreement_rows(cursor, filters)
+                options = _fetch_comparative_filter_options(cursor)
+        finally:
+            connection.close()
+        return build_comparative_dashboard_payload(
+            rows,
+            filters=filters,
+            options=options,
+            agreement_rows=agreement_rows,
+        )
 
 
 def parse_dashboard_filters(values: dict[str, str | None]) -> DashboardFilters:
@@ -151,6 +209,124 @@ def build_dashboard_payload(
             "judge_arbiter": (
                 "Juiz x árbitro é meta-avaliação complementar de consistência entre avaliadores, "
                 "não substitui Spearman contra gabarito humano."
+            ),
+        },
+    }
+
+
+def build_comparative_dashboard_payload(
+    rows: list[dict[str, Any]],
+    *,
+    filters: DashboardFilters,
+    options: dict[str, list[str]] | None = None,
+    agreement_rows: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Build deterministic AV2 Sem_RAG vs AV3 Com_RAG indicators from paired rows."""
+    rows = [row for row in rows if row.get("normalized_judge_model") not in COMPARATIVE_EXCLUDED_JUDGES]
+    complete_pairs = [row for row in rows if row.get("av2_score") is not None and row.get("av3_score") is not None]
+    av2_only_pairs = [row for row in rows if row.get("av2_score") is not None and row.get("av3_score") is None]
+    av3_only_pairs = [row for row in rows if row.get("av2_score") is None and row.get("av3_score") is not None]
+    deltas = [float(row["av3_score"]) - float(row["av2_score"]) for row in complete_pairs]
+    normalized_judges = sorted({str(row["normalized_judge_model"]) for row in rows if row.get("normalized_judge_model")})
+    av2_rows = [
+        {
+            **row,
+            "candidate_answer": row.get("av2_candidate_answer"),
+            "reference_answer": row.get("av2_reference_answer"),
+            "score": row.get("av2_score"),
+        }
+        for row in complete_pairs
+    ]
+    av3_rows = [
+        {
+            **row,
+            "candidate_answer": row.get("av3_candidate_answer"),
+            "reference_answer": row.get("av3_reference_answer"),
+            "score": row.get("av3_score"),
+        }
+        for row in complete_pairs
+    ]
+    spearman_av2 = _primary_spearman(av2_rows, filters.dataset)
+    spearman_av3 = _primary_spearman(av3_rows, filters.dataset)
+    specialty_breakdown = _comparative_specialty_breakdown(complete_pairs)
+    spearman_breakdowns = _comparative_spearman_breakdowns(complete_pairs, filters.dataset)
+    agreement = _comparative_judge_agreement(agreement_rows or [])
+    diagnostics = {
+        "complete_pairs": len(complete_pairs),
+        "av2_only_tuples": len(av2_only_pairs),
+        "av3_only_tuples": len(av3_only_pairs),
+        "filtered_dataset": filters.dataset,
+        "filtered_candidate_models": list(filters.candidate_models),
+        "filtered_judge_models": list(filters.judge_models),
+        "normalized_judge_models": normalized_judges,
+    }
+    diagnostics_summary = (
+        f"Pares completos: {diagnostics['complete_pairs']} · "
+        f"Apenas AV2: {diagnostics['av2_only_tuples']} · "
+        f"Apenas AV3: {diagnostics['av3_only_tuples']} · "
+        f"Dataset: {diagnostics['filtered_dataset']} · "
+        f"Modelos candidatos: {', '.join(diagnostics['filtered_candidate_models']) or 'todos'} · "
+        f"Juizes filtrados: {', '.join(diagnostics['filtered_judge_models']) or 'todos'} · "
+        f"Juizes normalizados: {', '.join(diagnostics['normalized_judge_models']) or 'nenhum'}"
+    )
+    return {
+        "filters": _serialize_filters(filters),
+        "options": options or {"datasets": [], "candidate_models": [], "judge_models": [], "statuses": ["all"]},
+        "cards": {
+            "comparable_pairs": len(complete_pairs),
+            "comparative_coverage": {
+                "evaluated": len(complete_pairs),
+                "expected": len(rows),
+                "percent": _percent(len(complete_pairs), len(rows)),
+            },
+            "av2_average_score": _average(row["av2_score"] for row in complete_pairs),
+            "av3_average_score": _average(row["av3_score"] for row in complete_pairs),
+            "delta_average": _average(deltas),
+            "improvement_rate": _percent(sum(1 for delta in deltas if delta > 0), len(deltas)),
+            "regression_rate": _percent(sum(1 for delta in deltas if delta < 0), len(deltas)),
+            "unchanged_rate": _percent(sum(1 for delta in deltas if delta == 0), len(deltas)),
+            "spearman_av2": spearman_av2,
+            "spearman_av3": spearman_av3,
+            "spearman_delta": _delta_spearman(spearman_av2, spearman_av3),
+            "pairing_diagnostics": diagnostics,
+            "judge_agreement_comparison": agreement["cards"],
+        },
+        "charts": {
+            "ranking_by_model": _comparative_model_ranking(rows),
+            "delta_distribution": _comparative_delta_distribution(complete_pairs),
+            "delta_outcomes": _comparative_delta_outcomes(complete_pairs),
+        },
+        "tables": {
+            "ranking_by_model": _comparative_model_ranking(rows),
+            "specialties": specialty_breakdown,
+            "spearman_breakdowns": spearman_breakdowns,
+            "largest_gains": _comparative_delta_cases(complete_pairs, minimum_delta=2, descending=True),
+            "largest_regressions": _comparative_delta_cases(complete_pairs, minimum_delta=-2, descending=False),
+            "judge_agreement_by_pair": agreement["by_pair"],
+            "judge_agreement_by_candidate_model": agreement["by_candidate_model"],
+        },
+        "methodology": {
+            "pairing": (
+                "Os indicadores usam pares AV2 Sem_RAG vs AV3 Com_RAG por dataset/pergunta, "
+                "modelo candidato comparavel e juiz normalizado."
+            ),
+            "judge_normalization": (
+                "Unbabel/M-Prometheus-14B e Unbabel/M-Prometheus-7B sao agrupados como M-Prometheus apenas no dashboard."
+            ),
+            "legal_specialty_source": (
+                "Especialidades juridicas reutilizam os metadados de perguntas ja usados pelos dashboards existentes."
+            ),
+            "spearman_reference": (
+                "Spearman comparativo usa a mesma referencia ja adotada pelo dashboard principal: gabarito oficial em J2 "
+                "e nota humana/rubrica ordinal persistida em J1 quando disponivel."
+            ),
+            "diagnostics_summary": diagnostics_summary,
+            "judge_agreement_note": agreement["note"],
+            "judge_agreement_empty_state": agreement["empty_state_note"],
+            "empty_state_note": (
+                "Nenhum par completo restou apos os filtros."
+                if not complete_pairs
+                else None
             ),
         },
     }
@@ -272,6 +448,750 @@ def _fetch_filter_options(cursor: Any) -> dict[str, list[str]]:
     return {"candidate_models": candidate_models, "judge_models": judge_models}
 
 
+def _fetch_av3_evaluation_rows(cursor: Any, filters: DashboardFilters) -> list[dict[str, Any]]:
+    clauses, params = _av3_filter_clauses(filters, include_judge=True, include_dates=True)
+    where_sql = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+    cursor.execute(
+        f"""
+        SELECT
+            aj.id_avaliacao,
+            ca.id_candidate_answer,
+            ca.id_pergunta,
+            cr.dataset_code,
+            COALESCE(
+                av2_model.nome_modelo,
+                NULLIF(ca.model_name, ''),
+                NULLIF(cr.model_name, ''),
+                NULLIF(cma.av3_provider_model_id, ''),
+                NULLIF(cma.owner, ''),
+                'sem modelo'
+            ) AS candidate_model,
+            mj.nome_modelo AS judge_model,
+            COALESCE(aj.papel_juiz, '') AS role,
+            COALESCE(aj.status_avaliacao, 'success') AS status,
+            aj.nota_atribuida,
+            aj.data_avaliacao,
+            aj.chain_of_thought,
+            COALESCE(NULLIF(ca.final_choice, ''), NULLIF(ca.answer_text, '')) AS candidate_answer,
+            p.resposta_ouro,
+            COALESCE(p.metadados, '{{}}'::jsonb) AS question_metadata,
+            COALESCE(aj.motivo_acionamento, '') AS trigger_reason,
+            ca.status AS candidate_status,
+            cr.run_status,
+            COALESCE(cma.owner, '') AS candidate_owner,
+            COALESCE(cma.av3_provider_model_id, '') AS candidate_provider_model_id,
+            cma.id_modelo_av2,
+            EXISTS (
+                SELECT 1
+                FROM av3.candidate_answer_context_chunks cacc
+                WHERE cacc.id_candidate_answer = ca.id_candidate_answer
+            ) AS has_context
+        FROM av3.candidate_answers ca
+        JOIN av3.candidate_runs cr
+          ON cr.id_candidate_run = ca.id_candidate_run
+        LEFT JOIN av3.candidate_model_assignments cma
+          ON cma.id_assignment = cr.id_assignment
+        LEFT JOIN public.modelos av2_model
+          ON av2_model.id_modelo = cma.id_modelo_av2
+        JOIN public.perguntas p
+          ON p.id_pergunta = ca.id_pergunta
+        JOIN public.avaliacoes_juiz aj
+          ON aj.id_candidate_answer = ca.id_candidate_answer
+        LEFT JOIN public.modelos mj
+          ON mj.id_modelo = aj.id_modelo_juiz
+        {where_sql}
+        ORDER BY aj.data_avaliacao DESC, aj.id_avaliacao DESC;
+        """,
+        params,
+    )
+    records: list[dict[str, Any]] = []
+    for row in cursor.fetchall():
+        metadata = row[13] if isinstance(row[13], dict) else {}
+        metadata = {
+            **metadata,
+            "dataset_code": row[3],
+            "candidate_status": row[15],
+            "run_status": row[16],
+            "candidate_owner": row[17],
+            "candidate_provider_model_id": row[18],
+            "candidate_av2_model_id": row[19],
+            "has_rag_context": bool(row[20]),
+        }
+        records.append(
+            {
+                "evaluation_id": row[0],
+                "answer_id": row[1],
+                "question_id": row[2],
+                "dataset": row[3],
+                "dataset_name": DATASET_ALIASES.get(row[3], row[3]),
+                "candidate_model": row[4],
+                "judge_model": row[5],
+                "role": row[6],
+                "status": row[7],
+                "score": int(row[8]) if row[8] is not None else None,
+                "evaluated_at": row[9].isoformat() if row[9] is not None else None,
+                "rationale": row[10],
+                "candidate_answer": row[11],
+                "reference_answer": row[12],
+                "metadata": metadata,
+                "trigger_reason": row[14],
+            }
+        )
+    return records
+
+
+def _fetch_av3_expected_answers(cursor: Any, filters: DashboardFilters) -> int:
+    clauses, params = _av3_filter_clauses(filters, include_judge=False, include_dates=False)
+    where_sql = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+    cursor.execute(
+        f"""
+        SELECT COUNT(DISTINCT ca.id_candidate_answer)
+        FROM av3.candidate_answers ca
+        JOIN av3.candidate_runs cr
+          ON cr.id_candidate_run = ca.id_candidate_run
+        LEFT JOIN av3.candidate_model_assignments cma
+          ON cma.id_assignment = cr.id_assignment
+        LEFT JOIN public.modelos av2_model
+          ON av2_model.id_modelo = cma.id_modelo_av2
+        {where_sql};
+        """,
+        params,
+    )
+    row = cursor.fetchone()
+    return int(row[0] or 0)
+
+
+def _fetch_av3_filter_options(cursor: Any) -> dict[str, list[str]]:
+    cursor.execute(
+        """
+        SELECT DISTINCT
+            COALESCE(
+                av2_model.nome_modelo,
+                NULLIF(ca.model_name, ''),
+                NULLIF(cr.model_name, ''),
+                NULLIF(cma.av3_provider_model_id, ''),
+                NULLIF(cma.owner, ''),
+                'sem modelo'
+            ) AS candidate_model
+        FROM av3.candidate_answers ca
+        JOIN av3.candidate_runs cr
+          ON cr.id_candidate_run = ca.id_candidate_run
+        LEFT JOIN av3.candidate_model_assignments cma
+          ON cma.id_assignment = cr.id_assignment
+        LEFT JOIN public.modelos av2_model
+          ON av2_model.id_modelo = cma.id_modelo_av2
+        WHERE ca.status = 'success'
+          AND EXISTS (
+              SELECT 1
+              FROM av3.candidate_answer_context_chunks cacc
+              WHERE cacc.id_candidate_answer = ca.id_candidate_answer
+          )
+        ORDER BY candidate_model;
+        """
+    )
+    candidate_models = [row[0] for row in cursor.fetchall()]
+    cursor.execute(
+        """
+        SELECT DISTINCT mj.nome_modelo
+        FROM public.avaliacoes_juiz aj
+        JOIN av3.candidate_answers ca
+          ON ca.id_candidate_answer = aj.id_candidate_answer
+        JOIN av3.candidate_runs cr
+          ON cr.id_candidate_run = ca.id_candidate_run
+        JOIN public.modelos mj
+          ON mj.id_modelo = aj.id_modelo_juiz
+        WHERE EXISTS (
+            SELECT 1
+            FROM av3.candidate_answer_context_chunks cacc
+            WHERE cacc.id_candidate_answer = ca.id_candidate_answer
+        )
+        ORDER BY mj.nome_modelo;
+        """
+    )
+    judge_models = [row[0] for row in cursor.fetchall()]
+    cursor.execute(
+        """
+        SELECT DISTINCT cr.dataset_code
+        FROM av3.candidate_runs cr
+        JOIN av3.candidate_answers ca
+          ON ca.id_candidate_run = cr.id_candidate_run
+        WHERE ca.status = 'success'
+          AND EXISTS (
+              SELECT 1
+              FROM av3.candidate_answer_context_chunks cacc
+              WHERE cacc.id_candidate_answer = ca.id_candidate_answer
+          )
+        ORDER BY cr.dataset_code;
+        """
+    )
+    datasets = [row[0] for row in cursor.fetchall()]
+    cursor.execute(
+        """
+        SELECT DISTINCT COALESCE(aj.status_avaliacao, 'success') AS status
+        FROM public.avaliacoes_juiz aj
+        JOIN av3.candidate_answers ca
+          ON ca.id_candidate_answer = aj.id_candidate_answer
+        JOIN av3.candidate_runs cr
+          ON cr.id_candidate_run = ca.id_candidate_run
+        WHERE EXISTS (
+            SELECT 1
+            FROM av3.candidate_answer_context_chunks cacc
+            WHERE cacc.id_candidate_answer = ca.id_candidate_answer
+        )
+        ORDER BY status;
+        """
+    )
+    raw_statuses = [str(row[0] or "success") for row in cursor.fetchall()]
+    statuses = ["all"]
+    if any(status == "success" for status in raw_statuses):
+        statuses.append("sucesso")
+    if any(status != "success" for status in raw_statuses):
+        statuses.append("erro")
+    return {
+        "datasets": datasets,
+        "candidate_models": candidate_models,
+        "judge_models": judge_models,
+        "statuses": statuses,
+    }
+
+
+def _fetch_comparative_rows(cursor: Any, filters: DashboardFilters) -> list[dict[str, Any]]:
+    av2_clauses, av2_params = _comparative_av2_filter_clauses(filters)
+    av3_clauses, av3_params = _comparative_av3_filter_clauses(filters)
+    av2_where_sql = f"WHERE {' AND '.join(av2_clauses)}" if av2_clauses else ""
+    av3_where_sql = f"WHERE {' AND '.join(av3_clauses)}" if av3_clauses else ""
+    cursor.execute(
+        f"""
+        WITH av2_ranked AS (
+            SELECT
+                {_comparative_av2_dataset_sql('d.nome_dataset')} AS dataset_code,
+                p.id_pergunta AS question_id,
+                r.id_modelo AS comparable_candidate_model_id,
+                mc.nome_modelo AS av2_model_name,
+                mc.nome_modelo AS comparable_candidate_model,
+                mj.nome_modelo AS raw_judge_model,
+                {_normalized_judge_sql('mj.nome_modelo')} AS normalized_judge_model,
+                COALESCE(a.status_avaliacao, 'success') AS status,
+                a.nota_atribuida AS score,
+                r.texto_resposta AS candidate_answer,
+                p.resposta_ouro AS reference_answer,
+                COALESCE(p.metadados, '{{}}'::jsonb) AS question_metadata,
+                NULLIF(p.metadados ->> 'question_number', '') AS question_sequence,
+                ROW_NUMBER() OVER (
+                        PARTITION BY
+                        {_comparative_av2_dataset_sql('d.nome_dataset')},
+                        p.id_pergunta,
+                        r.id_modelo,
+                        {_normalized_judge_sql('mj.nome_modelo')}
+                    ORDER BY a.data_avaliacao DESC NULLS LAST, a.id_avaliacao DESC
+                ) AS row_number
+            FROM public.avaliacoes_juiz a
+            JOIN public.respostas_atividade_1 r
+              ON r.id_resposta = a.id_resposta_ativa1
+            JOIN public.modelos mc
+              ON mc.id_modelo = r.id_modelo
+            JOIN public.modelos mj
+              ON mj.id_modelo = a.id_modelo_juiz
+            JOIN public.perguntas p
+              ON p.id_pergunta = r.id_pergunta
+            JOIN public.datasets d
+              ON d.id_dataset = p.id_dataset
+            {av2_where_sql}
+        ),
+        av2_scores AS (
+            SELECT *
+            FROM av2_ranked
+            WHERE row_number = 1
+        ),
+        av3_ranked AS (
+            SELECT
+                cr.dataset_code AS dataset_code,
+                ca.id_pergunta AS question_id,
+                {_comparative_av3_candidate_model_id_sql()} AS comparable_candidate_model_id,
+                COALESCE(av2_model_direct.nome_modelo, assignment_legacy.av2_model_name) AS av2_model_name,
+                {_comparative_av3_candidate_model_name_sql()} AS comparable_candidate_model,
+                COALESCE(
+                    NULLIF(assignment_direct.owner, ''),
+                    NULLIF(assignment_legacy.owner, '')
+                ) AS candidate_owner,
+                COALESCE(
+                    NULLIF(assignment_direct.av3_provider_model_id, ''),
+                    NULLIF(assignment_legacy.av3_provider_model_id, ''),
+                    NULLIF(ca.model_name, ''),
+                    NULLIF(cr.model_name, '')
+                ) AS av3_provider_model_id,
+                mj.nome_modelo AS raw_judge_model,
+                {_normalized_judge_sql('mj.nome_modelo')} AS normalized_judge_model,
+                COALESCE(aj.status_avaliacao, 'success') AS status,
+                aj.nota_atribuida AS score,
+                COALESCE(NULLIF(ca.final_choice, ''), NULLIF(ca.answer_text, '')) AS candidate_answer,
+                p.resposta_ouro AS reference_answer,
+                COALESCE(p.metadados, '{{}}'::jsonb) AS question_metadata,
+                COALESCE(cq.question_sequence::text, NULLIF(p.metadados ->> 'question_number', '')) AS question_sequence,
+                ROW_NUMBER() OVER (
+                    PARTITION BY
+                        cr.dataset_code,
+                        ca.id_pergunta,
+                        {_comparative_av3_candidate_model_id_sql()},
+                        {_normalized_judge_sql('mj.nome_modelo')}
+                    ORDER BY aj.data_avaliacao DESC NULLS LAST, aj.id_avaliacao DESC
+                ) AS row_number
+            FROM av3.candidate_answers ca
+            JOIN av3.candidate_runs cr
+              ON cr.id_candidate_run = ca.id_candidate_run
+            JOIN public.perguntas p
+              ON p.id_pergunta = ca.id_pergunta
+            LEFT JOIN av3.retrieval_runs rr
+              ON rr.id_retrieval_run = cr.id_retrieval_run
+            LEFT JOIN av3.curadoria_questoes cq
+              ON cq.id_import_run = rr.id_import_run
+             AND cq.dataset_code = cr.dataset_code
+             AND cq.id_pergunta = ca.id_pergunta
+            LEFT JOIN av3.candidate_model_assignments assignment_direct
+              ON assignment_direct.id_assignment = cr.id_assignment
+            LEFT JOIN public.modelos av2_model_direct
+              ON av2_model_direct.id_modelo = assignment_direct.id_modelo_av2
+            LEFT JOIN LATERAL (
+                SELECT
+                    assignment.id_assignment,
+                    assignment.id_modelo_av2,
+                    assignment.owner,
+                    av2_model.nome_modelo AS av2_model_name,
+                    assignment.original_provider_model_id,
+                    assignment.av3_provider_model_id
+                FROM av3.candidate_model_assignments assignment
+                JOIN av3.candidate_model_assignment_ranges assignment_range
+                  ON assignment_range.id_assignment = assignment.id_assignment
+                LEFT JOIN public.modelos av2_model
+                  ON av2_model.id_modelo = assignment.id_modelo_av2
+                WHERE assignment.active
+                  AND cr.id_assignment IS NULL
+                  AND assignment.av3_provider_model_id = ca.model_name
+                  AND assignment_range.dataset_code = cr.dataset_code
+                  AND cq.question_sequence BETWEEN
+                      assignment_range.question_sequence_start
+                      AND assignment_range.question_sequence_end
+                ORDER BY assignment.updated_at DESC, assignment.id_assignment DESC
+                LIMIT 1
+            ) assignment_legacy ON TRUE
+            JOIN public.avaliacoes_juiz aj
+              ON aj.id_candidate_answer = ca.id_candidate_answer
+            JOIN public.modelos mj
+              ON mj.id_modelo = aj.id_modelo_juiz
+            {av3_where_sql}
+        ),
+        av3_scores AS (
+            SELECT *
+            FROM av3_ranked
+            WHERE row_number = 1
+        )
+        SELECT
+            COALESCE(av2.dataset_code, av3.dataset_code) AS dataset_code,
+            COALESCE(av2.question_id, av3.question_id) AS question_id,
+            COALESCE(av2.comparable_candidate_model_id, av3.comparable_candidate_model_id) AS comparable_candidate_model_id,
+            COALESCE(av2.av2_model_name, av3.av2_model_name, av2.comparable_candidate_model, av3.comparable_candidate_model) AS av2_model_name,
+            COALESCE(av2.comparable_candidate_model, av3.comparable_candidate_model) AS comparable_candidate_model,
+            av3.candidate_owner AS candidate_owner,
+            av3.av3_provider_model_id AS av3_provider_model_id,
+            COALESCE(av2.normalized_judge_model, av3.normalized_judge_model) AS normalized_judge_model,
+            av2.raw_judge_model AS av2_raw_judge_model,
+            av3.raw_judge_model AS av3_raw_judge_model,
+            av2.status AS av2_status,
+            av3.status AS av3_status,
+            av2.score AS av2_score,
+            av3.score AS av3_score,
+            av2.candidate_answer AS av2_candidate_answer,
+            av3.candidate_answer AS av3_candidate_answer,
+            av2.reference_answer AS av2_reference_answer,
+            av3.reference_answer AS av3_reference_answer,
+            COALESCE(av2.question_metadata, av3.question_metadata, '{{}}'::jsonb) AS question_metadata,
+            COALESCE(av2.question_sequence, av3.question_sequence) AS question_sequence
+        FROM av2_scores av2
+        FULL OUTER JOIN av3_scores av3
+          ON av3.dataset_code = av2.dataset_code
+         AND av3.question_id = av2.question_id
+         AND av3.comparable_candidate_model_id = av2.comparable_candidate_model_id
+         AND av3.normalized_judge_model = av2.normalized_judge_model
+        ORDER BY 1, 2, 4, 5;
+        """,
+        [*av2_params, *av3_params],
+    )
+    return [
+        {
+            "dataset": row[0],
+            "question_id": row[1],
+            "comparable_candidate_model_id": row[2],
+            "av2_model_name": row[3],
+            "comparable_candidate_model": row[4],
+            "candidate_owner": row[5],
+            "av3_provider_model_id": row[6],
+            "normalized_judge_model": row[7],
+            "av2_raw_judge_model": row[8],
+            "av3_raw_judge_model": row[9],
+            "av2_status": row[10],
+            "av3_status": row[11],
+            "av2_score": int(row[12]) if row[12] is not None else None,
+            "av3_score": int(row[13]) if row[13] is not None else None,
+            "av2_candidate_answer": row[14],
+            "av3_candidate_answer": row[15],
+            "av2_reference_answer": row[16],
+            "av3_reference_answer": row[17],
+            "metadata": row[18] if isinstance(row[18], dict) else {},
+            "question_sequence": _safe_int(row[19]),
+        }
+        for row in cursor.fetchall()
+    ]
+
+
+def _fetch_comparative_agreement_rows(cursor: Any, filters: DashboardFilters) -> list[dict[str, Any]]:
+    av2_clauses, av2_params = _comparative_av2_filter_clauses(filters, include_arbiter=True)
+    av3_clauses, av3_params = _comparative_av3_filter_clauses(filters, include_arbiter=True)
+    av2_where_sql = f"WHERE {' AND '.join(av2_clauses)}" if av2_clauses else ""
+    av3_where_sql = f"WHERE {' AND '.join(av3_clauses)}" if av3_clauses else ""
+    cursor.execute(
+        f"""
+        WITH av2_ranked AS (
+            SELECT
+                {_comparative_av2_dataset_sql('d.nome_dataset')} AS dataset_code,
+                p.id_pergunta AS question_id,
+                r.id_modelo AS comparable_candidate_model_id,
+                mc.nome_modelo AS comparable_candidate_model,
+                COALESCE(a.papel_juiz, '') AS role,
+                CASE WHEN COALESCE(a.papel_juiz, '') = 'arbitro' THEN 'arbiter' ELSE 'primary' END AS judge_bucket,
+                {_normalized_judge_sql('mj.nome_modelo')} AS normalized_judge_model,
+                COALESCE(a.status_avaliacao, 'success') AS status,
+                a.nota_atribuida AS score,
+                NULLIF(p.metadados ->> 'question_number', '') AS question_sequence,
+                ROW_NUMBER() OVER (
+                    PARTITION BY
+                        {_comparative_av2_dataset_sql('d.nome_dataset')},
+                        p.id_pergunta,
+                        r.id_modelo,
+                        {_normalized_judge_sql('mj.nome_modelo')},
+                        CASE WHEN COALESCE(a.papel_juiz, '') = 'arbitro' THEN 'arbiter' ELSE 'primary' END
+                    ORDER BY a.data_avaliacao DESC NULLS LAST, a.id_avaliacao DESC
+                ) AS row_number
+            FROM public.avaliacoes_juiz a
+            JOIN public.respostas_atividade_1 r
+              ON r.id_resposta = a.id_resposta_ativa1
+            JOIN public.modelos mc
+              ON mc.id_modelo = r.id_modelo
+            JOIN public.modelos mj
+              ON mj.id_modelo = a.id_modelo_juiz
+            JOIN public.perguntas p
+              ON p.id_pergunta = r.id_pergunta
+            JOIN public.datasets d
+              ON d.id_dataset = p.id_dataset
+            {av2_where_sql}
+        ),
+        av2_scores AS (
+            SELECT *
+            FROM av2_ranked
+            WHERE row_number = 1
+        ),
+        av3_ranked AS (
+            SELECT
+                cr.dataset_code AS dataset_code,
+                ca.id_pergunta AS question_id,
+                {_comparative_av3_candidate_model_id_sql()} AS comparable_candidate_model_id,
+                {_comparative_av3_candidate_model_name_sql()} AS comparable_candidate_model,
+                COALESCE(aj.papel_juiz, '') AS role,
+                CASE WHEN COALESCE(aj.papel_juiz, '') = 'arbitro' THEN 'arbiter' ELSE 'primary' END AS judge_bucket,
+                {_normalized_judge_sql('mj.nome_modelo')} AS normalized_judge_model,
+                COALESCE(aj.status_avaliacao, 'success') AS status,
+                aj.nota_atribuida AS score,
+                COALESCE(cq.question_sequence::text, NULLIF(p.metadados ->> 'question_number', '')) AS question_sequence,
+                ROW_NUMBER() OVER (
+                    PARTITION BY
+                        cr.dataset_code,
+                        ca.id_pergunta,
+                        {_comparative_av3_candidate_model_id_sql()},
+                        {_normalized_judge_sql('mj.nome_modelo')},
+                        CASE WHEN COALESCE(aj.papel_juiz, '') = 'arbitro' THEN 'arbiter' ELSE 'primary' END
+                    ORDER BY aj.data_avaliacao DESC NULLS LAST, aj.id_avaliacao DESC
+                ) AS row_number
+            FROM av3.candidate_answers ca
+            JOIN av3.candidate_runs cr
+              ON cr.id_candidate_run = ca.id_candidate_run
+            JOIN public.perguntas p
+              ON p.id_pergunta = ca.id_pergunta
+            LEFT JOIN av3.retrieval_runs rr
+              ON rr.id_retrieval_run = cr.id_retrieval_run
+            LEFT JOIN av3.curadoria_questoes cq
+              ON cq.id_import_run = rr.id_import_run
+             AND cq.dataset_code = cr.dataset_code
+             AND cq.id_pergunta = ca.id_pergunta
+            LEFT JOIN av3.candidate_model_assignments assignment_direct
+              ON assignment_direct.id_assignment = cr.id_assignment
+            LEFT JOIN public.modelos av2_model_direct
+              ON av2_model_direct.id_modelo = assignment_direct.id_modelo_av2
+            LEFT JOIN LATERAL (
+                SELECT
+                    assignment.id_assignment,
+                    assignment.id_modelo_av2,
+                    av2_model.nome_modelo AS av2_model_name,
+                    assignment.av3_provider_model_id
+                FROM av3.candidate_model_assignments assignment
+                JOIN av3.candidate_model_assignment_ranges assignment_range
+                  ON assignment_range.id_assignment = assignment.id_assignment
+                LEFT JOIN public.modelos av2_model
+                  ON av2_model.id_modelo = assignment.id_modelo_av2
+                WHERE assignment.active
+                  AND cr.id_assignment IS NULL
+                  AND assignment.av3_provider_model_id = ca.model_name
+                  AND assignment_range.dataset_code = cr.dataset_code
+                  AND cq.question_sequence BETWEEN
+                      assignment_range.question_sequence_start
+                      AND assignment_range.question_sequence_end
+                ORDER BY assignment.updated_at DESC, assignment.id_assignment DESC
+                LIMIT 1
+            ) assignment_legacy ON TRUE
+            JOIN public.avaliacoes_juiz aj
+              ON aj.id_candidate_answer = ca.id_candidate_answer
+            JOIN public.modelos mj
+              ON mj.id_modelo = aj.id_modelo_juiz
+            {av3_where_sql}
+        ),
+        av3_scores AS (
+            SELECT *
+            FROM av3_ranked
+            WHERE row_number = 1
+        ),
+        paired_answer_keys AS (
+            SELECT DISTINCT
+                av2.dataset_code,
+                av2.question_id,
+                av2.comparable_candidate_model_id,
+                av2.comparable_candidate_model
+            FROM av2_scores av2
+            INNER JOIN av3_scores av3
+              ON av3.dataset_code = av2.dataset_code
+             AND av3.question_id = av2.question_id
+             AND av3.comparable_candidate_model_id = av2.comparable_candidate_model_id
+        )
+        SELECT
+            'AV2' AS source,
+            av2.dataset_code,
+            av2.question_id,
+            av2.comparable_candidate_model_id,
+            av2.comparable_candidate_model,
+            av2.role,
+            av2.judge_bucket,
+            av2.normalized_judge_model,
+            av2.status,
+            av2.score,
+            av2.question_sequence
+        FROM av2_scores av2
+        JOIN paired_answer_keys paired
+          ON paired.dataset_code = av2.dataset_code
+         AND paired.question_id = av2.question_id
+         AND paired.comparable_candidate_model_id = av2.comparable_candidate_model_id
+        UNION ALL
+        SELECT
+            'AV3' AS source,
+            av3.dataset_code,
+            av3.question_id,
+            av3.comparable_candidate_model_id,
+            av3.comparable_candidate_model,
+            av3.role,
+            av3.judge_bucket,
+            av3.normalized_judge_model,
+            av3.status,
+            av3.score,
+            av3.question_sequence
+        FROM av3_scores av3
+        JOIN paired_answer_keys paired
+          ON paired.dataset_code = av3.dataset_code
+         AND paired.question_id = av3.question_id
+         AND paired.comparable_candidate_model_id = av3.comparable_candidate_model_id
+        ORDER BY 2, 3, 5, 1, 7, 8;
+        """,
+        [*av2_params, *av3_params],
+    )
+    return [
+        {
+            "source": row[0],
+            "dataset": row[1],
+            "question_id": row[2],
+            "comparable_candidate_model_id": row[3],
+            "comparable_candidate_model": row[4],
+            "role": row[5],
+            "judge_bucket": row[6],
+            "normalized_judge_model": row[7],
+            "status": row[8],
+            "score": int(row[9]) if row[9] is not None else None,
+            "question_sequence": _safe_int(row[10]),
+        }
+        for row in cursor.fetchall()
+    ]
+
+
+def _fetch_comparative_filter_options(cursor: Any) -> dict[str, list[str]]:
+    cursor.execute(
+        f"""
+        WITH av2_source_datasets AS (
+            SELECT DISTINCT
+                {_comparative_av2_dataset_sql('d.nome_dataset')} AS dataset_code
+            FROM public.respostas_atividade_1 r
+            JOIN public.perguntas p
+              ON p.id_pergunta = r.id_pergunta
+            JOIN public.datasets d
+              ON d.id_dataset = p.id_dataset
+        ),
+        av2_evaluation_datasets AS (
+            SELECT DISTINCT
+                {_comparative_av2_dataset_sql('d.nome_dataset')} AS dataset_code
+            FROM public.avaliacoes_juiz a
+            JOIN public.respostas_atividade_1 r
+              ON r.id_resposta = a.id_resposta_ativa1
+            JOIN public.perguntas p
+              ON p.id_pergunta = r.id_pergunta
+            JOIN public.datasets d
+              ON d.id_dataset = p.id_dataset
+            WHERE a.id_resposta_ativa1 IS NOT NULL
+        ),
+        av3_run_datasets AS (
+            SELECT DISTINCT cr.dataset_code
+            FROM av3.candidate_runs cr
+            WHERE COALESCE(cr.dataset_code, '') <> ''
+        ),
+        av3_evaluation_datasets AS (
+            SELECT DISTINCT cr.dataset_code
+            FROM public.avaliacoes_juiz aj
+            JOIN av3.candidate_answers ca
+              ON ca.id_candidate_answer = aj.id_candidate_answer
+            JOIN av3.candidate_runs cr
+              ON cr.id_candidate_run = ca.id_candidate_run
+            WHERE aj.id_candidate_answer IS NOT NULL
+              AND COALESCE(cr.dataset_code, '') <> ''
+        ),
+        comparative_datasets AS (
+            SELECT dataset_code FROM av2_source_datasets
+            UNION
+            SELECT dataset_code FROM av2_evaluation_datasets
+            UNION
+            SELECT dataset_code FROM av3_run_datasets
+            UNION
+            SELECT dataset_code FROM av3_evaluation_datasets
+        ),
+        av2_candidates AS (
+            SELECT DISTINCT
+                {_comparative_av2_dataset_sql('d.nome_dataset')} AS dataset_code,
+                p.id_pergunta AS question_id,
+                r.id_modelo AS comparable_candidate_model_id,
+                mc.nome_modelo AS comparable_candidate_model
+            FROM public.respostas_atividade_1 r
+            JOIN public.modelos mc
+              ON mc.id_modelo = r.id_modelo
+            JOIN public.perguntas p
+              ON p.id_pergunta = r.id_pergunta
+            JOIN public.datasets d
+              ON d.id_dataset = p.id_dataset
+        ),
+        av3_candidates AS (
+            SELECT DISTINCT
+                cr.dataset_code AS dataset_code,
+                ca.id_pergunta AS question_id,
+                {_comparative_av3_candidate_model_id_sql()} AS comparable_candidate_model_id,
+                {_comparative_av3_candidate_model_name_sql()} AS comparable_candidate_model
+            FROM av3.candidate_answers ca
+            JOIN av3.candidate_runs cr
+              ON cr.id_candidate_run = ca.id_candidate_run
+            LEFT JOIN av3.retrieval_runs rr
+              ON rr.id_retrieval_run = cr.id_retrieval_run
+            LEFT JOIN av3.curadoria_questoes cq
+              ON cq.id_import_run = rr.id_import_run
+             AND cq.dataset_code = cr.dataset_code
+             AND cq.id_pergunta = ca.id_pergunta
+            LEFT JOIN av3.candidate_model_assignments assignment_direct
+              ON assignment_direct.id_assignment = cr.id_assignment
+            LEFT JOIN public.modelos av2_model_direct
+              ON av2_model_direct.id_modelo = assignment_direct.id_modelo_av2
+            LEFT JOIN LATERAL (
+                SELECT
+                    assignment.id_assignment,
+                    assignment.id_modelo_av2,
+                    assignment.owner,
+                    av2_model.nome_modelo AS av2_model_name,
+                    assignment.original_provider_model_id,
+                    assignment.av3_provider_model_id
+                FROM av3.candidate_model_assignments assignment
+                JOIN av3.candidate_model_assignment_ranges assignment_range
+                  ON assignment_range.id_assignment = assignment.id_assignment
+                LEFT JOIN public.modelos av2_model
+                  ON av2_model.id_modelo = assignment.id_modelo_av2
+                WHERE assignment.active
+                  AND cr.id_assignment IS NULL
+                  AND assignment.av3_provider_model_id = ca.model_name
+                  AND assignment_range.dataset_code = cr.dataset_code
+                  AND cq.question_sequence BETWEEN
+                      assignment_range.question_sequence_start
+                      AND assignment_range.question_sequence_end
+                ORDER BY assignment.updated_at DESC, assignment.id_assignment DESC
+                LIMIT 1
+            ) assignment_legacy ON TRUE
+            WHERE {_comparative_av3_candidate_model_id_sql()} IS NOT NULL
+              AND ca.status = 'success'
+              AND EXISTS (
+                  SELECT 1
+                  FROM av3.candidate_answer_context_chunks cacc
+                  WHERE cacc.id_candidate_answer = ca.id_candidate_answer
+              )
+        ),
+        paired_candidates AS (
+            SELECT DISTINCT
+                av2.dataset_code,
+                av2.comparable_candidate_model
+            FROM av2_candidates av2
+            JOIN av3_candidates av3
+              ON av3.dataset_code = av2.dataset_code
+             AND av3.question_id = av2.question_id
+             AND av3.comparable_candidate_model_id = av2.comparable_candidate_model_id
+        ),
+        av2_judges AS (
+            SELECT DISTINCT {_normalized_judge_sql('mj.nome_modelo')} AS normalized_judge_model
+            FROM public.avaliacoes_juiz a
+            JOIN public.modelos mj
+              ON mj.id_modelo = a.id_modelo_juiz
+            WHERE a.id_resposta_ativa1 IS NOT NULL
+              AND COALESCE(a.papel_juiz, '') <> 'arbitro'
+        ),
+        av3_judges AS (
+            SELECT DISTINCT {_normalized_judge_sql('mj.nome_modelo')} AS normalized_judge_model
+            FROM public.avaliacoes_juiz aj
+            JOIN av3.candidate_answers ca
+              ON ca.id_candidate_answer = aj.id_candidate_answer
+            JOIN public.modelos mj
+              ON mj.id_modelo = aj.id_modelo_juiz
+            WHERE ca.status = 'success'
+              AND COALESCE(aj.papel_juiz, '') <> 'arbitro'
+              AND EXISTS (
+                  SELECT 1
+                  FROM av3.candidate_answer_context_chunks cacc
+                  WHERE cacc.id_candidate_answer = ca.id_candidate_answer
+              )
+        )
+        SELECT
+            ARRAY(SELECT dataset_code FROM comparative_datasets WHERE dataset_code IS NOT NULL ORDER BY dataset_code),
+            ARRAY(SELECT DISTINCT comparable_candidate_model FROM paired_candidates ORDER BY comparable_candidate_model),
+            ARRAY(
+                SELECT av2_judges.normalized_judge_model
+                FROM av2_judges
+                INNER JOIN av3_judges
+                  ON av3_judges.normalized_judge_model = av2_judges.normalized_judge_model
+                ORDER BY av2_judges.normalized_judge_model
+            );
+        """
+    )
+    row = cursor.fetchone() or ([], [], [])
+    return {
+        "datasets": list(row[0] or []),
+        "candidate_models": list(row[1] or []),
+        "judge_models": list(row[2] or []),
+        "statuses": ["all", "sucesso", "erro"],
+    }
+
+
 def _filter_clauses(
     filters: DashboardFilters,
     *,
@@ -303,6 +1223,131 @@ def _filter_clauses(
         params.append(filters.date_from)
     if include_dates and filters.date_to is not None:
         clauses.append("a.data_avaliacao::date <= %s")
+        params.append(filters.date_to)
+    return clauses, params
+
+
+def _av3_filter_clauses(
+    filters: DashboardFilters,
+    *,
+    include_judge: bool,
+    include_dates: bool,
+) -> tuple[list[str], list[Any]]:
+    clauses = [
+        "ca.status = 'success'",
+        "EXISTS (SELECT 1 FROM av3.candidate_answer_context_chunks cacc WHERE cacc.id_candidate_answer = ca.id_candidate_answer)",
+    ]
+    params: list[Any] = []
+    dataset = filters.dataset.strip()
+    if dataset.lower() != "all":
+        clauses.append("cr.dataset_code = %s")
+        params.append(dataset.upper())
+    if filters.candidate_models:
+        clauses.append(
+            """
+            COALESCE(
+                av2_model.nome_modelo,
+                NULLIF(ca.model_name, ''),
+                NULLIF(cr.model_name, ''),
+                NULLIF(cma.av3_provider_model_id, ''),
+                NULLIF(cma.owner, ''),
+                'sem modelo'
+            ) = ANY(%s)
+            """.strip()
+        )
+        params.append(list(filters.candidate_models))
+    if include_judge and filters.judge_models:
+        clauses.append("mj.nome_modelo = ANY(%s)")
+        params.append(list(filters.judge_models))
+    if include_judge and filters.status != "all":
+        if filters.status == "erro":
+            clauses.append("COALESCE(aj.status_avaliacao, 'success') <> 'success'")
+        elif filters.status == "sucesso":
+            clauses.append("COALESCE(aj.status_avaliacao, 'success') = 'success'")
+        else:
+            clauses.append("COALESCE(aj.status_avaliacao, 'success') = %s")
+            params.append(filters.status)
+    if include_dates and filters.date_from is not None:
+        clauses.append("aj.data_avaliacao::date >= %s")
+        params.append(filters.date_from)
+    if include_dates and filters.date_to is not None:
+        clauses.append("aj.data_avaliacao::date <= %s")
+        params.append(filters.date_to)
+    return clauses, params
+
+
+def _comparative_av2_filter_clauses(
+    filters: DashboardFilters,
+    *,
+    include_arbiter: bool = False,
+) -> tuple[list[str], list[Any]]:
+    clauses: list[str] = []
+    if not include_arbiter:
+        clauses.append("COALESCE(a.papel_juiz, '') <> 'arbitro'")
+    params: list[Any] = []
+    dataset = filters.dataset.strip()
+    if dataset.lower() != "all":
+        clauses.append(f"{_comparative_av2_dataset_sql('d.nome_dataset')} = %s")
+        params.append(dataset.upper())
+    if filters.candidate_models:
+        clauses.append("mc.nome_modelo = ANY(%s)")
+        params.append(list(filters.candidate_models))
+    if filters.judge_models:
+        clauses.append(f"{_normalized_judge_sql('mj.nome_modelo')} = ANY(%s)")
+        params.append(list(filters.judge_models))
+    if filters.status != "all":
+        if filters.status == "erro":
+            clauses.append("COALESCE(a.status_avaliacao, 'success') <> 'success'")
+        elif filters.status == "sucesso":
+            clauses.append("COALESCE(a.status_avaliacao, 'success') = 'success'")
+        else:
+            clauses.append("COALESCE(a.status_avaliacao, 'success') = %s")
+            params.append(filters.status)
+    if filters.date_from is not None:
+        clauses.append("a.data_avaliacao::date >= %s")
+        params.append(filters.date_from)
+    if filters.date_to is not None:
+        clauses.append("a.data_avaliacao::date <= %s")
+        params.append(filters.date_to)
+    return clauses, params
+
+
+def _comparative_av3_filter_clauses(
+    filters: DashboardFilters,
+    *,
+    include_arbiter: bool = False,
+) -> tuple[list[str], list[Any]]:
+    clauses = [
+        f"{_comparative_av3_candidate_model_id_sql()} IS NOT NULL",
+        "ca.status = 'success'",
+        "EXISTS (SELECT 1 FROM av3.candidate_answer_context_chunks cacc WHERE cacc.id_candidate_answer = ca.id_candidate_answer)",
+    ]
+    if not include_arbiter:
+        clauses.insert(0, "COALESCE(aj.papel_juiz, '') <> 'arbitro'")
+    params: list[Any] = []
+    dataset = filters.dataset.strip()
+    if dataset.lower() != "all":
+        clauses.append("cr.dataset_code = %s")
+        params.append(dataset.upper())
+    if filters.candidate_models:
+        clauses.append(f"{_comparative_av3_candidate_model_name_sql()} = ANY(%s)")
+        params.append(list(filters.candidate_models))
+    if filters.judge_models:
+        clauses.append(f"{_normalized_judge_sql('mj.nome_modelo')} = ANY(%s)")
+        params.append(list(filters.judge_models))
+    if filters.status != "all":
+        if filters.status == "erro":
+            clauses.append("COALESCE(aj.status_avaliacao, 'success') <> 'success'")
+        elif filters.status == "sucesso":
+            clauses.append("COALESCE(aj.status_avaliacao, 'success') = 'success'")
+        else:
+            clauses.append("COALESCE(aj.status_avaliacao, 'success') = %s")
+            params.append(filters.status)
+    if filters.date_from is not None:
+        clauses.append("aj.data_avaliacao::date >= %s")
+        params.append(filters.date_from)
+    if filters.date_to is not None:
+        clauses.append("aj.data_avaliacao::date <= %s")
         params.append(filters.date_to)
     return clauses, params
 
@@ -859,6 +1904,515 @@ def _average_by(rows: list[dict[str, Any]], key: str) -> list[dict[str, Any]]:
     )
 
 
+def _comparative_model_ranking(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    grouped: dict[tuple[Any, ...], dict[str, Any]] = {}
+    for row in rows:
+        key = (
+            row.get("candidate_owner") or None,
+            row.get("av2_model_name") or row.get("comparable_candidate_model") or "sem modelo",
+            row.get("av3_provider_model_id") or None,
+            row.get("comparable_candidate_model") or "sem modelo",
+        )
+        group = grouped.setdefault(
+            key,
+            {
+                "owner": key[0],
+                "av2_model_name": key[1],
+                "av3_provider_model_id": key[2],
+                "comparable_candidate_model": key[3],
+                "all_pairs": 0,
+                "complete_pairs": 0,
+                "av2_scores": [],
+                "av3_scores": [],
+                "deltas": [],
+            },
+        )
+        group["all_pairs"] += 1
+        av2_score = row.get("av2_score")
+        av3_score = row.get("av3_score")
+        if av2_score is None or av3_score is None:
+            continue
+        delta = float(av3_score) - float(av2_score)
+        group["complete_pairs"] += 1
+        group["av2_scores"].append(float(av2_score))
+        group["av3_scores"].append(float(av3_score))
+        group["deltas"].append(delta)
+
+    ranking = []
+    for group in grouped.values():
+        deltas = group["deltas"]
+        complete_pairs = group["complete_pairs"]
+        ranking.append(
+            {
+                "owner": group["owner"],
+                "av2_model_name": group["av2_model_name"],
+                "av3_provider_model_id": group["av3_provider_model_id"],
+                "comparable_candidate_model": group["comparable_candidate_model"],
+                "paired_evaluations": complete_pairs,
+                "av2_average_score": _average(group["av2_scores"]),
+                "av3_average_score": _average(group["av3_scores"]),
+                "delta_average": _average(deltas),
+                "improvement_rate": _percent(sum(1 for delta in deltas if delta > 0), len(deltas)),
+                "regression_rate": _percent(sum(1 for delta in deltas if delta < 0), len(deltas)),
+                "unchanged_rate": _percent(sum(1 for delta in deltas if delta == 0), len(deltas)),
+                "comparative_coverage": {
+                    "evaluated": complete_pairs,
+                    "expected": group["all_pairs"],
+                    "percent": _percent(complete_pairs, group["all_pairs"]),
+                },
+            }
+        )
+    return sorted(
+        ranking,
+        key=lambda row: (
+            -(row["delta_average"] if row["delta_average"] is not None else float("-inf")),
+            -row["paired_evaluations"],
+            str(row["comparable_candidate_model"]),
+            str(row["av3_provider_model_id"] or ""),
+        ),
+    )
+
+
+def _comparative_delta_distribution(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    counts = {delta: 0 for delta in range(-4, 5)}
+    for row in rows:
+        delta = int(float(row["av3_score"]) - float(row["av2_score"]))
+        if delta in counts:
+            counts[delta] += 1
+    return [
+        {
+            "label": f"{delta:+d}" if delta > 0 else str(delta),
+            "value": counts[delta],
+        }
+        for delta in range(-4, 5)
+    ]
+
+
+def _comparative_delta_outcomes(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    outcomes = {"Piorou": 0, "Igual": 0, "Melhorou": 0}
+    for row in rows:
+        delta = float(row["av3_score"]) - float(row["av2_score"])
+        if delta > 0:
+            outcomes["Melhorou"] += 1
+        elif delta < 0:
+            outcomes["Piorou"] += 1
+        else:
+            outcomes["Igual"] += 1
+    return [{"label": label, "value": value} for label, value in outcomes.items()]
+
+
+def _comparative_delta_cases(
+    rows: list[dict[str, Any]],
+    *,
+    minimum_delta: int,
+    descending: bool,
+    limit: int = 25,
+) -> list[dict[str, Any]]:
+    cases = []
+    for row in rows:
+        delta = int(float(row["av3_score"]) - float(row["av2_score"]))
+        if descending and delta < minimum_delta:
+            continue
+        if not descending and delta > minimum_delta:
+            continue
+        case = {
+            "dataset": row.get("dataset"),
+            "question_id": row.get("question_id"),
+            "question_sequence": row.get("question_sequence"),
+            "candidate_model": row.get("comparable_candidate_model"),
+            "normalized_judge_model": row.get("normalized_judge_model"),
+            "av2_score": row.get("av2_score"),
+            "av3_score": row.get("av3_score"),
+            "delta": delta,
+        }
+        specialty = _legal_specialty(row)
+        if specialty != "Sem especialidade":
+            case["legal_specialty"] = specialty
+        cases.append(case)
+    cases.sort(
+        key=lambda row: (
+            -row["delta"] if descending else row["delta"],
+            row["dataset"] or "",
+            row["question_sequence"] if row["question_sequence"] is not None else row["question_id"] or 0,
+            row["question_id"] or 0,
+            row["candidate_model"] or "",
+            row["normalized_judge_model"] or "",
+        )
+    )
+    return cases[:limit]
+
+
+def _comparative_specialty_breakdown(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    grouped: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        specialty = _legal_specialty(row)
+        group = grouped.setdefault(
+            specialty,
+            {
+                "specialty": specialty,
+                "pairs": 0,
+                "av2_scores": [],
+                "av3_scores": [],
+                "deltas": [],
+                "model_deltas": defaultdict(list),
+            },
+        )
+        av2_score = float(row["av2_score"])
+        av3_score = float(row["av3_score"])
+        delta = av3_score - av2_score
+        candidate_model = str(row.get("comparable_candidate_model") or "sem modelo")
+        group["pairs"] += 1
+        group["av2_scores"].append(av2_score)
+        group["av3_scores"].append(av3_score)
+        group["deltas"].append(delta)
+        group["model_deltas"][candidate_model].append(delta)
+
+    summary = []
+    for group in grouped.values():
+        deltas = group["deltas"]
+        model_averages = [
+            {"candidate_model": candidate_model, "delta_average": _average(values)}
+            for candidate_model, values in group["model_deltas"].items()
+        ]
+        model_averages = [
+            item
+            for item in model_averages
+            if item["delta_average"] is not None
+        ]
+        model_averages.sort(key=lambda item: (-float(item["delta_average"]), item["candidate_model"]))
+        best_model = model_averages[0] if model_averages else None
+        worst_model = sorted(
+            model_averages,
+            key=lambda item: (float(item["delta_average"]), item["candidate_model"]),
+        )[0] if model_averages else None
+        delta_average = _average(deltas)
+        summary.append(
+            {
+                "legal_specialty": group["specialty"],
+                "paired_evaluations": group["pairs"],
+                "av2_average_score": _average(group["av2_scores"]),
+                "av3_average_score": _average(group["av3_scores"]),
+                "delta_average": delta_average,
+                "improvement_rate": _percent(sum(1 for delta in deltas if delta > 0), len(deltas)),
+                "regression_rate": _percent(sum(1 for delta in deltas if delta < 0), len(deltas)),
+                "unchanged_rate": _percent(sum(1 for delta in deltas if delta == 0), len(deltas)),
+                "best_model_by_delta": best_model,
+                "worst_model_by_delta": worst_model,
+            }
+        )
+    return sorted(
+        summary,
+        key=lambda item: (
+            -(abs(float(item["delta_average"])) if item["delta_average"] is not None else -1.0),
+            -item["paired_evaluations"],
+            item["legal_specialty"],
+        ),
+    )
+
+
+def _comparative_spearman_breakdowns(rows: list[dict[str, Any]], selected_dataset: str) -> dict[str, list[dict[str, Any]]]:
+    decorated = [_comparative_spearman_row(row, selected_dataset) for row in rows]
+    return {
+        "overall": [_comparative_spearman_summary("Geral", decorated)],
+        "by_dataset": _comparative_spearman_grouped(decorated, lambda row: str(row.get("dataset") or "Sem dataset")),
+        "by_candidate_model": _comparative_spearman_grouped(
+            decorated,
+            lambda row: str(row.get("comparable_candidate_model") or "sem modelo"),
+        ),
+        "by_judge_model": _comparative_spearman_grouped(
+            decorated,
+            lambda row: str(row.get("normalized_judge_model") or "sem juiz"),
+        ),
+    }
+
+
+def _comparative_spearman_row(row: dict[str, Any], selected_dataset: str) -> dict[str, Any]:
+    base = {
+        "dataset": row.get("dataset"),
+        "comparable_candidate_model": row.get("comparable_candidate_model"),
+        "normalized_judge_model": row.get("normalized_judge_model"),
+    }
+    av2_row = {
+        **base,
+        "dataset": row.get("dataset"),
+        "candidate_answer": row.get("av2_candidate_answer"),
+        "reference_answer": row.get("av2_reference_answer"),
+        "score": row.get("av2_score"),
+        "metadata": row.get("metadata"),
+    }
+    av3_row = {
+        **base,
+        "dataset": row.get("dataset"),
+        "candidate_answer": row.get("av3_candidate_answer"),
+        "reference_answer": row.get("av3_reference_answer"),
+        "score": row.get("av3_score"),
+        "metadata": row.get("metadata"),
+    }
+    return {
+        **base,
+        "av2_score": row.get("av2_score"),
+        "av3_score": row.get("av3_score"),
+        "av2_reference_score": _reference_score(av2_row, selected_dataset),
+        "av3_reference_score": _reference_score(av3_row, selected_dataset),
+    }
+
+
+def _comparative_spearman_grouped(
+    rows: list[dict[str, Any]],
+    label_func: Callable[[dict[str, Any]], str],
+) -> list[dict[str, Any]]:
+    grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for row in rows:
+        grouped[label_func(row)].append(row)
+    return sorted(
+        (_comparative_spearman_summary(label, grouped_rows) for label, grouped_rows in grouped.items()),
+        key=lambda item: (-item["paired_evaluations"], item["label"]),
+    )
+
+
+def _comparative_spearman_summary(label: str, rows: list[dict[str, Any]]) -> dict[str, Any]:
+    av2_pairs = [
+        (float(row["av2_reference_score"]), float(row["av2_score"]))
+        for row in rows
+        if row.get("av2_reference_score") is not None and row.get("av2_score") is not None
+    ]
+    av3_pairs = [
+        (float(row["av3_reference_score"]), float(row["av3_score"]))
+        for row in rows
+        if row.get("av3_reference_score") is not None and row.get("av3_score") is not None
+    ]
+    spearman_av2 = (
+        spearman([pair[0] for pair in av2_pairs], [pair[1] for pair in av2_pairs])
+        if av2_pairs
+        else _spearman_unavailable(0, DEFAULT_SPEARMAN_UNAVAILABLE)
+    )
+    spearman_av3 = (
+        spearman([pair[0] for pair in av3_pairs], [pair[1] for pair in av3_pairs])
+        if av3_pairs
+        else _spearman_unavailable(0, DEFAULT_SPEARMAN_UNAVAILABLE)
+    )
+    return {
+        "label": label,
+        "paired_evaluations": len(rows),
+        "reference_pairs_av2": len(av2_pairs),
+        "reference_pairs_av3": len(av3_pairs),
+        "spearman_av2": spearman_av2,
+        "spearman_av3": spearman_av3,
+        "spearman_delta": _delta_spearman(spearman_av2, spearman_av3),
+    }
+
+
+def _comparative_judge_agreement(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    sides = _comparative_agreement_answer_sides(rows)
+    av2_answers = sides["AV2"]
+    av3_answers = sides["AV3"]
+    observations: list[dict[str, Any]] = []
+    comparable_answer_keys: set[tuple[Any, ...]] = set()
+
+    for answer_key in sorted(set(av2_answers).intersection(av3_answers)):
+        av2_primary = av2_answers[answer_key]["primary_scores"]
+        av3_primary = av3_answers[answer_key]["primary_scores"]
+        shared_judges = sorted(set(av2_primary).intersection(av3_primary))
+        if len(shared_judges) < 2:
+            continue
+        comparable_answer_keys.add(answer_key)
+        for index, judge_a in enumerate(shared_judges[:-1]):
+            for judge_b in shared_judges[index + 1 :]:
+                observations.append(
+                    {
+                        "answer_key": answer_key,
+                        "dataset": answer_key[0],
+                        "question_id": answer_key[1],
+                        "candidate_model": av2_answers[answer_key]["candidate_model"],
+                        "question_sequence": av2_answers[answer_key]["question_sequence"],
+                        "judge_pair": _format_judge_pair(judge_a, judge_b),
+                        "av2_delta": abs(av2_primary[judge_a] - av2_primary[judge_b]),
+                        "av3_delta": abs(av3_primary[judge_a] - av3_primary[judge_b]),
+                    }
+                )
+
+    return {
+        "cards": _comparative_judge_agreement_cards(av2_answers, av3_answers, comparable_answer_keys, observations),
+        "by_pair": _comparative_judge_agreement_by_pair(observations),
+        "by_candidate_model": _comparative_judge_agreement_by_candidate_model(observations),
+        "note": (
+            "A concordancia compara, por resposta AV2/AV3 pareada, apenas pares de juizes normalizados "
+            "presentes nos dois lados. Juizes principais incluem papeis principal/controle e registros sem "
+            "metadado de papel; arbitro e medido separadamente."
+        ),
+        "empty_state_note": _comparative_agreement_empty_state(sides, observations),
+    }
+
+
+def _comparative_agreement_answer_sides(rows: list[dict[str, Any]]) -> dict[str, dict[tuple[Any, ...], dict[str, Any]]]:
+    sides: dict[str, dict[tuple[Any, ...], dict[str, Any]]] = {"AV2": {}, "AV3": {}}
+    for row in rows:
+        source = str(row.get("source") or "")
+        if source not in sides or not _is_success(row) or row.get("score") is None:
+            continue
+        answer_key = (
+            row.get("dataset"),
+            row.get("question_id"),
+            row.get("comparable_candidate_model_id"),
+            row.get("comparable_candidate_model"),
+        )
+        answer = sides[source].setdefault(
+            answer_key,
+            {
+                "candidate_model": row.get("comparable_candidate_model") or "sem modelo",
+                "question_sequence": row.get("question_sequence"),
+                "primary_scores": {},
+                "arbiter_scores": [],
+            },
+        )
+        if row.get("judge_bucket") == "arbiter" or row.get("role") == "arbitro":
+            answer["arbiter_scores"].append(int(row["score"]))
+            continue
+        answer["primary_scores"][str(row.get("normalized_judge_model") or "sem juiz")] = int(row["score"])
+    return sides
+
+
+def _comparative_judge_agreement_cards(
+    av2_answers: dict[tuple[Any, ...], dict[str, Any]],
+    av3_answers: dict[tuple[Any, ...], dict[str, Any]],
+    comparable_answer_keys: set[tuple[Any, ...]],
+    observations: list[dict[str, Any]],
+) -> dict[str, Any]:
+    total_observations = len(observations)
+    av2_exact = _percent(sum(1 for row in observations if row["av2_delta"] == 0), total_observations)
+    av3_exact = _percent(sum(1 for row in observations if row["av3_delta"] == 0), total_observations)
+    av2_light = _percent(sum(1 for row in observations if row["av2_delta"] == 1), total_observations)
+    av3_light = _percent(sum(1 for row in observations if row["av3_delta"] == 1), total_observations)
+    av2_strong = _percent(sum(1 for row in observations if row["av2_delta"] >= 2), total_observations)
+    av3_strong = _percent(sum(1 for row in observations if row["av3_delta"] >= 2), total_observations)
+    av2_arbiter = _comparative_arbiter_metrics(av2_answers, comparable_answer_keys)
+    av3_arbiter = _comparative_arbiter_metrics(av3_answers, comparable_answer_keys)
+    return {
+        "comparable_answers_with_multiple_judges": len(comparable_answer_keys),
+        "comparable_pair_observations": total_observations,
+        "av2_exact_agreement_rate": av2_exact,
+        "av3_exact_agreement_rate": av3_exact,
+        "delta_exact_agreement_rate": _subtract_nullable(av3_exact, av2_exact),
+        "av2_light_divergence_rate": av2_light,
+        "av3_light_divergence_rate": av3_light,
+        "av2_strong_divergence_rate": av2_strong,
+        "av3_strong_divergence_rate": av3_strong,
+        "delta_strong_divergence_rate": _subtract_nullable(av3_strong, av2_strong),
+        "av2_mean_absolute_delta": _average(row["av2_delta"] for row in observations),
+        "av3_mean_absolute_delta": _average(row["av3_delta"] for row in observations),
+        "av2_arbiter_rate": av2_arbiter["rate"],
+        "av3_arbiter_rate": av3_arbiter["rate"],
+        "av2_arbiter_available": av2_arbiter["available"],
+        "av3_arbiter_available": av3_arbiter["available"],
+        "av2_arbiter_consistency_rate": av2_arbiter["consistency_rate"],
+        "av3_arbiter_consistency_rate": av3_arbiter["consistency_rate"],
+    }
+
+
+def _comparative_arbiter_metrics(
+    answers: dict[tuple[Any, ...], dict[str, Any]],
+    comparable_answer_keys: set[tuple[Any, ...]],
+) -> dict[str, Any]:
+    relevant_answers = [answers[key] for key in comparable_answer_keys if key in answers]
+    if not relevant_answers:
+        return {"available": False, "rate": None, "consistency_rate": None}
+    answers_with_arbiter = [answer for answer in relevant_answers if answer["arbiter_scores"]]
+    if not answers_with_arbiter:
+        return {"available": False, "rate": None, "consistency_rate": None}
+    consistent = 0
+    for answer in answers_with_arbiter:
+        primary_scores = list(answer["primary_scores"].values())
+        arbiter_score = answer["arbiter_scores"][0]
+        if primary_scores and min(primary_scores) <= arbiter_score <= max(primary_scores):
+            consistent += 1
+    return {
+        "available": True,
+        "rate": _percent(len(answers_with_arbiter), len(relevant_answers)),
+        "consistency_rate": _percent(consistent, len(answers_with_arbiter)),
+    }
+
+
+def _comparative_judge_agreement_by_pair(observations: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for row in observations:
+        grouped[row["judge_pair"]].append(row)
+    result = []
+    for judge_pair, pair_rows in grouped.items():
+        av2_exact = _percent(sum(1 for row in pair_rows if row["av2_delta"] == 0), len(pair_rows))
+        av3_exact = _percent(sum(1 for row in pair_rows if row["av3_delta"] == 0), len(pair_rows))
+        av2_strong = _percent(sum(1 for row in pair_rows if row["av2_delta"] >= 2), len(pair_rows))
+        av3_strong = _percent(sum(1 for row in pair_rows if row["av3_delta"] >= 2), len(pair_rows))
+        result.append(
+            {
+                "judge_pair": judge_pair,
+                "av2_comparable_evaluations": len(pair_rows),
+                "av2_exact_agreement_rate": av2_exact,
+                "av2_strong_divergence_rate": av2_strong,
+                "av3_comparable_evaluations": len(pair_rows),
+                "av3_exact_agreement_rate": av3_exact,
+                "av3_strong_divergence_rate": av3_strong,
+                "delta_exact_agreement_rate": _subtract_nullable(av3_exact, av2_exact),
+                "delta_strong_divergence_rate": _subtract_nullable(av3_strong, av2_strong),
+            }
+        )
+    return sorted(result, key=lambda row: (-row["av2_comparable_evaluations"], row["judge_pair"]))
+
+
+def _comparative_judge_agreement_by_candidate_model(observations: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for row in observations:
+        grouped[str(row["candidate_model"] or "sem modelo")].append(row)
+    result = []
+    for candidate_model, candidate_rows in grouped.items():
+        av2_exact = _percent(sum(1 for row in candidate_rows if row["av2_delta"] == 0), len(candidate_rows))
+        av3_exact = _percent(sum(1 for row in candidate_rows if row["av3_delta"] == 0), len(candidate_rows))
+        av2_strong = _percent(sum(1 for row in candidate_rows if row["av2_delta"] >= 2), len(candidate_rows))
+        av3_strong = _percent(sum(1 for row in candidate_rows if row["av3_delta"] >= 2), len(candidate_rows))
+        result.append(
+            {
+                "candidate_model": candidate_model,
+                "av2_exact_agreement_rate": av2_exact,
+                "av3_exact_agreement_rate": av3_exact,
+                "delta_agreement_rate": _subtract_nullable(av3_exact, av2_exact),
+                "av2_strong_divergence_rate": av2_strong,
+                "av3_strong_divergence_rate": av3_strong,
+                "delta_strong_divergence_rate": _subtract_nullable(av3_strong, av2_strong),
+                "comparable_pairs": len(candidate_rows),
+            }
+        )
+    return sorted(result, key=lambda row: (-row["comparable_pairs"], row["candidate_model"]))
+
+
+def _comparative_agreement_empty_state(
+    sides: dict[str, dict[tuple[Any, ...], dict[str, Any]]],
+    observations: list[dict[str, Any]],
+) -> str | None:
+    if observations:
+        return None
+    av2_answers = sides["AV2"]
+    av3_answers = sides["AV3"]
+    if not av2_answers or not av3_answers:
+        return "Sem respostas AV2/AV3 pareadas para comparar a concordancia entre juizes com o filtro atual."
+    overlap = set(av2_answers).intersection(av3_answers)
+    if not overlap:
+        return "As respostas restantes apos o filtro nao possuem par AV2/AV3 comparavel."
+    if not any(len(av2_answers[key]["primary_scores"]) >= 2 for key in overlap if key in av2_answers):
+        return "As respostas comparaveis em AV2 nao possuem pelo menos dois juizes primarios com nota."
+    if not any(len(av3_answers[key]["primary_scores"]) >= 2 for key in overlap if key in av3_answers):
+        return "As respostas comparaveis em AV3 nao possuem pelo menos dois juizes primarios com nota."
+    return "Os pares de juizes disponiveis nao coincidem entre AV2 e AV3 para o filtro atual."
+
+
+def _format_judge_pair(judge_a: str, judge_b: str) -> str:
+    return " x ".join(sorted((judge_a, judge_b)))
+
+
+def _subtract_nullable(left: float | None, right: float | None) -> float | None:
+    if left is None or right is None:
+        return None
+    return round(left - right, 1)
+
+
 def _critical_cases(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     cases = []
     for row in rows:
@@ -1205,6 +2759,18 @@ def _spearman_unavailable(sample_size: int, note: str) -> dict[str, Any]:
     return {"value": None, "p_value": None, "sample_size": sample_size, "available": False, "note": note}
 
 
+def _delta_spearman(av2_value: dict[str, Any], av3_value: dict[str, Any]) -> dict[str, Any]:
+    if not av2_value.get("available") or not av3_value.get("available"):
+        return _spearman_unavailable(0, "Sem dados suficientes para calcular delta de Spearman.")
+    return {
+        "value": round(float(av3_value["value"]) - float(av2_value["value"]), 4),
+        "p_value": None,
+        "sample_size": min(int(av2_value.get("sample_size") or 0), int(av3_value.get("sample_size") or 0)),
+        "available": True,
+        "note": "Delta Spearman calculado como AV3 Com_RAG menos AV2 Sem_RAG.",
+    }
+
+
 def _serialize_filters(filters: DashboardFilters) -> dict[str, Any]:
     return {
         "dataset": filters.dataset,
@@ -1256,6 +2822,39 @@ def _percent(numerator: int, denominator: int) -> float | None:
     if denominator == 0:
         return None
     return round((numerator / denominator) * 100, 1)
+
+
+def _safe_int(value: Any) -> int | None:
+    try:
+        return int(value) if value is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _normalized_judge_sql(model_sql: str) -> str:
+    return (
+        f"CASE WHEN {model_sql} IN ('Unbabel/M-Prometheus-14B', 'Unbabel/M-Prometheus-7B') "
+        f"THEN 'M-Prometheus' ELSE {model_sql} END"
+    )
+
+
+def _dataset_labels_json_literal() -> str:
+    return '\'{"OAB_Bench":"J1","OAB_Exames":"J2"}\''
+
+
+def _comparative_av2_dataset_sql(column_sql: str) -> str:
+    return (
+        f"COALESCE({_dataset_labels_json_literal()}::jsonb ->> {column_sql}, "
+        f"CASE WHEN UPPER({column_sql}) IN ('J1', 'J2') THEN UPPER({column_sql}) ELSE {column_sql} END)"
+    )
+
+
+def _comparative_av3_candidate_model_id_sql() -> str:
+    return "COALESCE(assignment_direct.id_modelo_av2, assignment_legacy.id_modelo_av2)"
+
+
+def _comparative_av3_candidate_model_name_sql() -> str:
+    return "COALESCE(av2_model_direct.nome_modelo, assignment_legacy.av2_model_name)"
 
 
 def _normalize_choice(value: Any) -> str | None:
