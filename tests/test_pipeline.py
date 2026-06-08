@@ -309,6 +309,41 @@ class EventRecordingJudgeClient(FakeJudgeClient):
         return response
 
 
+class SequentialScoreJudgeClient:
+    def __init__(self, scores: list[int], events: list[str]) -> None:
+        self.scores = list(scores)
+        self.events = events
+        self.calls: list[str] = []
+
+    def judge(
+        self,
+        prompt: str,
+        model: str,
+        *,
+        requested_model: str | None = None,
+        endpoint_key: str | None = None,
+    ) -> JudgeRawResponse:
+        self.calls.append(model)
+        score = self.scores.pop(0)
+        self.events.append(f"judge:{score}")
+        return JudgeRawResponse(
+            text=f'{{"score": {score}, "rationale": "nota {score}"}}',
+            provider="fake",
+            model=model,
+            latency_ms=1,
+        )
+
+
+class EventRecordingRepository(InMemoryJudgeRepository):
+    def __init__(self, events: list[str]) -> None:
+        super().__init__()
+        self.events = events
+
+    def persist_evaluation(self, record: EvaluationRecord) -> None:
+        self.events.append(f"persist:{record.score}")
+        super().persist_evaluation(record)
+
+
 class RecordingAudit:
     def __init__(self) -> None:
         self.terminal_messages: list[str] = []
@@ -740,6 +775,59 @@ def test_pipeline_keeps_already_persisted_evaluations_when_later_answer_fails() 
     assert len(repo.records) == 1
     assert repo.records[0].av1_answer_id == 1
     assert repo.records[0].score == 5
+
+
+def test_primary_panel_persists_completed_question_before_later_judge_fails() -> None:
+    settings = load_settings(dotenv_path=None, env=BASE_ENV)
+    config = resolve_runtime_config(settings, panel_mode="primary_only")
+    repo = InMemoryJudgeRepository()
+    failing_model = "meta-llama/Llama-3.3-70B-Instruct"
+
+    class FailingSecondPrimaryJudgeClient(FakeJudgeClient):
+        def judge(
+            self,
+            prompt: str,
+            model: str,
+            *,
+            requested_model: str | None = None,
+            endpoint_key: str | None = None,
+        ) -> JudgeRawResponse:
+            if model == failing_model:
+                self.calls.append(model)
+                self.endpoint_keys.append(endpoint_key)
+                raise RemoteJudgeError("secondary judge failed", status_code=503, retryable=True)
+            return super().judge(prompt, model, requested_model=requested_model, endpoint_key=endpoint_key)
+
+    client = FailingSecondPrimaryJudgeClient(
+        {
+            "openai/gpt-oss-120b": 5,
+            failing_model: 4,
+        }
+    )
+
+    with pytest.raises(RemoteJudgeError, match="secondary judge failed"):
+        JudgePipeline(repo, client).run([answer()], config)
+
+    assert len(repo.records) == 1
+    assert repo.records[0].stored_role == "principal"
+    assert repo.records[0].score == 5
+
+
+def test_adaptive_scheduler_persists_each_question_before_next_remote_call() -> None:
+    env = dict(BASE_ENV)
+    env["JUDGE_EXECUTION_STRATEGY"] = "adaptive"
+    env["JUDGE_ADAPTIVE_INITIAL_CONCURRENCY"] = "1"
+    env["JUDGE_ADAPTIVE_MAX_CONCURRENCY"] = "1"
+    settings = load_settings(dotenv_path=None, env=env)
+    config = resolve_runtime_config(settings, panel_mode="single")
+    events: list[str] = []
+    repo = EventRecordingRepository(events)
+    client = SequentialScoreJudgeClient([5, 4], events)
+
+    summary = JudgePipeline(repo, client).run([answer_with_id(1), answer_with_id(2)], config)
+
+    assert summary.executed_evaluations == 2
+    assert events == ["judge:5", "persist:5", "judge:4", "persist:4"]
 
 
 def test_primary_only_supports_parallel_strategy() -> None:

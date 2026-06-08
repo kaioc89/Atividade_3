@@ -6,7 +6,7 @@ import hashlib
 import random
 import time
 from collections.abc import Callable, Sequence
-from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
+from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, as_completed, wait
 from dataclasses import dataclass
 
 from .audit import AuditEvent, NullAuditLogger
@@ -211,18 +211,14 @@ class JudgePipeline:
                 continue
             pending.append((judge_model, stored_role))
 
-        records = self._execute_primary_judges(answer, config, pending)
-        for record in records:
-            with self.audit.step(
-                f"Persisting evaluation for answer {answer.answer_id}",
-                detail=(
-                    f"answer_id={answer.answer_id} model={record.judge_model.provider_model} "
-                    f"role={record.stored_role} score={record.score}"
-                ),
-            ):
-                self.repository.persist_evaluation(record)
-            executed += 1
-            primary_scores.append(record.score)
+        records = self._execute_primary_judges(
+            answer,
+            config,
+            pending,
+            on_record_completed=self._persist_record,
+        )
+        executed += len(records)
+        primary_scores.extend(record.score for record in records)
 
         if config.panel_mode == "primary_only":
             return PipelineSummary(1, executed, skipped, 0)
@@ -442,6 +438,8 @@ class JudgePipeline:
         answer: CandidateAnswerContext,
         config: RuntimeJudgeConfig,
         pending: Sequence[tuple[ModelSpec, StoredJudgeRole]],
+        *,
+        on_record_completed: Callable[[EvaluationRecord], None],
     ) -> list[EvaluationRecord]:
         if not pending:
             return []
@@ -452,16 +450,18 @@ class JudgePipeline:
                     f"answer_id={answer.answer_id} strategy=sequential calls={len(pending)}",
                 )
             )
-            return [
-                self._execute_judge(
+            records: list[EvaluationRecord] = []
+            for judge_model, stored_role in pending:
+                record = self._execute_judge(
                     answer=answer,
                     config=config,
                     judge_model=judge_model,
                     stored_role=stored_role,
                     trigger_reason="primary_panel",
                 )
-                for judge_model, stored_role in pending
-            ]
+                on_record_completed(record)
+                records.append(record)
+            return records
 
         self.audit.event(
             AuditEvent(
@@ -486,7 +486,12 @@ class JudgePipeline:
                     )
                     for judge_model, stored_role in pending
                 ]
-                return [future.result() for future in futures]
+                records: list[EvaluationRecord] = []
+                for future in as_completed(futures):
+                    record = future.result()
+                    on_record_completed(record)
+                    records.append(record)
+                return records
 
     def _report_evaluation_progress(self, progress: EvaluationProgress) -> None:
         if self.evaluation_callback is None:
@@ -530,7 +535,9 @@ class JudgePipeline:
                 priority=0,
             )
             skipped += tasks.skipped
-            for record in scheduler.run(tasks.pending):
+
+            def persist_single_record(record: EvaluationRecord) -> None:
+                nonlocal executed
                 self._persist_adaptive_record(record)
                 executed += 1
                 self._report_batch_progress(
@@ -543,6 +550,8 @@ class JudgePipeline:
                         arbiter_evaluations=0,
                     )
                 )
+
+            scheduler.run(tasks.pending, on_record_completed=persist_single_record)
             if not tasks.pending:
                 self._report_batch_progress(
                     BatchProgress(
@@ -578,7 +587,9 @@ class JudgePipeline:
             primary_task_sequence += len(answers)
             skipped += tasks.skipped
             primary_tasks.extend(tasks.pending)
-        for record in scheduler.run(primary_tasks):
+
+        def persist_primary_record(record: EvaluationRecord) -> None:
+            nonlocal executed
             self._persist_adaptive_record(record)
             primary_scores[record.answer_id].append(record.score)
             executed += 1
@@ -592,6 +603,8 @@ class JudgePipeline:
                     arbiter_evaluations=arbiters,
                 )
             )
+
+        scheduler.run(primary_tasks, on_record_completed=persist_primary_record)
 
         if config.panel_mode == "2plus1":
             assert config.arbiter is not None
@@ -636,7 +649,9 @@ class JudgePipeline:
                         sequence=len(arbiter_tasks),
                     )
                 )
-            for record in scheduler.run(arbiter_tasks):
+
+            def persist_arbiter_record(record: EvaluationRecord) -> None:
+                nonlocal executed, arbiters
                 self._persist_adaptive_record(record)
                 executed += 1
                 arbiters += 1
@@ -650,6 +665,8 @@ class JudgePipeline:
                         arbiter_evaluations=arbiters,
                     )
                 )
+
+            scheduler.run(arbiter_tasks, on_record_completed=persist_arbiter_record)
 
         self._report_batch_progress(
             BatchProgress(
@@ -737,7 +754,7 @@ class JudgePipeline:
             )
         )
 
-    def _persist_adaptive_record(self, record: EvaluationRecord) -> None:
+    def _persist_record(self, record: EvaluationRecord) -> None:
         with self.audit.step(
             f"Persisting evaluation for answer {record.answer_id}",
             detail=(
@@ -746,6 +763,9 @@ class JudgePipeline:
             ),
         ):
             self.repository.persist_evaluation(record)
+
+    def _persist_adaptive_record(self, record: EvaluationRecord) -> None:
+        self._persist_record(record)
 
 
 def _arbiter_reason(config: RuntimeJudgeConfig, score_delta: int) -> str | None:
@@ -826,7 +846,12 @@ class _AdaptiveScheduler:
         self.config = config
         self.groups: dict[_AdaptiveGroupKey, _AdaptiveGroupState] = {}
 
-    def run(self, tasks: Sequence[_AdaptiveJudgeTask]) -> list[EvaluationRecord]:
+    def run(
+        self,
+        tasks: Sequence[_AdaptiveJudgeTask],
+        *,
+        on_record_completed: Callable[[EvaluationRecord], None] | None = None,
+    ) -> list[EvaluationRecord]:
         if not tasks:
             return []
 
@@ -877,6 +902,8 @@ class _AdaptiveScheduler:
                         self._handle_failure(error, queued, pending, state, active_other_tasks=len(futures))
                     else:
                         self._handle_success(state)
+                        if on_record_completed is not None:
+                            on_record_completed(completed.record)
                         records.append(completed.record)
         return records
 
