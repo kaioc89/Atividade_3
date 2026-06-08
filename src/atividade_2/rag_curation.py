@@ -246,6 +246,7 @@ class RagCurationService:
         metadata = item.get("metadados")
         if not isinstance(metadata, dict):
             raise ValueError("metadados deve ser um objeto JSON.")
+        metadata = dict(metadata)
         raw_dataset = str(metadata.get("dataset", "")).strip().upper()
         if resolve_rag_curation_dataset(raw_dataset) != dataset:
             raise ValueError("O arquivo mistura datasets ou contém dataset inconsistente.")
@@ -265,6 +266,14 @@ class RagCurationService:
         legislation = classification.get("legislacao", {})
         if not isinstance(difficulty, dict) or not isinstance(specialty, dict) or not isinstance(legislation, dict):
             raise ValueError("dificuldade, especialidade e legislacao devem ser objetos JSON.")
+        temporality = classification.get("temporalidade")
+        if temporality is not None and not isinstance(temporality, dict):
+            raise ValueError("classificacao.temporalidade deve ser um objeto JSON quando informado.")
+        if isinstance(temporality, dict):
+            metadata["temporalidade"] = {
+                "justificativa": _normalize_optional_text(temporality.get("justificativa")),
+                "exige_atualizacao": _normalize_optional_bool(temporality.get("exige_atualizacao")),
+            }
         articles_payload = legislation.get("artigos", [])
         if not isinstance(articles_payload, list):
             raise ValueError("classificacao.legislacao.artigos deve ser uma lista.")
@@ -363,6 +372,20 @@ def _normalize_optional_float(value: Any) -> float | None:
         return float(str(value).strip())
     except ValueError as error:
         raise ValueError(f"Valor numérico inválido: {value!r}.") from error
+
+
+def _normalize_optional_bool(value: Any) -> bool | None:
+    if value in (None, ""):
+        return None
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"true", "1", "sim", "yes"}:
+            return True
+        if normalized in {"false", "0", "nao", "não", "no"}:
+            return False
+    raise ValueError(f"Valor booleano inválido: {value!r}.")
 
 
 def _normalize_optional_string_list(value: Any) -> list[str]:

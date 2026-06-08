@@ -1134,10 +1134,28 @@ class FakeRagCurationService:
                 "lei": "Lei 8.429/1992",
                 "url": "https://www.planalto.gov.br/ccivil_03/leis/l8429.htm",
                 "urn": "urn:lex:br:federal:lei:1992-06-02;8429",
+                "temporality_requires_update": False,
+                "temporality_justification": "Nao ha mencao a normativos posteriores a 2023.",
                 "curator": "Wagner",
                 "classified_at": "2026-05-30T12:00:00",
-                "metadata": {"dataset": dataset, "numero_questao_sequencial": 95 if dataset == "J1" else 985},
-                "raw_payload": {"id": "questao-externa", "tipo_questao": "QUESTAO"},
+                "metadata": {
+                    "dataset": dataset,
+                    "numero_questao_sequencial": 95 if dataset == "J1" else 985,
+                    "temporalidade": {
+                        "justificativa": "Nao ha mencao a normativos posteriores a 2023.",
+                        "exige_atualizacao": False,
+                    },
+                },
+                "raw_payload": {
+                    "id": "questao-externa",
+                    "tipo_questao": "QUESTAO",
+                    "classificacao": {
+                        "temporalidade": {
+                            "justificativa": "Nao ha mencao a normativos posteriores a 2023.",
+                            "exige_atualizacao": False,
+                        }
+                    },
+                },
                 "articles": [
                     {
                         "ordem": 1,
@@ -1811,7 +1829,12 @@ def test_web_index_contains_rag_curation_tab() -> None:
     assert 'id="rag_curation_import"' in response.text
     assert 'id="rag_curation_runs_body"' in response.text
     assert 'id="rag_curation_items_body"' in response.text
+    assert 'id="rag_curation_items_pagination_label"' in response.text
+    assert 'id="rag_curation_items_prev"' in response.text
+    assert 'id="rag_curation_items_next"' in response.text
     assert 'id="rag_curation_articles_body"' in response.text
+    assert 'id="rag_curation_detail_temporal_requires_update"' in response.text
+    assert 'id="rag_curation_detail_temporal_justification"' in response.text
     assert 'id="rag_vector_active_run"' in response.text
     assert 'id="rag_vector_generate"' in response.text
     assert 'id="rag_vector_runs_body"' in response.text
@@ -1831,6 +1854,7 @@ def test_web_index_contains_rag_curation_tab() -> None:
     assert "function importRagCurationFile" in response.text
     assert "function activateRagCurationRun" in response.text
     assert "function renderRagCurationDetail" in response.text
+    assert "function renderRagCurationItemsPage" in response.text
     assert "function renderRagVectorBase" in response.text
     assert "function renderRagVectorRuns" in response.text
     assert "function activateRagVectorRun" in response.text
@@ -1881,6 +1905,8 @@ def test_rag_curation_endpoints_return_options_import_and_activate() -> None:
     detail = client.get("/api/rag-curation/items/101", params={"dataset": "J1"})
     assert detail.status_code == 200
     assert detail.json()["detail"]["question_sequence"] == 95
+    assert detail.json()["detail"]["temporality_requires_update"] is False
+    assert "posteriores a 2023" in detail.json()["detail"]["temporality_justification"]
 
     imported = client.post(
         "/api/rag-curation/import",
