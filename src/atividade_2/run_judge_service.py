@@ -314,6 +314,7 @@ class RunJudgeService:
                         judge_input_source=request.judge_input_source,
                     )
                 audit.file_event("answers_selected", f"count={len(answers)}")
+                _enable_autocommit_for_remote_execution(connection)
                 client = self._client_factory(settings)
                 reported_eligibility = eligibility
 
@@ -381,6 +382,15 @@ class RunJudgeService:
                 ),
             )
             return _result(request, resolved, summary, eligibility)
+
+
+def _enable_autocommit_for_remote_execution(connection: Any) -> None:
+    """Prevent implicit SELECT transactions from staying open during remote judge calls."""
+    rollback = getattr(connection, "rollback", None)
+    if callable(rollback):
+        rollback()
+    if hasattr(connection, "autocommit"):
+        connection.autocommit = True
 
 
 def format_execution_summary(config: RuntimeJudgeConfig) -> str:
