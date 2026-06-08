@@ -16,6 +16,13 @@ BASE_ENV = {
 
 
 class FakeConnection:
+    def __init__(self) -> None:
+        self.autocommit = False
+        self.rollback_count = 0
+
+    def rollback(self) -> None:
+        self.rollback_count += 1
+
     def close(self) -> None:
         return None
 
@@ -297,10 +304,11 @@ def test_endpoint_override_requires_url_and_key_together() -> None:
 
 def test_real_run_emits_initial_and_final_eligibility_counts(tmp_path) -> None:
     repository = EligibilityRepository()
+    connection = FakeConnection()
     eligibility_events: list[EligibilitySummary] = []
     service = RunJudgeService(
         settings_loader=lambda: load_settings(dotenv_path=None, env=BASE_ENV),
-        connect_func=lambda database_url: FakeConnection(),
+        connect_func=lambda database_url: connection,
         repository_factory=lambda connection: repository,
         client_factory=FakeClient,
     )
@@ -332,6 +340,8 @@ def test_real_run_emits_initial_and_final_eligibility_counts(tmp_path) -> None:
         will_process=0,
     )
     assert result.eligibility == eligibility_events[-1]
+    assert connection.autocommit is True
+    assert connection.rollback_count == 1
 
 
 def test_resolve_rejects_av3_source_for_non_j1_dataset() -> None:

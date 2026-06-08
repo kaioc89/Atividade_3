@@ -70,6 +70,7 @@ class TransactionConnection:
         self.exit_exceptions = []
         self.commit_count = 0
         self.rollback_count = 0
+        self.autocommit = False
 
     def __enter__(self):
         self.enter_count += 1
@@ -669,6 +670,35 @@ def test_persist_evaluation_writes_details_after_official_evaluation_insert() ->
     assert "citation_quality" in cursor.params[1][5]
     assert "<redacted>" in cursor.params[1][6]
     assert connection.commit_count == 1
+    assert connection.rollback_count == 0
+
+
+def test_persist_evaluation_uses_explicit_transaction_when_connection_is_autocommit() -> None:
+    cursor = MultiRecordingCursor(fetchone_rows=[(123,)], validate_placeholders=True)
+    connection = TransactionConnection(cursor)
+    connection.autocommit = True
+    repository = JudgeRepository(connection)
+    repository.ensure_judge_model = lambda model: 10  # type: ignore[method-assign]
+
+    repository.persist_evaluation(
+        EvaluationRecord(
+            av1_answer_id=1,
+            candidate_answer_id=None,
+            judge_model=ModelSpec(requested="judge", provider_model="provider/judge"),
+            prompt_id=2,
+            stored_role="principal",
+            panel_mode="single",
+            trigger_reason="single_mode",
+            score=5,
+            rationale="ok",
+            latency_ms=10,
+        )
+    )
+
+    assert cursor.queries[0] == "BEGIN;"
+    assert "INSERT INTO avaliacoes_juiz" in cursor.queries[1]
+    assert cursor.queries[-1] == "COMMIT;"
+    assert connection.commit_count == 0
     assert connection.rollback_count == 0
 
 

@@ -685,6 +685,9 @@ class JudgeRepository:
         if callable(rollback):
             rollback()
 
+    def _autocommit_enabled(self) -> bool:
+        return bool(getattr(self.connection, "autocommit", False))
+
     def _table_exists(self, cursor: Any, table_name: str) -> bool:
         cursor.execute(
             """
@@ -2303,8 +2306,11 @@ class JudgeRepository:
 
     def persist_evaluation(self, record: EvaluationRecord) -> None:
         model_id = self.ensure_judge_model(record.judge_model)
+        use_explicit_sql_transaction = self._autocommit_enabled()
         try:
             with self.connection.cursor() as cursor:
+                if use_explicit_sql_transaction:
+                    cursor.execute("BEGIN;")
                 cursor.execute(
                     """
                     INSERT INTO avaliacoes_juiz
@@ -2351,9 +2357,16 @@ class JudgeRepository:
                         ),
                         cursor=cursor,
                     )
-            self._commit_transaction()
+                if use_explicit_sql_transaction:
+                    cursor.execute("COMMIT;")
+            if not use_explicit_sql_transaction:
+                self._commit_transaction()
         except Exception:
-            self._rollback_transaction()
+            if use_explicit_sql_transaction:
+                with self.connection.cursor() as cursor:
+                    cursor.execute("ROLLBACK;")
+            else:
+                self._rollback_transaction()
             raise
 
     def persist_evaluation_details(
