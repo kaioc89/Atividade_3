@@ -2370,6 +2370,13 @@ _INDEX_HTML = """
                 </div>
                 <div style="height:16px"></div>
                 <h2>Questoes curadas</h2>
+                <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:8px;">
+                  <div id="rag_curation_items_pagination_label" class="muted">-</div>
+                  <div style="display:flex; gap:8px;">
+                    <button id="rag_curation_items_prev" type="button" class="secondary">Anterior</button>
+                    <button id="rag_curation_items_next" type="button" class="secondary">Proxima</button>
+                  </div>
+                </div>
                 <div class="table-wrap prompt-log-table rag-curation-table">
                   <table aria-label="Lista de questoes curadas para RAG">
                     <thead>
@@ -2404,6 +2411,8 @@ _INDEX_HTML = """
                         <tr><th>Curador</th><td id="rag_curation_detail_curator" class="muted">-</td></tr>
                         <tr><th>Classificada em</th><td id="rag_curation_detail_classified_at" class="muted">-</td></tr>
                         <tr><th>Lei / norma</th><td id="rag_curation_detail_lei_norma" class="muted">-</td></tr>
+                        <tr><th>Exige atualizacao</th><td id="rag_curation_detail_temporal_requires_update" class="muted">-</td></tr>
+                        <tr><th>Justificativa temporalidade</th><td id="rag_curation_detail_temporal_justification" class="muted">-</td></tr>
                         <tr><th>Fonte</th><td id="rag_curation_detail_url" class="muted">-</td></tr>
                         <tr><th>URN</th><td id="rag_curation_detail_urn" class="muted">-</td></tr>
                       </tbody>
@@ -2853,6 +2862,9 @@ _INDEX_HTML = """
     let metaHistoryRecords = [];
     let metaHistoryFilteredRecords = [];
     let ragCurationDatasetOptions = [];
+    let ragCurationItemsAll = [];
+    let ragCurationItemsPage = 1;
+    const RAG_CURATION_ITEMS_PER_PAGE = 50;
     let selectedMetaHistoryId = null;
     let metaHistorySort = {key: "created_at", direction: "desc"};
     let metaEvaluationOptions = [];
@@ -4986,8 +4998,27 @@ _INDEX_HTML = """
       renderRagVectorBase(vectorBase);
       renderRagVectorRuns(vectorRuns || []);
       renderRagCurationRuns(runs || []);
-      renderRagCurationItems(items || []);
+      ragCurationItemsAll = items || [];
+      ragCurationItemsPage = 1;
+      renderRagCurationItemsPage();
       renderRagCurationDetail(null);
+    }
+
+    function renderRagCurationItemsPage() {
+      const total = ragCurationItemsAll.length;
+      const pageCount = Math.max(1, Math.ceil(total / RAG_CURATION_ITEMS_PER_PAGE));
+      if (ragCurationItemsPage > pageCount) ragCurationItemsPage = pageCount;
+      if (ragCurationItemsPage < 1) ragCurationItemsPage = 1;
+      const startIndex = total ? (ragCurationItemsPage - 1) * RAG_CURATION_ITEMS_PER_PAGE : 0;
+      const endIndex = Math.min(startIndex + RAG_CURATION_ITEMS_PER_PAGE, total);
+      const pageItems = ragCurationItemsAll.slice(startIndex, endIndex);
+      renderRagCurationItems(pageItems);
+      const label = total
+        ? `Mostrando ${startIndex + 1}-${endIndex} de ${total} questoes | pagina ${ragCurationItemsPage}/${pageCount}`
+        : "Nenhuma questao curada na versao ativa.";
+      setText("rag_curation_items_pagination_label", label);
+      document.getElementById("rag_curation_items_prev").disabled = ragCurationItemsPage <= 1;
+      document.getElementById("rag_curation_items_next").disabled = ragCurationItemsPage >= pageCount;
     }
 
     function clearRagVectorProgress() {
@@ -5735,6 +5766,8 @@ _INDEX_HTML = """
         setText("rag_curation_detail_curator", "-");
         setText("rag_curation_detail_classified_at", "-");
         setText("rag_curation_detail_lei_norma", "-");
+        setText("rag_curation_detail_temporal_requires_update", "-");
+        setText("rag_curation_detail_temporal_justification", "-");
         setText("rag_curation_detail_url", "-");
         setText("rag_curation_detail_urn", "-");
         setText("rag_curation_detail_question", "Selecione uma questao curada para ver o enunciado.");
@@ -5758,6 +5791,11 @@ _INDEX_HTML = """
         "rag_curation_detail_lei_norma",
         `${detail.lei ? `${detail.lei} | ` : ""}${display(detail.norma)}`
       );
+      setText(
+        "rag_curation_detail_temporal_requires_update",
+        detail.temporality_requires_update === true ? "sim" : detail.temporality_requires_update === false ? "nao" : "-"
+      );
+      setText("rag_curation_detail_temporal_justification", display(detail.temporality_justification));
       setText("rag_curation_detail_url", display(detail.url));
       setText("rag_curation_detail_urn", display(detail.urn));
       setText("rag_curation_detail_question", detail.question_text || "-");
@@ -6848,6 +6886,14 @@ _INDEX_HTML = """
     document.getElementById("prompt_save").onclick = () => savePromptConfig();
     document.getElementById("rag_curation_dataset").onchange = () => loadRagCurationDataset(value("rag_curation_dataset"));
     document.getElementById("rag_curation_reload").onclick = () => loadRagCurationDataset(value("rag_curation_dataset"));
+    document.getElementById("rag_curation_items_prev").onclick = () => {
+      ragCurationItemsPage -= 1;
+      renderRagCurationItemsPage();
+    };
+    document.getElementById("rag_curation_items_next").onclick = () => {
+      ragCurationItemsPage += 1;
+      renderRagCurationItemsPage();
+    };
     document.getElementById("rag_vector_dataset").onchange = () => loadRagCurationDataset(value("rag_vector_dataset"));
     document.getElementById("rag_vector_reload").onclick = () => loadRagCurationDataset(value("rag_vector_dataset"));
     document.getElementById("rag_vector_generate").onclick = () => generateRagEmbeddings();

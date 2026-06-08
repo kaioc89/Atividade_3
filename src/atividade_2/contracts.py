@@ -463,6 +463,8 @@ class RagCurationItemDetail:
     lei: str | None
     url: str | None
     urn: str | None
+    temporality_requires_update: bool | None
+    temporality_justification: str | None
     curator: str | None
     classified_at: str | None
     metadata: dict[str, Any]

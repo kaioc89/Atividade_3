@@ -5931,6 +5931,8 @@ class JudgeRepository:
             lei=row[20],
             url=row[21],
             urn=row[22],
+            temporality_requires_update=_extract_temporality_requires_update(_parse_jsonb(row[25]) or {}, _parse_jsonb(row[26]) or {}),
+            temporality_justification=_extract_temporality_justification(_parse_jsonb(row[25]) or {}, _parse_jsonb(row[26]) or {}),
             curator=row[23],
             classified_at=row[24].isoformat() if row[24] is not None else None,
             metadata=_parse_jsonb(row[25]) or {},
@@ -6813,6 +6815,33 @@ def _row_to_rag_curation_import_run(row: Any) -> RagCurationImportRunRecord:
         article_count=int(row[8]),
         active=bool(row[9]),
     )
+
+
+def _extract_temporality_payload(metadata: dict[str, Any], raw_payload: dict[str, Any]) -> dict[str, Any]:
+    temporality = metadata.get("temporalidade")
+    if isinstance(temporality, dict):
+        return temporality
+    classification = raw_payload.get("classificacao")
+    if isinstance(classification, dict):
+        temporality = classification.get("temporalidade")
+        if isinstance(temporality, dict):
+            return temporality
+    return {}
+
+
+def _extract_temporality_requires_update(metadata: dict[str, Any], raw_payload: dict[str, Any]) -> bool | None:
+    temporality = _extract_temporality_payload(metadata, raw_payload)
+    value = temporality.get("exige_atualizacao")
+    return value if isinstance(value, bool) else None
+
+
+def _extract_temporality_justification(metadata: dict[str, Any], raw_payload: dict[str, Any]) -> str | None:
+    temporality = _extract_temporality_payload(metadata, raw_payload)
+    value = temporality.get("justificativa")
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
 
 
 def _build_prompt_change_summary(
