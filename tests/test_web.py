@@ -5,6 +5,7 @@ import time
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
 from fastapi.testclient import TestClient
 
 from atividade_2.database_dump import DatabaseDumpResult
@@ -722,6 +723,96 @@ class FakeDashboardService:
         }
 
 
+class FakeAV3DashboardService:
+    def __init__(self) -> None:
+        self.filters: list[DashboardFilters] = []
+
+    def load(self, filters: DashboardFilters) -> dict:
+        self.filters.append(filters)
+        return {
+            "filters": {"dataset": filters.dataset, "status": filters.status, "group_by": filters.group_by},
+            "options": {
+                "datasets": ["J1", "J2"],
+                "candidate_models": ["av3-modelo-candidato"],
+                "judge_models": ["openai/gpt-oss-120b"],
+                "statuses": ["all", "sucesso", "erro"],
+            },
+            "cards": {
+                "evaluations": 3,
+                "coverage": {"evaluated": 2, "expected": 3, "percent": 66.7},
+                "success_rate": 100.0,
+                "average_score": 4.0,
+                "spearman_reference": {
+                    "value": None,
+                    "p_value": None,
+                    "sample_size": 0,
+                    "available": False,
+                    "note": "Sem dados de referencia AV3 para o filtro selecionado.",
+                },
+                "judge_arbiter_consistency": {
+                    "value": None,
+                    "p_value": None,
+                    "sample_size": 0,
+                    "available": False,
+                    "note": "Sem pares juiz x arbitro persistidos.",
+                },
+                "critical_failures": 1,
+                "minor_disagreements": 1,
+                "audit_divergences": 0,
+                "judge_agreement": {
+                    "total_compared": 1,
+                    "delta_0": 0,
+                    "delta_1": 1,
+                    "delta_2": 0,
+                    "delta_3": 0,
+                    "delta_4": 0,
+                    "arbiter_triggered": 1,
+                },
+            },
+            "charts": {
+                "candidate_ranking": [{"label": "av3-modelo-candidato", "value": 4.0}],
+                "score_distribution": [{"label": str(score), "value": 1 if score in {4, 5} else 0} for score in range(1, 6)],
+                "score_distribution_by_model": [
+                    {"label": "av3-modelo-candidato", "total": 2, "average": 4.0, "scores": {"1": 0, "2": 0, "3": 0, "4": 1, "5": 1}}
+                ],
+                "judge_average": [{"label": "openai/gpt-oss-120b", "value": 4.0}],
+                "legal_specialty_performance": {
+                    "columns": ["av3-modelo-candidato"],
+                    "rows": [{"label": "Direito Administrativo", "values": [4.0], "count": 2, "average": 4.0}],
+                },
+                "judge_candidate_heatmap": {
+                    "columns": ["av3-modelo-candidato"],
+                    "rows": [
+                        {"label": "arbitro", "values": [4.0], "count": 1},
+                        {"label": "openai/gpt-oss-120b", "values": [4.0], "count": 2},
+                    ],
+                },
+                "judge_disagreement_boxplot": {
+                    "metric": "judge_disagreement",
+                    "audit_threshold": 2,
+                    "rows": [
+                        {"label": "av3-modelo-candidato", "count": 1, "audit_count": 0, "min": 1, "q1": 1.0, "median": 1.0, "q3": 1.0, "max": 1},
+                    ],
+                },
+            },
+            "tables": {
+                "judge_agreement_arbitrations": [
+                    {
+                        "answer_id": 501,
+                        "question_id": 77,
+                        "candidate_model": "av3-modelo-candidato",
+                        "judge_1_score": 4,
+                        "judge_2_score": 3,
+                        "delta": 1,
+                        "arbiter_score": 4,
+                        "arbitration_reason": "primary_panel",
+                    }
+                ]
+            },
+            "methodology": {"primary_spearman": "metodologia AV3", "judge_arbiter": "consistencia AV3"},
+        }
+
+
 class FakeDumpService:
     def __init__(self) -> None:
         self.calls = 0
@@ -836,16 +927,224 @@ class FakeJudgePromptConfigService:
                 "created_at": "2026-05-02T10:05:00",
             },
             "versions": [],
-            "preview": {
-                "dataset": dataset,
-                "question_id": 71,
-                "answer_id": 1,
-                "candidate_model": "modelo-candidato",
-                "rendered_prompt": "prompt montado",
-                "version": 4,
-            },
         }
 
+
+class FakeComparisonDashboardService:
+    def __init__(self) -> None:
+        self.filters: list[DashboardFilters] = []
+
+    def load(self, filters: DashboardFilters) -> dict:
+        self.filters.append(filters)
+        return {
+            "filters": {"dataset": filters.dataset, "status": filters.status, "group_by": filters.group_by},
+            "options": {
+                "datasets": ["J1", "J2"],
+                "candidate_models": ["modelo-candidato"],
+                "judge_models": ["M-Prometheus", "openai/gpt-oss-120b"],
+                "statuses": ["all", "sucesso", "erro"],
+            },
+            "cards": {
+                "comparable_pairs": 2,
+                "comparative_coverage": {"evaluated": 2, "expected": 3, "percent": 66.7},
+                "av2_average_score": 3.5,
+                "av3_average_score": 4.0,
+                "delta_average": 0.5,
+                "improvement_rate": 50.0,
+                "regression_rate": 0.0,
+                "unchanged_rate": 50.0,
+                "spearman_av2": {
+                    "value": None,
+                    "p_value": None,
+                    "sample_size": 0,
+                    "available": False,
+                    "note": "Sem dados.",
+                },
+                "spearman_av3": {
+                    "value": None,
+                    "p_value": None,
+                    "sample_size": 0,
+                    "available": False,
+                    "note": "Sem dados.",
+                },
+                "spearman_delta": {
+                    "value": None,
+                    "p_value": None,
+                    "sample_size": 0,
+                    "available": False,
+                    "note": "Sem dados.",
+                },
+                "judge_agreement_comparison": {
+                    "comparable_answers_with_multiple_judges": 2,
+                    "comparable_pair_observations": 3,
+                    "av2_exact_agreement_rate": 33.3,
+                    "av3_exact_agreement_rate": 66.7,
+                    "delta_exact_agreement_rate": 33.4,
+                    "av2_light_divergence_rate": 33.3,
+                    "av3_light_divergence_rate": 0.0,
+                    "av2_strong_divergence_rate": 33.3,
+                    "av3_strong_divergence_rate": 33.3,
+                    "delta_strong_divergence_rate": 0.0,
+                    "av2_mean_absolute_delta": 1.0,
+                    "av3_mean_absolute_delta": 0.7,
+                    "av2_arbiter_rate": 50.0,
+                    "av3_arbiter_rate": None,
+                    "av2_arbiter_available": True,
+                    "av3_arbiter_available": False,
+                    "av2_arbiter_consistency_rate": 100.0,
+                    "av3_arbiter_consistency_rate": None,
+                },
+            },
+            "charts": {
+                "delta_distribution": [
+                    {"label": "-1", "value": 1},
+                    {"label": "0", "value": 1},
+                    {"label": "+1", "value": 1},
+                ],
+                "delta_outcomes": [
+                    {"label": "Piorou", "value": 1},
+                    {"label": "Igual", "value": 1},
+                    {"label": "Melhorou", "value": 1},
+                ],
+            },
+            "tables": {
+                "ranking_by_model": [
+                    {
+                        "owner": "Equipe A",
+                        "av2_model_name": "modelo-candidato",
+                        "av3_provider_model_id": "provider/modelo-candidato",
+                        "comparable_candidate_model": "modelo-candidato",
+                        "paired_evaluations": 2,
+                        "av2_average_score": 3.5,
+                        "av3_average_score": 4.0,
+                        "delta_average": 0.5,
+                        "improvement_rate": 50.0,
+                        "regression_rate": 0.0,
+                        "unchanged_rate": 50.0,
+                        "comparative_coverage": {"evaluated": 2, "expected": 3, "percent": 66.7},
+                    }
+                ],
+                "specialties": [
+                    {
+                        "legal_specialty": "Direito Constitucional",
+                        "paired_evaluations": 2,
+                        "av2_average_score": 3.5,
+                        "av3_average_score": 4.0,
+                        "delta_average": 0.5,
+                        "improvement_rate": 50.0,
+                        "regression_rate": 0.0,
+                        "unchanged_rate": 50.0,
+                        "best_model_by_delta": {"candidate_model": "modelo-candidato", "delta_average": 0.5},
+                        "worst_model_by_delta": {"candidate_model": "modelo-candidato", "delta_average": 0.5},
+                    }
+                ],
+                "spearman_breakdowns": {
+                    "overall": [
+                        {
+                            "label": "Geral",
+                            "paired_evaluations": 2,
+                            "reference_pairs_av2": 2,
+                            "reference_pairs_av3": 2,
+                            "spearman_av2": {"value": 0.5, "p_value": 0.2, "sample_size": 2, "available": True},
+                            "spearman_av3": {"value": 1.0, "p_value": 0.0, "sample_size": 2, "available": True},
+                            "spearman_delta": {"value": 0.5, "p_value": None, "sample_size": 2, "available": True},
+                        }
+                    ],
+                    "by_dataset": [
+                        {
+                            "label": "J2",
+                            "paired_evaluations": 2,
+                            "reference_pairs_av2": 2,
+                            "reference_pairs_av3": 2,
+                            "spearman_av2": {"value": 0.5, "p_value": 0.2, "sample_size": 2, "available": True},
+                            "spearman_av3": {"value": 1.0, "p_value": 0.0, "sample_size": 2, "available": True},
+                            "spearman_delta": {"value": 0.5, "p_value": None, "sample_size": 2, "available": True},
+                        }
+                    ],
+                    "by_candidate_model": [
+                        {
+                            "label": "modelo-candidato",
+                            "paired_evaluations": 2,
+                            "reference_pairs_av2": 2,
+                            "reference_pairs_av3": 2,
+                            "spearman_av2": {"value": 0.5, "p_value": 0.2, "sample_size": 2, "available": True},
+                            "spearman_av3": {"value": 1.0, "p_value": 0.0, "sample_size": 2, "available": True},
+                            "spearman_delta": {"value": 0.5, "p_value": None, "sample_size": 2, "available": True},
+                        }
+                    ],
+                    "by_judge_model": [
+                        {
+                            "label": "M-Prometheus",
+                            "paired_evaluations": 2,
+                            "reference_pairs_av2": 2,
+                            "reference_pairs_av3": 2,
+                            "spearman_av2": {"value": 0.5, "p_value": 0.2, "sample_size": 2, "available": True},
+                            "spearman_av3": {"value": 1.0, "p_value": 0.0, "sample_size": 2, "available": True},
+                            "spearman_delta": {"value": 0.5, "p_value": None, "sample_size": 2, "available": True},
+                        }
+                    ],
+                },
+                "largest_gains": [
+                    {
+                        "dataset": "J2",
+                        "question_id": 77,
+                        "question_sequence": 77,
+                        "candidate_model": "modelo-candidato",
+                        "normalized_judge_model": "M-Prometheus",
+                        "av2_score": 3,
+                        "av3_score": 5,
+                        "delta": 2,
+                        "legal_specialty": "Direito Constitucional",
+                    }
+                ],
+                "largest_regressions": [
+                    {
+                        "dataset": "J2",
+                        "question_id": 78,
+                        "question_sequence": 78,
+                        "candidate_model": "modelo-candidato",
+                        "normalized_judge_model": "M-Prometheus",
+                        "av2_score": 4,
+                        "av3_score": 2,
+                        "delta": -2,
+                        "legal_specialty": "Direito Penal",
+                    }
+                ],
+                "judge_agreement_by_pair": [
+                    {
+                        "judge_pair": "M-Prometheus x openai/gpt-oss-120b",
+                        "av2_comparable_evaluations": 3,
+                        "av2_exact_agreement_rate": 33.3,
+                        "av2_strong_divergence_rate": 33.3,
+                        "av3_comparable_evaluations": 3,
+                        "av3_exact_agreement_rate": 66.7,
+                        "av3_strong_divergence_rate": 33.3,
+                        "delta_exact_agreement_rate": 33.4,
+                        "delta_strong_divergence_rate": 0.0,
+                    }
+                ],
+                "judge_agreement_by_candidate_model": [
+                    {
+                        "candidate_model": "modelo-candidato",
+                        "av2_exact_agreement_rate": 33.3,
+                        "av3_exact_agreement_rate": 66.7,
+                        "delta_agreement_rate": 33.4,
+                        "av2_strong_divergence_rate": 33.3,
+                        "av3_strong_divergence_rate": 33.3,
+                        "delta_strong_divergence_rate": 0.0,
+                        "comparable_pairs": 3,
+                    }
+                ],
+            },
+            "methodology": {
+                "pairing": "Compara pares completos AV2/AV3.",
+                "judge_normalization": "Prometheus 14B/7B aparece como M-Prometheus.",
+                "legal_specialty_source": "Especialidades reutilizam os metadados das perguntas.",
+                "spearman_reference": "Spearman usa a referencia existente quando disponivel.",
+                "diagnostics_summary": "Pares completos: 2 · Apenas AV2: 1 · Apenas AV3: 0",
+                "judge_agreement_note": "Compara apenas pares de juizes compartilhados.",
+            },
+        }
 
 class FakeMetaEvaluationService:
     def __init__(self) -> None:
@@ -1477,10 +1776,68 @@ def test_web_index_contains_progress_element() -> None:
 
     assert response.status_code == 200
     assert response.headers["cache-control"] == "no-store"
+    assert 'data-tab="dashboard-comparison">Dashboard Av2 (sem RAG) vs Av3 (com RAG)</button>' in response.text
+    assert 'data-tab="dashboard-av3">Dashboard AV3</button>' in response.text
     assert 'data-tab="dashboard">Dashboard</button>' in response.text
-    assert '<main id="dashboard-panel" class="dashboard-layout tab-panel" data-tab-panel="dashboard">' in response.text
+    assert response.text.index('data-tab="dashboard-comparison">Dashboard Av2 (sem RAG) vs Av3 (com RAG)</button>') < response.text.index('data-tab="dashboard-av3">Dashboard AV3</button>')
+    assert response.text.index('data-tab="dashboard-av3">Dashboard AV3</button>') < response.text.index('data-tab="dashboard">Dashboard</button>')
+    assert '<main id="dashboard-comparison-panel" class="dashboard-layout tab-panel" data-tab-panel="dashboard-comparison">' in response.text
+    assert '<main id="dashboard-av3-panel" class="dashboard-layout tab-panel" data-tab-panel="dashboard-av3" hidden>' in response.text
+    assert '<main id="dashboard-panel" class="dashboard-layout tab-panel" data-tab-panel="dashboard" hidden>' in response.text
+    assert 'id="dashboard_comparison_dataset"' in response.text
+    assert 'id="dashboard_comparison_candidate_model"' in response.text
+    assert 'id="dashboard_comparison_judge_model"' in response.text
+    assert 'id="dashboard_comparison_status"' in response.text
+    assert 'id="dashboard_comparison_group_by"' in response.text
+    assert 'id="dashboard-comparison-refresh"' in response.text
+    assert 'id="dashboard-comparison-clear"' in response.text
+    assert 'id="dashboard_av3_dataset"' in response.text
+    assert 'id="dashboard_av3_candidate_model"' in response.text
+    assert 'id="dashboard_av3_judge_model"' in response.text
+    assert 'id="dashboard_av3_status"' in response.text
+    assert 'id="dashboard_av3_group_by"' in response.text
+    assert 'id="dashboard-av3-refresh"' in response.text
+    assert 'id="dashboard-av3-clear"' in response.text
     assert '<main id="execution-panel" class="tab-panel" data-tab-panel="execution" hidden>' in response.text
     assert "Resultados e Auditoria da Avaliacao" in response.text
+    assert 'aria-label="Abas internas do dashboard comparativo"' in response.text
+    assert 'data-comparison-tab="overview"' in response.text
+    assert 'data-comparison-tab="ranking"' in response.text
+    assert 'data-comparison-tab="distribution"' in response.text
+    assert 'data-comparison-tab="specialties"' in response.text
+    assert 'data-comparison-tab="spearman"' in response.text
+    assert 'data-comparison-tab="judge-agreement"' in response.text
+    assert 'data-comparison-tab="gains"' in response.text
+    assert 'id="dashboard-comparison-cards"' in response.text
+    assert 'id="dashboard-comparison-methodology"' in response.text
+    assert 'id="dashboard-comparison-ranking-body"' in response.text
+    assert 'id="dashboard-comparison-specialties-body"' in response.text
+    assert 'id="dashboard-comparison-spearman-overall-body"' in response.text
+    assert 'id="dashboard-comparison-spearman-dataset-body"' in response.text
+    assert 'id="dashboard-comparison-spearman-model-body"' in response.text
+    assert 'id="dashboard-comparison-spearman-judge-body"' in response.text
+    assert 'id="dashboard-comparison-judge-agreement-cards"' in response.text
+    assert 'id="dashboard-comparison-judge-agreement-note"' in response.text
+    assert 'id="dashboard-comparison-judge-agreement-pair-body"' in response.text
+    assert 'id="dashboard-comparison-judge-agreement-model-body"' in response.text
+    assert 'id="dashboard-comparison-delta-distribution"' in response.text
+    assert 'id="dashboard-comparison-delta-outcomes"' in response.text
+    assert 'id="dashboard-comparison-gains-body"' in response.text
+    assert 'id="dashboard-comparison-regressions-body"' in response.text
+    assert "Spearman e Correlação" in response.text
+    assert "Concordância entre Juízes" in response.text
+    assert 'aria-label="Abas internas do dashboard AV3"' in response.text
+    assert 'id="dashboard-av3-carousel-dots"' in response.text
+    assert 'data-av3-carousel-index="0"' in response.text
+    assert 'data-av3-carousel-index="1"' in response.text
+    assert 'data-av3-carousel-index="2"' in response.text
+    assert 'data-av3-carousel-index="3"' in response.text
+    assert 'data-av3-carousel-index="4"' not in response.text
+    assert 'data-av3-carousel-index="5"' not in response.text
+    assert "Distribuição das notas por modelo" in response.text
+    assert "Especialidades jurídicas" in response.text
+    assert "Concordância entre juízes" in response.text
+    assert "Logs operacionais" in response.text
     assert 'id="database-actions-toggle" class="database-actions-toggle"' in response.text
     assert "Acoes do Banco" in response.text
     assert 'id="database-clean" class="danger" type="button" role="menuitem">Clean DB (Initial State)</button>' in response.text
@@ -1527,6 +1884,26 @@ def test_web_index_contains_progress_element() -> None:
     assert 'id="dashboard-model-distribution-carousel"' in response.text
     assert 'id="dashboard-model-distribution-chart"' in response.text
     assert "Indicadores gerais" in response.text
+    assert 'id="dashboard-av3-cards"' in response.text
+    assert 'id="dashboard-av3-candidate-ranking"' in response.text
+    assert 'id="dashboard-av3-score-distribution"' in response.text
+    assert 'id="dashboard-av3-judge-average"' in response.text
+    assert 'id="dashboard-av3-methodology"' in response.text
+    assert 'id="dashboard-av3-carousel"' in response.text
+    assert 'id="dashboard-av3-carousel-prev"' in response.text
+    assert 'id="dashboard-av3-carousel-next"' in response.text
+    assert 'id="dashboard-av3-model-distribution-chart"' in response.text
+    assert 'id="dashboard-av3-legal-specialty-performance"' in response.text
+    assert 'id="dashboard-av3-judge-agreement-cards"' in response.text
+    assert 'id="dashboard-av3-judge-candidate-heatmap"' in response.text
+    assert 'id="dashboard-av3-judge-disagreement-boxplot"' in response.text
+    assert 'id="dashboard-av3-judge-agreement-body"' in response.text
+    assert 'id="dashboard-av3-divergences"' not in response.text
+    assert 'id="dashboard-av3-critical-chart"' not in response.text
+    assert 'id="dashboard-av3-cases-body"' not in response.text
+    assert 'dashboard-av3-critical-error-chart' not in response.text
+    assert 'dashboard-av3-operational' not in response.text
+    assert "Divergencias para auditoria" in response.text
     assert response.text.index("Casos criticos e divergencias") < response.text.index('<h3>Distribuicao das notas por modelo</h3>')
     assert 'id="dashboard-cases-body"' in response.text
     assert 'data-carousel-index="0"' in response.text
@@ -1555,13 +1932,20 @@ def test_web_index_contains_progress_element() -> None:
     assert 'id="dashboard-critical-error-body"' in response.text
     assert "Link para log" not in response.text
     assert "function renderModelDistributionChart" in response.text
+    assert "function renderModelDistributionChartInto" in response.text
     assert "rho Spearman" in response.text
     assert "p-value" in response.text
     assert "function renderLegalSpecialtyPerformance" in response.text
+    assert "function renderLegalSpecialtyPerformanceInto" in response.text
     assert "function renderCriticalErrorAnalysis" in response.text
     assert "function moveCarousel" in response.text
+    assert "function moveDashboardAv3Carousel" in response.text
     assert "function goToCarouselPage" in response.text
+    assert "function goToDashboardAv3CarouselPage" in response.text
     assert "function scrollCarouselTabsIntoView" in response.text
+    assert "function scrollDashboardAv3CarouselTabsIntoView" in response.text
+    assert "function updateDashboardAv3CarouselState" in response.text
+    assert "function resetDashboardAv3CarouselTabsScroll" in response.text
     assert ".carousel-tabs { flex:1 1 auto;" in response.text
     assert ".carousel-controls { flex:0 0 auto;" in response.text
     assert "if (index <= 1)" in response.text
@@ -1574,9 +1958,12 @@ def test_web_index_contains_progress_element() -> None:
     assert "function resetCarouselTabsScroll" in response.text
     assert "requestAnimationFrame(resetCarouselTabsScroll)" in response.text
     assert "(dashboardCarouselIndex + delta + cards.length) % cards.length" in response.text
+    assert "(dashboardAv3CarouselIndex + delta + cards.length) % cards.length" in response.text
     assert "track.style.transform" in response.text
     assert "score_distribution_by_model" in response.text
     assert "legal_specialty_performance" in response.text
+    assert "judge_candidate_heatmap" in response.text
+    assert "judge_disagreement_boxplot" in response.text
     assert "critical_error_categories" in response.text
     assert "critical_error_analysis" in response.text
     assert "function buildPostRunStats" in response.text
@@ -1596,8 +1983,8 @@ def test_web_index_contains_url_aware_main_tab_navigation() -> None:
     response = client.get("/")
 
     assert response.status_code == 200
-    assert 'const DEFAULT_MAIN_TAB_ID = "dashboard";' in response.text
-    assert 'const INITIAL_MAIN_TAB_ID = "dashboard";' in response.text
+    assert 'const DEFAULT_MAIN_TAB_ID = "dashboard-comparison";' in response.text
+    assert 'const INITIAL_MAIN_TAB_ID = "dashboard-comparison";' in response.text
     assert "function isValidTabId(value)" in response.text
     assert "function getTabFromUrl(url = window.location.href)" in response.text
     assert "function buildUrlForTab(tabId, url = window.location.href)" in response.text
@@ -1625,7 +2012,7 @@ def test_web_index_falls_back_to_default_main_tab_for_invalid_query_param() -> N
     response = client.get("/?tab=not-a-real-tab")
 
     assert response.status_code == 200
-    assert 'const INITIAL_MAIN_TAB_ID = "dashboard";' in response.text
+    assert 'const INITIAL_MAIN_TAB_ID = "dashboard-comparison";' in response.text
 
 
 def test_web_index_hides_floating_assistant_chat_by_default() -> None:
@@ -1686,6 +2073,8 @@ def test_dashboard_tab_selection_always_refreshes_dashboard_data() -> None:
     response = client.get("/")
 
     assert response.status_code == 200
+    assert 'if (resolvedTabId === "dashboard-comparison") loadDashboardComparison();' in response.text
+    assert 'if (resolvedTabId === "dashboard-av3") loadDashboardAv3();' in response.text
     assert 'if (resolvedTabId === "dashboard") loadDashboard();' in response.text
     assert 'if (resolvedTabId === "dashboard" && !dashboardLoaded) loadDashboard();' not in response.text
 
@@ -2214,6 +2603,63 @@ def test_dashboard_endpoint_returns_filtered_audit_payload() -> None:
     assert dashboard.filters[0].dataset == "J2"
     assert dashboard.filters[0].candidate_models == ("modelo-candidato",)
     assert dashboard.filters[0].status == "sucesso"
+
+
+def test_dashboard_av3_endpoint_returns_filtered_audit_payload() -> None:
+    dashboard = FakeAV3DashboardService()
+    client = TestClient(create_app(FakeRunJudgeService(), dashboard_av3_service=dashboard))
+
+    response = client.get(
+        "/api/dashboard-av3?dataset=J1&candidate_model=av3-modelo-candidato&judge_model=openai/gpt-oss-120b&status=sucesso&group_by=juiz"
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["cards"]["evaluations"] == 3
+    assert data["cards"]["spearman_reference"]["available"] is False
+    assert dashboard.filters[0].dataset == "J1"
+    assert dashboard.filters[0].candidate_models == ("av3-modelo-candidato",)
+    assert dashboard.filters[0].judge_models == ("openai/gpt-oss-120b",)
+    assert dashboard.filters[0].status == "sucesso"
+    assert dashboard.filters[0].group_by == "juiz"
+
+
+def test_dashboard_comparison_endpoint_returns_filtered_payload() -> None:
+    dashboard = FakeComparisonDashboardService()
+    client = TestClient(create_app(FakeRunJudgeService(), dashboard_comparison_service=dashboard))
+
+    response = client.get(
+        "/api/dashboard-comparison?dataset=J2&candidate_model=modelo-candidato&judge_model=M-Prometheus&status=erro&group_by=juiz"
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["cards"]["comparable_pairs"] == 2
+    assert data["cards"]["delta_average"] == 0.5
+    assert data["tables"]["ranking_by_model"][0]["delta_average"] == 0.5
+    assert data["tables"]["specialties"][0]["delta_average"] == 0.5
+    assert data["tables"]["spearman_breakdowns"]["overall"][0]["spearman_av3"]["value"] == 1.0
+    assert data["cards"]["judge_agreement_comparison"]["av3_exact_agreement_rate"] == 66.7
+    assert data["tables"]["judge_agreement_by_pair"][0]["judge_pair"] == "M-Prometheus x openai/gpt-oss-120b"
+    assert data["tables"]["judge_agreement_by_candidate_model"][0]["comparable_pairs"] == 3
+    assert data["tables"]["largest_gains"][0]["delta"] == 2
+    assert data["tables"]["largest_regressions"][0]["delta"] == -2
+    assert dashboard.filters[0].dataset == "J2"
+    assert dashboard.filters[0].candidate_models == ("modelo-candidato",)
+    assert dashboard.filters[0].judge_models == ("M-Prometheus",)
+    assert dashboard.filters[0].status == "erro"
+    assert dashboard.filters[0].group_by == "juiz"
+
+
+@pytest.mark.parametrize("dataset", ["J1", "J2", "all"])
+def test_dashboard_comparison_endpoint_accepts_dataset_filter_values(dataset: str) -> None:
+    dashboard = FakeComparisonDashboardService()
+    client = TestClient(create_app(FakeRunJudgeService(), dashboard_comparison_service=dashboard))
+
+    response = client.get(f"/api/dashboard-comparison?dataset={dataset}")
+
+    assert response.status_code == 200
+    assert dashboard.filters[0].dataset == dataset
 
 
 def test_operational_log_summary_endpoint_uses_internal_service() -> None:

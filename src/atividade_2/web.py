@@ -23,7 +23,7 @@ from .assistant import AssistantService
 from .audit_log_service import AuditLogSummaryService
 from .config import ConfigurationError
 from .contracts import BatchProgress, EligibilitySummary, EvaluationProgress, PipelineSummary
-from .dashboard import DashboardService, parse_dashboard_filters
+from .dashboard import AV3DashboardService, ComparativeDashboardService, DashboardService, parse_dashboard_filters
 from .database_dump import DatabaseDumpService, DatabaseResetService, resolve_backup_dir, resolve_dump_path
 from .db import connect
 from .judge_prompt_configs import JudgePromptConfigService
@@ -47,8 +47,8 @@ AUDIT_TIMESTAMP_PATTERN = re.compile(r"^([^|]+)\s+\|\s+([^|]+)(?:\s+\|\s+(.*))?$
 AUDIT_KEY_VALUE_PATTERN = re.compile(r"([A-Za-z_]+)=([^ ]+)")
 DEFAULT_AUDIT_DIR = Path("outputs") / "audit"
 DEFAULT_BACKUP_DIR = Path("outputs") / "backup"
-DEFAULT_MAIN_TAB_ID = "dashboard"
-VALID_MAIN_TAB_IDS = frozenset({"dashboard", "execution", "history", "prompt", "meta", "rag"})
+DEFAULT_MAIN_TAB_ID = "dashboard-comparison"
+VALID_MAIN_TAB_IDS = frozenset({"dashboard-comparison", "dashboard-av3", "dashboard", "execution", "history", "prompt", "meta", "rag"})
 
 
 def _resolve_main_tab_id(raw_value: str | None) -> str:
@@ -423,6 +423,8 @@ def create_app(
     audit_dir: Path | str = DEFAULT_AUDIT_DIR,
     backup_dir: Path | str = DEFAULT_BACKUP_DIR,
     dashboard_service: DashboardService | None = None,
+    dashboard_av3_service: AV3DashboardService | None = None,
+    dashboard_comparison_service: ComparativeDashboardService | None = None,
     dump_service: DatabaseDumpService | None = None,
     database_reset_service: DatabaseResetService | None = None,
     judge_prompt_service: JudgePromptConfigService | None = None,
@@ -446,6 +448,8 @@ def create_app(
     app.state.audit_dir = Path(audit_dir)
     app.state.backup_dir = resolved_backup_dir
     app.state.dashboard = dashboard_service or DashboardService()
+    app.state.dashboard_av3 = dashboard_av3_service or AV3DashboardService()
+    app.state.dashboard_comparison = dashboard_comparison_service or ComparativeDashboardService()
     app.state.dump_service = dump_service or DatabaseDumpService(output_dir=resolved_backup_dir)
     app.state.database_reset_service = database_reset_service or DatabaseResetService()
     app.state.judge_prompt_service = judge_prompt_service or JudgePromptConfigService()
@@ -519,6 +523,46 @@ def create_app(
                 }
             )
             return request.app.state.dashboard.load(filters)
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+        except RuntimeError as error:
+            raise HTTPException(status_code=503, detail=str(error)) from error
+
+    @app.get("/api/dashboard-av3")
+    def get_dashboard_av3(request: Request) -> dict:
+        try:
+            filters = parse_dashboard_filters(
+                {
+                    "dataset": request.query_params.get("dataset"),
+                    "candidate_model": request.query_params.get("candidate_model"),
+                    "judge_model": request.query_params.get("judge_model"),
+                    "status": request.query_params.get("status"),
+                    "date_from": request.query_params.get("date_from"),
+                    "date_to": request.query_params.get("date_to"),
+                    "group_by": request.query_params.get("group_by"),
+                }
+            )
+            return request.app.state.dashboard_av3.load(filters)
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+        except RuntimeError as error:
+            raise HTTPException(status_code=503, detail=str(error)) from error
+
+    @app.get("/api/dashboard-comparison")
+    def get_dashboard_comparison(request: Request) -> dict:
+        try:
+            filters = parse_dashboard_filters(
+                {
+                    "dataset": request.query_params.get("dataset"),
+                    "candidate_model": request.query_params.get("candidate_model"),
+                    "judge_model": request.query_params.get("judge_model"),
+                    "status": request.query_params.get("status"),
+                    "date_from": request.query_params.get("date_from"),
+                    "date_to": request.query_params.get("date_to"),
+                    "group_by": request.query_params.get("group_by"),
+                }
+            )
+            return request.app.state.dashboard_comparison.load(filters)
         except ValueError as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
         except RuntimeError as error:
@@ -1579,14 +1623,441 @@ _INDEX_HTML = """
     <div id="config-status" class="status">Carregando configuracao local...</div>
   </header>
   <nav class="tabs" aria-label="Navegacao principal">
-    <button class="tab-button active" type="button" data-tab="dashboard">Dashboard</button>
+    <button class="tab-button active" type="button" data-tab="dashboard-comparison">Dashboard Av2 (sem RAG) vs Av3 (com RAG)</button>
+    <button class="tab-button" type="button" data-tab="dashboard-av3">Dashboard AV3</button>
+    <button class="tab-button" type="button" data-tab="dashboard">Dashboard</button>
     <button class="tab-button" type="button" data-tab="execution">Execucao</button>
     <button class="tab-button" type="button" data-tab="history">Execucoes anteriores</button>
       <button class="tab-button" type="button" data-tab="prompt">Prompt Juizes</button>
       <button class="tab-button" type="button" data-tab="meta">Meta-Avaliacao</button>
       <button class="tab-button" type="button" data-tab="rag">RAG</button>
   </nav>
-  <main id="dashboard-panel" class="dashboard-layout tab-panel" data-tab-panel="dashboard">
+  <main id="dashboard-comparison-panel" class="dashboard-layout tab-panel" data-tab-panel="dashboard-comparison">
+    <aside class="dashboard-filters">
+      <h2>Filtros globais</h2>
+      <label>Dataset
+        <select id="dashboard_comparison_dataset"><option value="all">Todos</option></select>
+      </label>
+      <label>Modelo candidato
+        <select id="dashboard_comparison_candidate_model" multiple></select>
+      </label>
+      <label>Modelo juiz
+        <select id="dashboard_comparison_judge_model" multiple></select>
+      </label>
+      <label>Status
+        <select id="dashboard_comparison_status"><option value="all">todos</option><option value="sucesso">sucesso</option><option value="erro">erro</option></select>
+      </label>
+      <label>Agrupamento
+        <select id="dashboard_comparison_group_by"><option value="modelo">por modelo</option><option value="juiz">por juiz</option><option value="dataset">por dataset</option><option value="disciplina">por disciplina</option><option value="dificuldade">por dificuldade</option></select>
+      </label>
+      <div class="dashboard-filter-actions">
+        <button id="dashboard-comparison-refresh" type="button">Atualizar</button>
+        <button id="dashboard-comparison-clear" class="secondary" type="button">Limpar</button>
+      </div>
+      <p class="dashboard-note">Compara AV2 Sem_RAG via id_resposta_ativa1 com AV3 Com_RAG via id_candidate_answer, preservando a normalizacao M-Prometheus apenas na camada do dashboard.</p>
+    </aside>
+    <section>
+      <div class="dashboard-head">
+        <div>
+          <h2>Resultados e Indicadores Comparativos</h2>
+          <p>Primeira fatia do comparativo AV2 Sem_RAG vs AV3 Com_RAG: filtros globais, indicadores gerais e estrutura interna preparada para as proximas abas.</p>
+        </div>
+      </div>
+      <div class="carousel-card" aria-label="Resumo do dashboard comparativo">
+        <div class="carousel-head">
+          <div id="dashboard-comparison-tabs" class="carousel-tabs" role="tablist" aria-label="Abas internas do dashboard comparativo">
+            <button class="carousel-tab active" type="button" data-comparison-tab="overview" role="tab" aria-selected="true">Indicadores Gerais</button>
+            <button class="carousel-tab" type="button" data-comparison-tab="ranking" role="tab" aria-selected="false">Ranking por Modelo</button>
+            <button class="carousel-tab" type="button" data-comparison-tab="distribution" role="tab" aria-selected="false">Distribuição de Deltas</button>
+            <button class="carousel-tab" type="button" data-comparison-tab="specialties" role="tab" aria-selected="false">Especialidades Jurídicas</button>
+            <button class="carousel-tab" type="button" data-comparison-tab="spearman" role="tab" aria-selected="false">Spearman e Correlação</button>
+            <button class="carousel-tab" type="button" data-comparison-tab="judge-agreement" role="tab" aria-selected="false">Concordância entre Juízes</button>
+            <button class="carousel-tab" type="button" data-comparison-tab="gains" role="tab" aria-selected="false">Ganhos e Pioras</button>
+          </div>
+        </div>
+        <section id="dashboard-comparison-overview" class="comparison-subpanel">
+          <h3>Indicadores gerais</h3>
+          <div id="dashboard-comparison-cards" class="metric-grid"></div>
+          <p id="dashboard-comparison-methodology" class="dashboard-note">Carregando dashboard comparativo.</p>
+        </section>
+        <section id="dashboard-comparison-ranking" class="comparison-subpanel" hidden>
+          <h3>Ranking por Modelo</h3>
+          <p class="dashboard-note">Ranking baseado apenas em pares completos AV2 Sem_RAG vs AV3 Com_RAG, ordenado por delta médio e volume pareado.</p>
+          <div class="table-wrap dashboard-table">
+            <table aria-label="Ranking comparativo por modelo">
+              <thead>
+                <tr>
+                  <th>owner</th>
+                  <th>modelo AV2</th>
+                  <th>provider model id AV3</th>
+                  <th>rótulo comparável</th>
+                  <th>pares</th>
+                  <th>média AV2</th>
+                  <th>média AV3</th>
+                  <th>delta médio</th>
+                  <th>melhora</th>
+                  <th>piora</th>
+                  <th>sem alteração</th>
+                  <th>cobertura</th>
+                </tr>
+              </thead>
+              <tbody id="dashboard-comparison-ranking-body">
+                <tr><td colspan="12" class="muted">Carregando ranking comparativo.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+        <section id="dashboard-comparison-distribution" class="comparison-subpanel" hidden>
+          <h3>Distribuição de Deltas</h3>
+          <p class="dashboard-note">Delta = nota AV3 Com_RAG menos nota AV2 Sem_RAG, sempre calculado em pares completos.</p>
+          <div class="chart-grid">
+            <div class="chart">
+              <h3>Buckets de delta</h3>
+              <div id="dashboard-comparison-delta-distribution"></div>
+            </div>
+            <div class="chart">
+              <h3>Resumo de resultado</h3>
+              <div id="dashboard-comparison-delta-outcomes"></div>
+            </div>
+          </div>
+        </section>
+        <section id="dashboard-comparison-specialties" class="comparison-subpanel" hidden>
+          <h3>Especialidades Jurídicas</h3>
+          <p class="dashboard-note">Especialidades reutilizam os metadados juridicos ja presentes nas perguntas, sempre com pares completos AV2 Sem_RAG vs AV3 Com_RAG.</p>
+          <div class="table-wrap dashboard-table">
+            <table aria-label="Comparativo por especialidade juridica">
+              <thead>
+                <tr>
+                  <th>especialidade</th>
+                  <th>pares</th>
+                  <th>média AV2</th>
+                  <th>média AV3</th>
+                  <th>delta médio</th>
+                  <th>melhora</th>
+                  <th>piora</th>
+                  <th>sem alteração</th>
+                  <th>melhor modelo</th>
+                  <th>pior modelo</th>
+                </tr>
+              </thead>
+              <tbody id="dashboard-comparison-specialties-body">
+                <tr><td colspan="10" class="muted">Carregando especialidades juridicas.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+        <section id="dashboard-comparison-spearman" class="comparison-subpanel" hidden>
+          <h3>Spearman e Correlação</h3>
+          <p class="dashboard-note">Compara a correlação AV2 Sem_RAG vs AV3 Com_RAG contra a referência já adotada pelo repositório, sem fabricar score humano quando ele não existe.</p>
+          <div class="chart-grid">
+            <div class="chart">
+              <h3>Geral</h3>
+              <div class="table-wrap dashboard-table">
+                <table aria-label="Spearman comparativo geral">
+                  <thead>
+                    <tr>
+                      <th>grupo</th>
+                      <th>pares completos</th>
+                      <th>pares com referência AV2</th>
+                      <th>Spearman AV2</th>
+                      <th>pares com referência AV3</th>
+                      <th>Spearman AV3</th>
+                      <th>Delta Spearman</th>
+                    </tr>
+                  </thead>
+                  <tbody id="dashboard-comparison-spearman-overall-body">
+                    <tr><td colspan="7" class="muted">Carregando Spearman comparativo.</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            <div class="chart">
+              <h3>Por dataset</h3>
+              <div class="table-wrap dashboard-table">
+                <table aria-label="Spearman comparativo por dataset">
+                  <thead>
+                    <tr>
+                      <th>grupo</th>
+                      <th>pares completos</th>
+                      <th>pares com referência AV2</th>
+                      <th>Spearman AV2</th>
+                      <th>pares com referência AV3</th>
+                      <th>Spearman AV3</th>
+                      <th>Delta Spearman</th>
+                    </tr>
+                  </thead>
+                  <tbody id="dashboard-comparison-spearman-dataset-body">
+                    <tr><td colspan="7" class="muted">Carregando Spearman por dataset.</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            <div class="chart">
+              <h3>Por modelo candidato</h3>
+              <div class="table-wrap dashboard-table">
+                <table aria-label="Spearman comparativo por modelo candidato">
+                  <thead>
+                    <tr>
+                      <th>grupo</th>
+                      <th>pares completos</th>
+                      <th>pares com referência AV2</th>
+                      <th>Spearman AV2</th>
+                      <th>pares com referência AV3</th>
+                      <th>Spearman AV3</th>
+                      <th>Delta Spearman</th>
+                    </tr>
+                  </thead>
+                  <tbody id="dashboard-comparison-spearman-model-body">
+                    <tr><td colspan="7" class="muted">Carregando Spearman por modelo.</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            <div class="chart">
+              <h3>Por juiz normalizado</h3>
+              <div class="table-wrap dashboard-table">
+                <table aria-label="Spearman comparativo por juiz normalizado">
+                  <thead>
+                    <tr>
+                      <th>grupo</th>
+                      <th>pares completos</th>
+                      <th>pares com referência AV2</th>
+                      <th>Spearman AV2</th>
+                      <th>pares com referência AV3</th>
+                      <th>Spearman AV3</th>
+                      <th>Delta Spearman</th>
+                    </tr>
+                  </thead>
+                  <tbody id="dashboard-comparison-spearman-judge-body">
+                    <tr><td colspan="7" class="muted">Carregando Spearman por juiz.</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </section>
+        <section id="dashboard-comparison-judge-agreement" class="comparison-subpanel" hidden>
+          <h3>Concordância entre Juízes</h3>
+          <p class="judge-agreement-copy">A comparação usa apenas respostas AV2/AV3 pareadas em que o mesmo par de juízes normalizados aparece nos dois lados. Juízes primários incluem registros `principal` e `controle`; árbitro aparece apenas nas métricas suplementares.</p>
+          <div id="dashboard-comparison-judge-agreement-cards" class="metric-grid"></div>
+          <p id="dashboard-comparison-judge-agreement-note" class="dashboard-note">Carregando concordância comparativa.</p>
+          <div class="stack">
+            <div>
+              <h4>Por par de juízes normalizado</h4>
+              <div class="table-wrap dashboard-table">
+                <table aria-label="Concordancia comparativa por par de juizes">
+                  <thead>
+                    <tr>
+                      <th>Par de juízes</th>
+                      <th>AV2 pares comparáveis</th>
+                      <th>AV2 concordância exata</th>
+                      <th>AV2 divergência forte</th>
+                      <th>AV3 pares comparáveis</th>
+                      <th>AV3 concordância exata</th>
+                      <th>AV3 divergência forte</th>
+                      <th>Delta concordância</th>
+                      <th>Delta divergência forte</th>
+                    </tr>
+                  </thead>
+                  <tbody id="dashboard-comparison-judge-agreement-pair-body">
+                    <tr><td colspan="9" class="muted">Carregando pares de juízes.</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            <div>
+              <h4>Por modelo candidato</h4>
+              <div class="table-wrap dashboard-table">
+                <table aria-label="Concordancia comparativa por modelo candidato">
+                  <thead>
+                    <tr>
+                      <th>Modelo candidato</th>
+                      <th>AV2 concordância exata</th>
+                      <th>AV3 concordância exata</th>
+                      <th>Delta concordância</th>
+                      <th>AV2 divergência forte</th>
+                      <th>AV3 divergência forte</th>
+                      <th>Delta divergência forte</th>
+                      <th>Pares comparáveis</th>
+                    </tr>
+                  </thead>
+                  <tbody id="dashboard-comparison-judge-agreement-model-body">
+                    <tr><td colspan="8" class="muted">Carregando modelos candidatos.</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </section>
+        <section id="dashboard-comparison-gains" class="comparison-subpanel" hidden>
+          <h3>Ganhos e Pioras</h3>
+          <div class="chart-grid">
+            <div class="chart">
+              <h3>Maiores ganhos</h3>
+              <p class="dashboard-note">Exibe deltas maiores ou iguais a +2.</p>
+              <div class="table-wrap dashboard-table">
+                <table aria-label="Maiores ganhos do comparativo">
+                  <thead>
+                    <tr>
+                      <th>dataset</th>
+                      <th>pergunta</th>
+                      <th>modelo candidato</th>
+                      <th>juiz normalizado</th>
+                      <th>AV2</th>
+                      <th>AV3</th>
+                      <th>delta</th>
+                      <th>especialidade</th>
+                    </tr>
+                  </thead>
+                  <tbody id="dashboard-comparison-gains-body">
+                    <tr><td colspan="8" class="muted">Carregando maiores ganhos.</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            <div class="chart">
+              <h3>Maiores pioras / ruído</h3>
+              <p class="dashboard-note">Exibe deltas menores ou iguais a -2.</p>
+              <div class="table-wrap dashboard-table">
+                <table aria-label="Maiores pioras do comparativo">
+                  <thead>
+                    <tr>
+                      <th>dataset</th>
+                      <th>pergunta</th>
+                      <th>modelo candidato</th>
+                      <th>juiz normalizado</th>
+                      <th>AV2</th>
+                      <th>AV3</th>
+                      <th>delta</th>
+                      <th>especialidade</th>
+                    </tr>
+                  </thead>
+                  <tbody id="dashboard-comparison-regressions-body">
+                    <tr><td colspan="8" class="muted">Carregando maiores pioras.</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+    </section>
+  </main>
+  <main id="dashboard-av3-panel" class="dashboard-layout tab-panel" data-tab-panel="dashboard-av3" hidden>
+    <aside class="dashboard-filters">
+      <h2>Filtros globais</h2>
+      <label>Dataset
+        <select id="dashboard_av3_dataset"><option value="all">Todos</option></select>
+      </label>
+      <label>Modelo candidato
+        <select id="dashboard_av3_candidate_model" multiple></select>
+      </label>
+      <label>Modelo juiz
+        <select id="dashboard_av3_judge_model" multiple></select>
+      </label>
+      <label>Status
+        <select id="dashboard_av3_status"><option value="all">todos</option><option value="sucesso">sucesso</option><option value="erro">erro</option></select>
+      </label>
+      <label>Agrupamento
+        <select id="dashboard_av3_group_by"><option value="modelo">por modelo</option><option value="juiz">por juiz</option><option value="dataset">por dataset</option><option value="disciplina">por disciplina</option><option value="dificuldade">por dificuldade</option></select>
+      </label>
+      <div class="dashboard-filter-actions">
+        <button id="dashboard-av3-refresh" type="button">Atualizar</button>
+        <button id="dashboard-av3-clear" class="secondary" type="button">Limpar</button>
+      </div>
+      <p class="dashboard-note">Dashboard AV3 usa respostas candidatas com contexto RAG persistido e avaliacoes ligadas por id_candidate_answer.</p>
+    </aside>
+    <section>
+      <div class="dashboard-head">
+        <div>
+          <h2>Resultados e Auditoria da Avaliacao</h2>
+          <p>Visao consolidada das avaliacoes AV3 com os mesmos indicadores gerais do dashboard existente, ajustados para a trilha de dados candidata.</p>
+        </div>
+      </div>
+      <div class="carousel-card" aria-label="Resumo do dashboard AV3">
+        <div class="carousel-head">
+          <div id="dashboard-av3-carousel-dots" class="carousel-tabs" role="tablist" aria-label="Abas internas do dashboard AV3">
+            <button class="carousel-tab active" type="button" data-av3-carousel-index="0" role="tab" aria-selected="true">Indicadores Gerais</button>
+            <button class="carousel-tab" type="button" data-av3-carousel-index="1" role="tab" aria-selected="false">Distribuição das notas por modelo</button>
+            <button class="carousel-tab" type="button" data-av3-carousel-index="2" role="tab" aria-selected="false">Especialidades jurídicas</button>
+            <button class="carousel-tab" type="button" data-av3-carousel-index="3" role="tab" aria-selected="false">Concordância entre juízes</button>
+          </div>
+          <div class="carousel-controls" aria-label="Navegacao do carousel AV3">
+            <button id="dashboard-av3-carousel-prev" class="carousel-button" type="button" aria-label="Pagina anterior">&lsaquo;</button>
+            <button id="dashboard-av3-carousel-next" class="carousel-button" type="button" aria-label="Proxima pagina">&rsaquo;</button>
+          </div>
+        </div>
+        <div class="carousel-viewport">
+          <div id="dashboard-av3-carousel" class="carousel-track">
+            <div class="dashboard-carousel-slide">
+              <h3>Indicadores gerais</h3>
+              <div id="dashboard-av3-cards" class="metric-grid"></div>
+              <div class="chart-grid">
+                <div class="chart">
+                  <h3>Ranking geral dos modelos candidatos</h3>
+                  <div id="dashboard-av3-candidate-ranking"></div>
+                </div>
+                <div class="chart">
+                  <h3>Distribuicao de notas 1-5</h3>
+                  <div id="dashboard-av3-score-distribution"></div>
+                </div>
+                <div class="chart">
+                  <h3>Media por juiz</h3>
+                  <div id="dashboard-av3-judge-average"></div>
+                </div>
+              </div>
+              <p id="dashboard-av3-methodology" class="dashboard-note"></p>
+            </div>
+            <div class="dashboard-carousel-slide">
+              <h3>Distribuição das notas por modelo</h3>
+              <div id="dashboard-av3-model-distribution-chart" class="model-distribution-list"></div>
+            </div>
+            <div class="dashboard-carousel-slide">
+              <h3>Especialidades jurídicas</h3>
+              <div id="dashboard-av3-legal-specialty-performance" class="heatmap-wrap"></div>
+            </div>
+            <div class="dashboard-carousel-slide">
+              <h3>Concordância entre juízes</h3>
+              <div class="judge-agreement-layout">
+                <div id="dashboard-av3-judge-agreement-cards" class="metric-grid">
+                  <div class="metric-card"><span class="metric-value">-</span><span class="metric-label">Carregando</span></div>
+                </div>
+                <div>
+                  <h3>Media da nota por juiz e modelo candidato</h3>
+                  <div id="dashboard-av3-judge-candidate-heatmap" class="heatmap-wrap dashboard-compact-viz"></div>
+                </div>
+                <div>
+                  <h3>Diferenca maxima entre juizes por modelo</h3>
+                  <p class="judge-agreement-copy">Cada linha resume, para um modelo candidato, o quanto os juizes discordaram nas mesmas respostas. A escala vai de 0 a 4 pontos: 0 significa notas iguais; valores a partir de 2 indicam casos que devem ir para auditoria.</p>
+                  <div id="dashboard-av3-judge-disagreement-boxplot" class="boxplot-wrap"></div>
+                </div>
+              </div>
+              <div class="table-wrap judge-agreement-table">
+                <table aria-label="Concordancia entre juizes AV3 com arbitragem">
+                  <thead>
+                    <tr>
+                      <th>ID da resposta</th>
+                      <th>ID da pergunta</th>
+                      <th>Modelo candidato</th>
+                      <th>Nota Juiz 1</th>
+                      <th>Nota Juiz 2</th>
+                      <th>Delta</th>
+                      <th>Nota arbitro</th>
+                      <th>Motivo de acionamento</th>
+                    </tr>
+                  </thead>
+                  <tbody id="dashboard-av3-judge-agreement-body">
+                    <tr><td colspan="8" class="muted">Carregando concordancia.</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+  <main id="dashboard-panel" class="dashboard-layout tab-panel" data-tab-panel="dashboard" hidden>
     <aside class="dashboard-filters">
       <h2>Filtros globais</h2>
       <label>Dataset
@@ -2858,6 +3329,7 @@ _INDEX_HTML = """
     let metaEvaluationOptions = [];
     let selectedMetaEvaluationId = "";
     let selectedHistoryRunId = null;
+    let comparisonDashboardLoaded = false;
     let dashboardLoaded = false;
     let operationalLogSummary = null;
     let operationalLogSummaryLoading = false;
@@ -2868,7 +3340,7 @@ _INDEX_HTML = """
     let judgeModelOptions = [];
     let assistantMessages = [];
     let assistantLoading = false;
-    const DEFAULT_MAIN_TAB_ID = "dashboard";
+    const DEFAULT_MAIN_TAB_ID = "dashboard-comparison";
     const INITIAL_MAIN_TAB_ID = "__INITIAL_MAIN_TAB_ID__";
     const executionTableState = new Map();
 
@@ -2981,6 +3453,132 @@ _INDEX_HTML = """
       return params.toString();
     }
 
+    function dashboardAv3Query() {
+      const params = new URLSearchParams();
+      params.set("dataset", value("dashboard_av3_dataset"));
+      params.set("status", value("dashboard_av3_status"));
+      params.set("group_by", value("dashboard_av3_group_by"));
+      const candidates = selectedValues("dashboard_av3_candidate_model");
+      const judges = selectedValues("dashboard_av3_judge_model");
+      if (candidates.length) params.set("candidate_model", candidates.join(","));
+      if (judges.length) params.set("judge_model", judges.join(","));
+      return params.toString();
+    }
+
+    function dashboardComparisonQuery() {
+      const params = new URLSearchParams();
+      params.set("dataset", value("dashboard_comparison_dataset"));
+      params.set("status", value("dashboard_comparison_status"));
+      params.set("group_by", value("dashboard_comparison_group_by"));
+      const candidates = selectedValues("dashboard_comparison_candidate_model");
+      const judges = selectedValues("dashboard_comparison_judge_model");
+      if (candidates.length) params.set("candidate_model", candidates.join(","));
+      if (judges.length) params.set("judge_model", judges.join(","));
+      return params.toString();
+    }
+
+    function populateValueSelect(id, options, selectedValue, emptyLabel = "Todos") {
+      const select = document.getElementById(id);
+      const current = selectedValue ?? select.value;
+      select.textContent = "";
+      const allOption = document.createElement("option");
+      allOption.value = "all";
+      allOption.textContent = emptyLabel;
+      select.appendChild(allOption);
+      for (const optionValue of options || []) {
+        if (!optionValue || optionValue === "all") continue;
+        const option = document.createElement("option");
+        option.value = optionValue;
+        option.textContent = optionValue;
+        select.appendChild(option);
+      }
+      select.value = Array.from(select.options).some((option) => option.value === current) ? current : "all";
+    }
+
+    function switchComparisonTab(targetId) {
+      for (const button of document.querySelectorAll("[data-comparison-tab]")) {
+        const active = button.dataset.comparisonTab === targetId;
+        button.classList.toggle("active", active);
+        button.setAttribute("aria-selected", String(active));
+      }
+      for (const panel of document.querySelectorAll(".comparison-subpanel")) {
+        panel.hidden = panel.id !== `dashboard-comparison-${targetId}`;
+      }
+    }
+
+    async function loadDashboardComparison() {
+      setText("dashboard-comparison-methodology", "Carregando dashboard comparativo.");
+      setText("dashboard-comparison-judge-agreement-note", "Carregando concordância comparativa.");
+      try {
+        const response = await fetch(`/api/dashboard-comparison?${dashboardComparisonQuery()}`);
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.detail || "Dashboard comparativo indisponivel.");
+        comparisonDashboardLoaded = true;
+        renderDashboardComparison(data);
+      } catch (error) {
+        renderComparisonMetricCards("dashboard-comparison-cards", {});
+        renderBarChart("dashboard-comparison-delta-distribution", [], {showPercent: true});
+        renderBarChart("dashboard-comparison-delta-outcomes", [], {showPercent: true});
+        renderComparisonRankingTable([]);
+        renderComparisonSpecialtiesTable([]);
+        renderComparisonSpearmanTable(
+          "dashboard-comparison-spearman-overall-body",
+          [],
+          "Sem dados de Spearman para o filtro atual.",
+        );
+        renderComparisonSpearmanTable(
+          "dashboard-comparison-spearman-dataset-body",
+          [],
+          "Sem dados de Spearman por dataset para o filtro atual.",
+        );
+        renderComparisonSpearmanTable(
+          "dashboard-comparison-spearman-model-body",
+          [],
+          "Sem dados de Spearman por modelo para o filtro atual.",
+        );
+        renderComparisonSpearmanTable(
+          "dashboard-comparison-spearman-judge-body",
+          [],
+          "Sem dados de Spearman por juiz para o filtro atual.",
+        );
+        renderComparisonJudgeAgreementCards({});
+        renderComparisonJudgeAgreementPairTable([]);
+        renderComparisonJudgeAgreementModelTable([]);
+        renderComparisonDeltaCasesTable("dashboard-comparison-gains-body", [], "Sem ganhos comparativos para o filtro atual.");
+        renderComparisonDeltaCasesTable("dashboard-comparison-regressions-body", [], "Sem pioras comparativas para o filtro atual.");
+        setText("dashboard-comparison-methodology", friendlyErrorMessage(error.message));
+        setText("dashboard-comparison-judge-agreement-note", friendlyErrorMessage(error.message));
+      }
+    }
+
+    async function loadDashboardAv3() {
+      setText("dashboard-av3-methodology", "Carregando dashboard.");
+      document.getElementById("dashboard-av3-judge-agreement-body").innerHTML = '<tr><td colspan="8" class="muted">Carregando concordancia.</td></tr>';
+      try {
+        const response = await fetch(`/api/dashboard-av3?${dashboardAv3Query()}`);
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.detail || "Dashboard AV3 indisponivel.");
+        renderDashboardAv3(data);
+      } catch (error) {
+        renderDashboardMetricCards("dashboard-av3-cards", {}, {includeAuditDivergences: false});
+        renderBarChart("dashboard-av3-candidate-ranking", [], {scaleMax: 5});
+        renderBarChart("dashboard-av3-score-distribution", [], {scaleMax: 1, showPercent: true, colorByLabel: true});
+        renderBarChart("dashboard-av3-judge-average", [], {scaleMax: 5});
+        renderModelDistributionChartInto("dashboard-av3-model-distribution-chart", []);
+        renderLegalSpecialtyPerformanceInto("dashboard-av3-legal-specialty-performance", {});
+        renderJudgeCandidateHeatmapInto("dashboard-av3-judge-candidate-heatmap", {});
+        renderJudgeDisagreementBoxplotInto("dashboard-av3-judge-disagreement-boxplot", {});
+        renderJudgeAgreementInto(
+          "dashboard-av3-judge-agreement-cards",
+          "dashboard-av3-judge-agreement-body",
+          {},
+          [],
+          friendlyErrorMessage(error.message),
+        );
+        setText("dashboard-av3-methodology", friendlyErrorMessage(error.message));
+      }
+    }
+
     async function loadDashboard() {
       const body = document.getElementById("dashboard-cases-body");
       body.innerHTML = '<tr><td colspan="10" class="muted">Carregando dashboard.</td></tr>';
@@ -3062,7 +3660,7 @@ _INDEX_HTML = """
     function renderDashboard(data) {
       populateSelect("dashboard_candidate_model", data.options?.candidate_models || [], selectedValues("dashboard_candidate_model"));
       populateSelect("dashboard_judge_model", data.options?.judge_models || [], selectedValues("dashboard_judge_model"));
-      renderDashboardCards(data.cards || {});
+      renderDashboardMetricCards("dashboard-cards", data.cards || {});
       renderModelDistributionChart(data.charts?.score_distribution_by_model || []);
       renderJudgeCandidateHeatmap(data.charts?.judge_candidate_heatmap || {});
       renderJudgeDisagreementBoxplot(data.charts?.judge_disagreement_boxplot || {});
@@ -3080,6 +3678,94 @@ _INDEX_HTML = """
         ...(data.tables?.minor_disagreement_cases || []),
         ...(data.tables?.divergence_cases || []),
       ]);
+    }
+
+    function renderDashboardAv3(data) {
+      populateValueSelect("dashboard_av3_dataset", data.options?.datasets || [], data.filters?.dataset || value("dashboard_av3_dataset"));
+      populateValueSelect("dashboard_av3_status", (data.options?.statuses || []).filter((status) => status !== "all"), data.filters?.status || value("dashboard_av3_status"), "todos");
+      populateSelect("dashboard_av3_candidate_model", data.options?.candidate_models || [], selectedValues("dashboard_av3_candidate_model"));
+      populateSelect("dashboard_av3_judge_model", data.options?.judge_models || [], selectedValues("dashboard_av3_judge_model"));
+      renderDashboardMetricCards("dashboard-av3-cards", data.cards || {}, {includeAuditDivergences: false});
+      renderBarChart("dashboard-av3-candidate-ranking", data.charts?.candidate_ranking || [], {scaleMax: 5});
+      renderBarChart("dashboard-av3-score-distribution", data.charts?.score_distribution || [], {scaleMax: 1, showPercent: true, colorByLabel: true});
+      renderBarChart("dashboard-av3-judge-average", data.charts?.judge_average || [], {scaleMax: 5});
+      renderModelDistributionChartInto("dashboard-av3-model-distribution-chart", data.charts?.score_distribution_by_model || []);
+      renderLegalSpecialtyPerformanceInto("dashboard-av3-legal-specialty-performance", data.charts?.legal_specialty_performance || {});
+      renderJudgeCandidateHeatmapInto("dashboard-av3-judge-candidate-heatmap", data.charts?.judge_candidate_heatmap || {});
+      renderJudgeDisagreementBoxplotInto("dashboard-av3-judge-disagreement-boxplot", data.charts?.judge_disagreement_boxplot || {});
+      renderJudgeAgreementInto(
+        "dashboard-av3-judge-agreement-cards",
+        "dashboard-av3-judge-agreement-body",
+        data.cards?.judge_agreement || {},
+        data.tables?.judge_agreement_arbitrations || [],
+      );
+      setText("dashboard-av3-methodology", `${data.methodology?.primary_spearman || ""} ${data.methodology?.judge_arbiter || ""}`.trim() || "Sem dados.");
+    }
+
+    function renderDashboardComparison(data) {
+      populateValueSelect("dashboard_comparison_dataset", data.options?.datasets || [], data.filters?.dataset || value("dashboard_comparison_dataset"));
+      populateValueSelect(
+        "dashboard_comparison_status",
+        (data.options?.statuses || []).filter((status) => status !== "all"),
+        data.filters?.status || value("dashboard_comparison_status"),
+        "todos",
+      );
+      populateSelect(
+        "dashboard_comparison_candidate_model",
+        data.options?.candidate_models || [],
+        selectedValues("dashboard_comparison_candidate_model"),
+      );
+      populateSelect(
+        "dashboard_comparison_judge_model",
+        data.options?.judge_models || [],
+        selectedValues("dashboard_comparison_judge_model"),
+      );
+      renderComparisonMetricCards("dashboard-comparison-cards", data.cards || {});
+      renderComparisonRankingTable(data.tables?.ranking_by_model || []);
+      renderComparisonSpecialtiesTable(data.tables?.specialties || []);
+      renderComparisonSpearmanTable(
+        "dashboard-comparison-spearman-overall-body",
+        data.tables?.spearman_breakdowns?.overall || [],
+        "Sem dados de Spearman para o filtro atual.",
+      );
+      renderComparisonSpearmanTable(
+        "dashboard-comparison-spearman-dataset-body",
+        data.tables?.spearman_breakdowns?.by_dataset || [],
+        "Sem dados de Spearman por dataset para o filtro atual.",
+      );
+      renderComparisonSpearmanTable(
+        "dashboard-comparison-spearman-model-body",
+        data.tables?.spearman_breakdowns?.by_candidate_model || [],
+        "Sem dados de Spearman por modelo para o filtro atual.",
+      );
+      renderComparisonSpearmanTable(
+        "dashboard-comparison-spearman-judge-body",
+        data.tables?.spearman_breakdowns?.by_judge_model || [],
+        "Sem dados de Spearman por juiz para o filtro atual.",
+      );
+      renderComparisonJudgeAgreementCards(data.cards?.judge_agreement_comparison || {});
+      renderComparisonJudgeAgreementPairTable(data.tables?.judge_agreement_by_pair || []);
+      renderComparisonJudgeAgreementModelTable(data.tables?.judge_agreement_by_candidate_model || []);
+      renderBarChart("dashboard-comparison-delta-distribution", data.charts?.delta_distribution || [], {showPercent: true});
+      renderBarChart("dashboard-comparison-delta-outcomes", data.charts?.delta_outcomes || [], {showPercent: true});
+      renderComparisonDeltaCasesTable(
+        "dashboard-comparison-gains-body",
+        data.tables?.largest_gains || [],
+        "Sem ganhos comparativos para o filtro atual.",
+      );
+      renderComparisonDeltaCasesTable(
+        "dashboard-comparison-regressions-body",
+        data.tables?.largest_regressions || [],
+        "Sem pioras comparativas para o filtro atual.",
+      );
+      setText(
+        "dashboard-comparison-methodology",
+        `${data.methodology?.pairing || ""} ${data.methodology?.judge_normalization || ""} ${data.methodology?.legal_specialty_source || ""} ${data.methodology?.spearman_reference || ""} ${data.methodology?.diagnostics_summary || ""} ${data.methodology?.empty_state_note || ""}`.trim() || "Sem dados.",
+      );
+      setText(
+        "dashboard-comparison-judge-agreement-note",
+        `${data.methodology?.judge_agreement_note || ""} ${data.methodology?.judge_agreement_empty_state || ""}`.trim() || "Sem dados comparativos de concordância.",
+      );
     }
 
     function visibleModelSelectIds() {
@@ -3137,8 +3823,8 @@ _INDEX_HTML = """
       datasetSelect.disabled = isAv3ComRag;
     }
 
-    function renderDashboardCards(cards) {
-      const root = document.getElementById("dashboard-cards");
+    function renderDashboardMetricCards(rootId, cards, options = {}) {
+      const root = document.getElementById(rootId);
       root.textContent = "";
       const coverage = cards.coverage || {};
       const metrics = [
@@ -3150,8 +3836,8 @@ _INDEX_HTML = """
         ["Consistencia juiz x arbitro", formatSpearman(cards.judge_arbiter_consistency)],
         ["Falhas criticas detectadas", cards.critical_failures],
         ["Divergencias leves (delta=1)", cards.minor_disagreements],
-        ["Divergencias para auditoria", cards.audit_divergences]
       ];
+      if (options.includeAuditDivergences !== false) metrics.push(["Divergencias para auditoria", cards.audit_divergences]);
       for (const metric of metrics) {
         const card = document.createElement("div");
         card.className = "metric-card";
@@ -3172,6 +3858,289 @@ _INDEX_HTML = """
         }
         root.appendChild(card);
       }
+    }
+
+    function renderComparisonMetricCards(rootId, cards) {
+      const root = document.getElementById(rootId);
+      root.textContent = "";
+      const coverage = cards.comparative_coverage || {};
+      const metrics = [
+        ["Pares comparáveis", display(cards.comparable_pairs ?? 0)],
+        ["Cobertura comparativa", `${display(coverage.evaluated)}/${display(coverage.expected)} (${displayPercent(coverage.percent)})`],
+        ["Nota média AV2 Sem_RAG", formatAverage(cards.av2_average_score)],
+        ["Nota média AV3 Com_RAG", formatAverage(cards.av3_average_score)],
+        ["Delta médio", formatAverage(cards.delta_average)],
+        ["Taxa de melhora", displayPercent(cards.improvement_rate)],
+        ["Taxa de piora", displayPercent(cards.regression_rate)],
+        ["Taxa sem alteração", displayPercent(cards.unchanged_rate)],
+        ["Spearman AV2", formatSpearman(cards.spearman_av2)],
+        ["Spearman AV3", formatSpearman(cards.spearman_av3)],
+        ["Delta Spearman", cards.spearman_delta?.available ? formatSpearmanValue(cards.spearman_delta?.value) : "N/A"],
+      ];
+      for (const [labelText, valueText] of metrics) {
+        const card = document.createElement("div");
+        card.className = "metric-card";
+        const value = document.createElement("span");
+        value.className = "metric-value";
+        value.textContent = display(valueText);
+        const label = document.createElement("span");
+        label.className = "metric-label";
+        label.textContent = labelText;
+        card.appendChild(value);
+        card.appendChild(label);
+        const noteSource = labelText === "Spearman AV2"
+          ? cards.spearman_av2
+          : labelText === "Spearman AV3"
+            ? cards.spearman_av3
+            : labelText === "Delta Spearman"
+              ? cards.spearman_delta
+              : null;
+        if (noteSource?.note) {
+          const note = document.createElement("span");
+          note.className = "metric-label";
+          note.textContent = noteSource.note;
+          card.appendChild(note);
+        }
+        root.appendChild(card);
+      }
+    }
+
+    function renderComparisonRankingTable(rows) {
+      const body = document.getElementById("dashboard-comparison-ranking-body");
+      body.textContent = "";
+      if (!rows.length) {
+        const row = document.createElement("tr");
+        const cell = document.createElement("td");
+        cell.colSpan = 12;
+        cell.className = "muted";
+        cell.textContent = "Sem pares completos para montar o ranking comparativo.";
+        row.appendChild(cell);
+        body.appendChild(row);
+        return;
+      }
+      for (const item of rows) {
+        const row = document.createElement("tr");
+        appendCells(row, [
+          item.owner || "-",
+          item.av2_model_name || "-",
+          item.av3_provider_model_id || "-",
+          item.comparable_candidate_model || "-",
+          display(item.paired_evaluations),
+          formatAverage(item.av2_average_score),
+          formatAverage(item.av3_average_score),
+          formatAverage(item.delta_average),
+          displayPercent(item.improvement_rate),
+          displayPercent(item.regression_rate),
+          displayPercent(item.unchanged_rate),
+          formatCoverage(item.comparative_coverage),
+        ]);
+        body.appendChild(row);
+      }
+    }
+
+    function renderComparisonSpecialtiesTable(rows) {
+      const body = document.getElementById("dashboard-comparison-specialties-body");
+      body.textContent = "";
+      if (!rows.length) {
+        const row = document.createElement("tr");
+        const cell = document.createElement("td");
+        cell.colSpan = 10;
+        cell.className = "muted";
+        cell.textContent = "Sem especialidades juridicas pareadas para o filtro atual.";
+        row.appendChild(cell);
+        body.appendChild(row);
+        return;
+      }
+      for (const item of rows) {
+        const row = document.createElement("tr");
+        appendCells(row, [
+          item.legal_specialty || "Sem especialidade",
+          display(item.paired_evaluations),
+          formatAverage(item.av2_average_score),
+          formatAverage(item.av3_average_score),
+          formatSignedAverage(item.delta_average),
+          displayPercent(item.improvement_rate),
+          displayPercent(item.regression_rate),
+          displayPercent(item.unchanged_rate),
+          formatModelDeltaSummary(item.best_model_by_delta),
+          formatModelDeltaSummary(item.worst_model_by_delta),
+        ]);
+        body.appendChild(row);
+      }
+    }
+
+    function renderComparisonSpearmanTable(bodyId, rows, emptyMessage) {
+      const body = document.getElementById(bodyId);
+      body.textContent = "";
+      if (!rows.length) {
+        appendTableMessage(body, 7, emptyMessage);
+        return;
+      }
+      for (const item of rows) {
+        const row = document.createElement("tr");
+        appendCells(row, [
+          item.label || "-",
+          display(item.paired_evaluations),
+          display(item.reference_pairs_av2),
+          formatSpearman(item.spearman_av2),
+          display(item.reference_pairs_av3),
+          formatSpearman(item.spearman_av3),
+          formatSpearmanDelta(item.spearman_delta),
+        ]);
+        body.appendChild(row);
+      }
+    }
+
+    function renderComparisonJudgeAgreementCards(cards) {
+      const root = document.getElementById("dashboard-comparison-judge-agreement-cards");
+      root.textContent = "";
+      const metrics = [
+        ["Respostas comparáveis com múltiplos juízes", cards.comparable_answers_with_multiple_judges],
+        ["Pares comparáveis de juízes", cards.comparable_pair_observations],
+        ["Concordância exata AV2", displayPercent(cards.av2_exact_agreement_rate)],
+        ["Concordância exata AV3", displayPercent(cards.av3_exact_agreement_rate)],
+        ["Delta de concordância", formatPercentDelta(cards.delta_exact_agreement_rate)],
+        ["Divergência forte AV2", displayPercent(cards.av2_strong_divergence_rate)],
+        ["Divergência forte AV3", displayPercent(cards.av3_strong_divergence_rate)],
+        ["Delta de divergência forte", formatPercentDelta(cards.delta_strong_divergence_rate)],
+      ];
+      if (cards.av2_arbiter_available) metrics.push(["Taxa de árbitro AV2", displayPercent(cards.av2_arbiter_rate)]);
+      if (cards.av3_arbiter_available) metrics.push(["Taxa de árbitro AV3", displayPercent(cards.av3_arbiter_rate)]);
+      if (cards.av2_arbiter_consistency_rate !== null && cards.av2_arbiter_consistency_rate !== undefined) {
+        metrics.push(["Consistência juiz x árbitro AV2", displayPercent(cards.av2_arbiter_consistency_rate)]);
+      }
+      if (cards.av3_arbiter_consistency_rate !== null && cards.av3_arbiter_consistency_rate !== undefined) {
+        metrics.push(["Consistência juiz x árbitro AV3", displayPercent(cards.av3_arbiter_consistency_rate)]);
+      }
+      for (const [labelText, valueText] of metrics) {
+        const card = document.createElement("div");
+        card.className = "metric-card";
+        const value = document.createElement("span");
+        value.className = "metric-value";
+        value.textContent = display(valueText);
+        const label = document.createElement("span");
+        label.className = "metric-label";
+        label.textContent = labelText;
+        card.appendChild(value);
+        card.appendChild(label);
+        root.appendChild(card);
+      }
+    }
+
+    function renderComparisonJudgeAgreementPairTable(rows) {
+      const body = document.getElementById("dashboard-comparison-judge-agreement-pair-body");
+      body.textContent = "";
+      if (!rows.length) {
+        appendTableMessage(body, 9, "Sem pares de juízes comparáveis para o filtro atual.");
+        return;
+      }
+      for (const item of rows) {
+        const row = document.createElement("tr");
+        appendCells(row, [
+          item.judge_pair || "-",
+          display(item.av2_comparable_evaluations),
+          displayPercent(item.av2_exact_agreement_rate),
+          displayPercent(item.av2_strong_divergence_rate),
+          display(item.av3_comparable_evaluations),
+          displayPercent(item.av3_exact_agreement_rate),
+          displayPercent(item.av3_strong_divergence_rate),
+          formatPercentDelta(item.delta_exact_agreement_rate),
+          formatPercentDelta(item.delta_strong_divergence_rate),
+        ]);
+        body.appendChild(row);
+      }
+    }
+
+    function renderComparisonJudgeAgreementModelTable(rows) {
+      const body = document.getElementById("dashboard-comparison-judge-agreement-model-body");
+      body.textContent = "";
+      if (!rows.length) {
+        appendTableMessage(body, 8, "Sem modelos candidatos com pares de juízes comparáveis para o filtro atual.");
+        return;
+      }
+      for (const item of rows) {
+        const row = document.createElement("tr");
+        appendCells(row, [
+          item.candidate_model || "-",
+          displayPercent(item.av2_exact_agreement_rate),
+          displayPercent(item.av3_exact_agreement_rate),
+          formatPercentDelta(item.delta_agreement_rate),
+          displayPercent(item.av2_strong_divergence_rate),
+          displayPercent(item.av3_strong_divergence_rate),
+          formatPercentDelta(item.delta_strong_divergence_rate),
+          display(item.comparable_pairs),
+        ]);
+        body.appendChild(row);
+      }
+    }
+
+    function renderComparisonDeltaCasesTable(bodyId, rows, emptyMessage) {
+      const body = document.getElementById(bodyId);
+      body.textContent = "";
+      if (!rows.length) {
+        const row = document.createElement("tr");
+        const cell = document.createElement("td");
+        cell.colSpan = 8;
+        cell.className = "muted";
+        cell.textContent = emptyMessage;
+        row.appendChild(cell);
+        body.appendChild(row);
+        return;
+      }
+      for (const item of rows) {
+        const row = document.createElement("tr");
+        appendCells(row, [
+          item.dataset || "-",
+          formatQuestionIdentity(item.question_id, item.question_sequence),
+          item.candidate_model || "-",
+          item.normalized_judge_model || "-",
+          display(item.av2_score),
+          display(item.av3_score),
+          item.delta > 0 ? `+${item.delta}` : String(item.delta ?? "-"),
+          item.legal_specialty || "-",
+        ]);
+        body.appendChild(row);
+      }
+    }
+
+    function appendCells(row, values) {
+      for (const valueText of values) {
+        const cell = document.createElement("td");
+        cell.textContent = String(valueText);
+        row.appendChild(cell);
+      }
+    }
+
+    function formatCoverage(coverage) {
+      if (!coverage) return "-";
+      return `${display(coverage.evaluated)}/${display(coverage.expected)} (${displayPercent(coverage.percent)})`;
+    }
+
+    function formatQuestionIdentity(questionId, questionSequence) {
+      if (questionSequence === null || questionSequence === undefined) return display(questionId);
+      return `${display(questionId)} / ${display(questionSequence)}`;
+    }
+
+    function formatSignedAverage(value) {
+      if (value === null || value === undefined) return "-";
+      const number = Number(value);
+      return `${number > 0 ? "+" : ""}${number.toFixed(1)}`;
+    }
+
+    function formatModelDeltaSummary(item) {
+      if (!item || !item.candidate_model) return "-";
+      return `${item.candidate_model} (${formatSignedAverage(item.delta_average)})`;
+    }
+
+    function formatSpearmanDelta(value) {
+      if (!value || !value.available) return "N/A";
+      return formatSignedAverage(value.value);
+    }
+
+    function formatPercentDelta(value) {
+      if (value === null || value === undefined) return "N/A";
+      const number = Number(value);
+      return `${number > 0 ? "+" : ""}${number.toFixed(1)} p.p.`;
     }
 
     function renderDashboardOperationalSummary(summary) {
@@ -3400,8 +4369,8 @@ _INDEX_HTML = """
       body.appendChild(row);
     }
 
-    function renderModelDistributionChart(rows) {
-      const root = document.getElementById("dashboard-model-distribution-chart");
+    function renderModelDistributionChartInto(rootId, rows) {
+      const root = document.getElementById(rootId);
       root.textContent = "";
       if (!rows.length) {
         const empty = document.createElement("div");
@@ -3429,6 +4398,10 @@ _INDEX_HTML = """
         card.appendChild(scoreLegend(row));
         root.appendChild(card);
       });
+    }
+
+    function renderModelDistributionChart(rows) {
+      renderModelDistributionChartInto("dashboard-model-distribution-chart", rows);
     }
 
     function stackedScoreBar(row) {
@@ -3495,8 +4468,8 @@ _INDEX_HTML = """
       root.appendChild(grid);
     }
 
-    function renderJudgeCandidateHeatmap(heatmap) {
-      const root = document.getElementById("dashboard-judge-candidate-heatmap");
+    function renderJudgeCandidateHeatmapInto(rootId, heatmap) {
+      const root = document.getElementById(rootId);
       root.textContent = "";
       const columns = heatmap.columns || [];
       const rows = heatmap.rows || [];
@@ -3527,8 +4500,12 @@ _INDEX_HTML = """
       root.appendChild(grid);
     }
 
-    function renderJudgeDisagreementBoxplot(boxplot) {
-      const root = document.getElementById("dashboard-judge-disagreement-boxplot");
+    function renderJudgeCandidateHeatmap(heatmap) {
+      renderJudgeCandidateHeatmapInto("dashboard-judge-candidate-heatmap", heatmap);
+    }
+
+    function renderJudgeDisagreementBoxplotInto(rootId, boxplot) {
+      const root = document.getElementById(rootId);
       root.textContent = "";
       const rows = boxplot.rows || [];
       if (!rows.length) {
@@ -3590,6 +4567,10 @@ _INDEX_HTML = """
       root.appendChild(list);
     }
 
+    function renderJudgeDisagreementBoxplot(boxplot) {
+      renderJudgeDisagreementBoxplotInto("dashboard-judge-disagreement-boxplot", boxplot);
+    }
+
     function appendBoxplotPart(track, className, start, end, maxDelta) {
       const part = document.createElement("span");
       part.className = className;
@@ -3607,8 +4588,8 @@ _INDEX_HTML = """
       return (number / maxDelta) * 100;
     }
 
-    function renderLegalSpecialtyPerformance(heatmap) {
-      const root = document.getElementById("dashboard-legal-specialty-performance");
+    function renderLegalSpecialtyPerformanceInto(rootId, heatmap) {
+      const root = document.getElementById(rootId);
       root.textContent = "";
       const columns = heatmap.columns || [];
       const rows = heatmap.rows || [];
@@ -3637,6 +4618,10 @@ _INDEX_HTML = """
         grid.appendChild(heatmapCell(display(row.count), "heatmap-head"));
       });
       root.appendChild(grid);
+    }
+
+    function renderLegalSpecialtyPerformance(heatmap) {
+      renderLegalSpecialtyPerformanceInto("dashboard-legal-specialty-performance", heatmap);
     }
 
     function renderDifficultyPerformance(chart) {
@@ -3897,8 +4882,8 @@ _INDEX_HTML = """
       });
     }
 
-    function renderJudgeAgreement(cards, cases, errorMessage) {
-      const cardRoot = document.getElementById("dashboard-judge-agreement-cards");
+    function renderJudgeAgreementInto(cardRootId, bodyRootId, cards, cases, errorMessage) {
+      const cardRoot = document.getElementById(cardRootId);
       cardRoot.textContent = "";
       const metrics = [
         ["Avaliacoes comparadas", cards.total_compared],
@@ -3923,7 +4908,7 @@ _INDEX_HTML = """
         cardRoot.appendChild(card);
       }
 
-      const body = document.getElementById("dashboard-judge-agreement-body");
+      const body = document.getElementById(bodyRootId);
       body.textContent = "";
       if (errorMessage) {
         appendJudgeAgreementMessage(body, errorMessage);
@@ -3947,6 +4932,10 @@ _INDEX_HTML = """
         ]) appendCell(row, display(value));
         body.appendChild(row);
       });
+    }
+
+    function renderJudgeAgreement(cards, cases, errorMessage) {
+      renderJudgeAgreementInto("dashboard-judge-agreement-cards", "dashboard-judge-agreement-body", cards, cases, errorMessage);
     }
 
     function appendJudgeAgreementMessage(body, message) {
@@ -3999,6 +4988,7 @@ _INDEX_HTML = """
     }
 
     let dashboardCarouselIndex = 0;
+    let dashboardAv3CarouselIndex = 0;
 
     function moveCarousel(delta) {
       const track = document.getElementById("dashboard-model-distribution-carousel");
@@ -4029,6 +5019,37 @@ _INDEX_HTML = """
       }
       scrollCarouselTabsIntoView(index);
       updateCarouselControls(index, cards.length);
+    }
+
+    function moveDashboardAv3Carousel(delta) {
+      const track = document.getElementById("dashboard-av3-carousel");
+      const cards = Array.from(track.querySelectorAll(".dashboard-carousel-slide"));
+      if (!cards.length) return;
+      const nextIndex = (dashboardAv3CarouselIndex + delta + cards.length) % cards.length;
+      goToDashboardAv3CarouselPage(nextIndex);
+    }
+
+    function goToDashboardAv3CarouselPage(index) {
+      const track = document.getElementById("dashboard-av3-carousel");
+      const cards = Array.from(track.querySelectorAll(".dashboard-carousel-slide"));
+      if (!cards.length) return;
+      const nextIndex = (index + cards.length) % cards.length;
+      dashboardAv3CarouselIndex = nextIndex;
+      track.style.transform = `translateX(-${nextIndex * 100}%)`;
+      updateDashboardAv3CarouselState();
+    }
+
+    function updateDashboardAv3CarouselState() {
+      const track = document.getElementById("dashboard-av3-carousel");
+      const cards = Array.from(track.querySelectorAll(".dashboard-carousel-slide"));
+      const index = dashboardAv3CarouselIndex;
+      cards.forEach((card, cardIndex) => card.classList.toggle("active", cardIndex === index));
+      for (const [tabIndex, tab] of Array.from(document.getElementById("dashboard-av3-carousel-dots").children).entries()) {
+        tab.classList.toggle("active", tabIndex === index);
+        tab.setAttribute("aria-selected", String(tabIndex === index));
+      }
+      scrollDashboardAv3CarouselTabsIntoView(index);
+      updateDashboardAv3CarouselControls(index, cards.length);
     }
 
     function scrollCarouselTabsIntoView(index) {
@@ -4063,9 +5084,46 @@ _INDEX_HTML = """
       scrollCarouselTabsIntoView(dashboardCarouselIndex);
     }
 
+    function scrollDashboardAv3CarouselTabsIntoView(index) {
+      const root = document.getElementById("dashboard-av3-carousel-dots");
+      const tabs = Array.from(root.children);
+      if (!tabs.length || root.scrollWidth <= root.clientWidth) return;
+      if (index <= 1) {
+        root.scrollTo({left: 0, behavior: "auto"});
+        return;
+      }
+      const firstVisibleIndex = Math.max(0, index - 1);
+      const lastVisibleIndex = Math.min(tabs.length - 1, index + 1);
+      const activeTab = tabs[index];
+      const firstTab = tabs[firstVisibleIndex];
+      const lastTab = tabs[lastVisibleIndex];
+      const padding = 8;
+      const targetLeft = firstTab.offsetLeft - padding;
+      const targetRight = lastTab.offsetLeft + lastTab.offsetWidth + padding;
+      const targetSpan = targetRight - targetLeft;
+      const maxScrollLeft = Math.max(0, root.scrollWidth - root.clientWidth);
+      let desiredLeft = targetLeft - Math.max(0, root.clientWidth - targetSpan) / 2;
+      if (targetSpan > root.clientWidth) {
+        activeTab.scrollIntoView({behavior: "smooth", block: "nearest", inline: "start"});
+        return;
+      }
+      root.scrollTo({left: Math.min(maxScrollLeft, Math.max(0, desiredLeft)), behavior: "smooth"});
+    }
+
+    function resetDashboardAv3CarouselTabsScroll() {
+      const root = document.getElementById("dashboard-av3-carousel-dots");
+      root.scrollLeft = 0;
+      scrollDashboardAv3CarouselTabsIntoView(dashboardAv3CarouselIndex);
+    }
+
     function updateCarouselControls(index, total) {
       document.getElementById("dashboard-model-carousel-prev").disabled = total <= 1;
       document.getElementById("dashboard-model-carousel-next").disabled = total <= 1;
+    }
+
+    function updateDashboardAv3CarouselControls(index, total) {
+      document.getElementById("dashboard-av3-carousel-prev").disabled = total <= 1;
+      document.getElementById("dashboard-av3-carousel-next").disabled = total <= 1;
     }
 
     function renderDashboardCases(cases) {
@@ -6545,6 +7603,8 @@ _INDEX_HTML = """
     function switchTab(targetId, {updateUrl = true, replaceUrl = false} = {}) {
       const resolvedTabId = activateTab(targetId);
       if (updateUrl) syncUrlForTab(resolvedTabId, {replace: replaceUrl});
+      if (resolvedTabId === "dashboard-comparison") loadDashboardComparison();
+      if (resolvedTabId === "dashboard-av3") loadDashboardAv3();
       if (resolvedTabId === "dashboard") loadDashboard();
       if (resolvedTabId === "history") loadHistory();
       if (resolvedTabId === "prompt" && !promptOptionsLoaded) loadPromptOptions();
@@ -6597,7 +7657,7 @@ _INDEX_HTML = """
       renderEndpointFields();
       document.getElementById("dry-run").disabled = false;
       document.getElementById("run").disabled = false;
-      await loadDashboard();
+      await loadDashboardComparison();
       const initialTabId = getTabFromUrl();
       if (initialTabId !== DEFAULT_MAIN_TAB_ID) {
         switchTab(initialTabId, {updateUrl: false});
@@ -6890,7 +7950,11 @@ _INDEX_HTML = """
     for (const button of document.querySelectorAll("[data-meta-history-sort]")) {
       button.onclick = () => sortMetaHistory(button.dataset.metaHistorySort);
     }
+    document.getElementById("dashboard-comparison-refresh").onclick = loadDashboardComparison;
+    document.getElementById("dashboard-av3-refresh").onclick = loadDashboardAv3;
     document.getElementById("dashboard-refresh").onclick = loadDashboard;
+    document.getElementById("dashboard-av3-carousel-prev").onclick = () => moveDashboardAv3Carousel(-1);
+    document.getElementById("dashboard-av3-carousel-next").onclick = () => moveDashboardAv3Carousel(1);
     document.getElementById("dashboard-model-carousel-prev").onclick = () => moveCarousel(-1);
     document.getElementById("dashboard-model-carousel-next").onclick = () => moveCarousel(1);
     document.addEventListener("click", (event) => {
@@ -6901,9 +7965,37 @@ _INDEX_HTML = """
     for (const tab of document.querySelectorAll("[data-carousel-index]")) {
       tab.onclick = () => goToCarouselPage(Number(tab.dataset.carouselIndex));
     }
+    for (const tab of document.querySelectorAll("[data-av3-carousel-index]")) {
+      tab.onclick = () => goToDashboardAv3CarouselPage(Number(tab.dataset.av3CarouselIndex));
+    }
+    for (const tab of document.querySelectorAll("[data-comparison-tab]")) {
+      tab.onclick = () => switchComparisonTab(tab.dataset.comparisonTab);
+    }
+    switchComparisonTab("overview");
+    updateDashboardAv3CarouselState();
+    resetDashboardAv3CarouselTabsScroll();
+    requestAnimationFrame(resetDashboardAv3CarouselTabsScroll);
     updateCarouselState();
     resetCarouselTabsScroll();
     requestAnimationFrame(resetCarouselTabsScroll);
+    document.getElementById("dashboard-av3-clear").onclick = () => {
+      document.getElementById("dashboard_av3_dataset").value = "all";
+      document.getElementById("dashboard_av3_status").value = "all";
+      document.getElementById("dashboard_av3_group_by").value = "modelo";
+      for (const id of ["dashboard_av3_candidate_model", "dashboard_av3_judge_model"]) {
+        for (const option of document.getElementById(id).options) option.selected = false;
+      }
+      loadDashboardAv3();
+    };
+    document.getElementById("dashboard-comparison-clear").onclick = () => {
+      document.getElementById("dashboard_comparison_dataset").value = "all";
+      document.getElementById("dashboard_comparison_status").value = "all";
+      document.getElementById("dashboard_comparison_group_by").value = "modelo";
+      for (const id of ["dashboard_comparison_candidate_model", "dashboard_comparison_judge_model"]) {
+        for (const option of document.getElementById(id).options) option.selected = false;
+      }
+      loadDashboardComparison();
+    };
     document.getElementById("dashboard-clear").onclick = () => {
       document.getElementById("dashboard_dataset").value = "J1";
       document.getElementById("dashboard_status").value = "all";
@@ -6941,6 +8033,7 @@ _INDEX_HTML = """
         status.textContent = "Restaurando banco para o estado inicial...";
         const data = await postJson("/api/database-reset", {});
         status.textContent = data.message || "Banco restaurado para o estado inicial.";
+        await loadDashboardAv3();
         await loadDashboard();
       } catch (error) {
         status.textContent = friendlyErrorMessage(error.message);
