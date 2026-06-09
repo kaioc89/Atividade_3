@@ -438,7 +438,7 @@ def create_app(
     audit_log_summary_service: AuditLogSummaryService | None = None,
     assistant_service: AssistantService | None = None,
 ) -> FastAPI:
-    app = FastAPI(title="Atividade 2 Judge Console")
+    app = FastAPI(title="Atividade 3 RAG")
     startup_schema_mode = os.environ.get("ENSURE_SCHEMA_ON_STARTUP", "").strip().lower()
     ensure_schema_on_startup = startup_schema_mode in {"1", "true", "yes", "on"}
     assistant_enabled = _env_flag("ENABLE_AI_ASSISTANT", default=False)
@@ -1310,7 +1310,7 @@ _INDEX_HTML = """
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Atividade 2 Judge Console</title>
+  <title>Atividade 3 RAG</title>
   <style>
     :root { color-scheme: light; --ink:#18212f; --muted:#5b6472; --line:#d8dde6; --bg:#f6f7f9; --accent:#1769aa; --ok:#1d7f4e; --bad:#b42318; --warn:#9a5b00; }
     * { box-sizing: border-box; }
@@ -1619,7 +1619,7 @@ _INDEX_HTML = """
 </head>
 <body>
   <header>
-    <h1>Atividade 2 Judge Console</h1>
+    <h1>Atividade 3 RAG</h1>
     <div id="config-status" class="status">Carregando configuracao local...</div>
   </header>
   <nav class="tabs" aria-label="Navegacao principal">
