@@ -1,31 +1,177 @@
-# Atividade 2
+# Tópicos Avançados em ES e SI I - Atividades 2 e 3
 
-Implementação de framework **LLM-as-a-Judge** com persistência em PostgreSQL para a disciplina de Tópicos Avançados em Engenharia de Software e Sistemas de Informação.
+Projeto da Equipe 4 no domínio jurídico para a disciplina **Tópicos Avançados em Engenharia de Software e Sistemas de Informação**.
 
-Este repositório contém a fundação local do projeto e a pipeline inicial de julgamento por LLM: ambiente Python, testes, PostgreSQL local, restore do backup inicial, execução de juízes remotos HTTP, persistência das avaliações e geração de backups auditáveis.
+O repositório consolida duas etapas conectadas:
+
+- **AV2:** implementação de um framework **LLM-as-a-Judge** com persistência em PostgreSQL, rubricas, painel de juízes, auditoria e consultas analíticas.
+- **AV3:** evolução do ecossistema para avaliar o impacto de **Recuperação Aumentada por Geração (RAG)** nas respostas dos mesmos modelos candidatos da AV1/AV2, comparando o baseline **Sem_RAG** contra novas respostas **Com_RAG**.
 
 ## Links
+
 - Aplicativo: https://topicos-av2.onrender.com/
-- Tutorial: https://drive.google.com/file/d/1zn6FkIB2tEC8DrpiqqPARJn5utK5VGru/view?usp=sharing
-- Vídeo: https://www.vidline.com/share/V0O6HJYW6N/baeaf4f0df82e55101bb35a1edeca104
+- Tutorial AV2: https://drive.google.com/file/d/1zn6FkIB2tEC8DrpiqqPARJn5utK5VGru/view?usp=sharing
+- Vídeo AV2: https://www.vidline.com/share/V0O6HJYW6N/baeaf4f0df82e55101bb35a1edeca104
+- Vídeo AV3: pendente de publicação pela equipe
+
+## Objetivo da AV3
+
+A Atividade 3 exige medir se uma base externa de conhecimento, recuperada por RAG, melhora ou piora as respostas dos modelos em um domínio de alta especialidade.
+
+No nosso caso, o recorte é jurídico:
+
+- **J1 / OAB-Bench:** questões abertas, discursivas e peças.
+- **J2 / OAB Exams:** questões objetivas de múltipla escolha.
+
+A comparação principal é pareada:
+
+```text
+Pergunta original
+  -> recuperação top-k no índice RAG
+  -> prompt Com_RAG
+  -> mesmo modelo candidato da AV1/AV2
+  -> resposta AV3
+  -> avaliação LLM-as-a-Judge pós-RAG
+  -> comparação contra baseline Sem_RAG
+```
+
+A AV3 não troca o problema nem avalia um benchmark novo. Ela reexecuta os mesmos modelos e os mesmos recortes da AV1/AV2 com contexto jurídico recuperado, permitindo medir impacto de forma controlada.
+
+## Pergunta experimental
+
+> A inclusão de contexto jurídico recuperado por RAG melhora a qualidade das respostas dos modelos candidatos em relação ao baseline Sem_RAG?
+
+A resposta é avaliada por:
+
+- variação de nota do juiz entre **Sem_RAG** e **Com_RAG**;
+- identificação de ganhos, perdas e ruído;
+- comparação por dataset, modelo, curador, especialidade jurídica e tipo de questão;
+- análise estatística e visual no dashboard;
+- inspeção dos contextos recuperados para verificar se o RAG ajudou ou confundiu o modelo.
+
+## Principais requisitos da Atividade 3
+
+| Exigência | Implementação no projeto |
+|---|---|
+| Curadoria de documentos externos | Uso das referências jurídicas cadastradas na curadoria e ingestão de conteúdo textual das fontes disponíveis. |
+| Temporalidade e conhecimento atualizado | Preservação de metadados de fonte, documento e chunk para auditoria do contexto usado. |
+| Chunking e embeddings | Pipeline de geração de chunks e embeddings persistidos no schema `av3`. |
+| Base vetorial | PostgreSQL 18 com `pgvector`. |
+| Recuperação top-k | Busca por similaridade para selecionar os fragmentos mais relevantes por pergunta. |
+| Re-inferência dos modelos | Comando `run-candidates-rag` gera respostas AV3 com prompt Com_RAG. |
+| LLM-as-a-Judge pós-RAG | Reuso/adaptação do pipeline de juízes da AV2 para avaliar respostas Com_RAG. |
+| Comparação Sem_RAG vs Com_RAG | Views e dashboards no schema `analytics` para análise pareada. |
+| Backup auditável | `backup_atividade_2.sql` promovido apenas quando contém AV2 + AV3 RAG. |
+
+## Arquitetura conceitual
+
+```text
+Curadoria J1/J2
+  -> documentos jurídicos externos
+  -> extração textual
+  -> chunks rastreáveis
+  -> embeddings
+  -> PostgreSQL + pgvector
+  -> retrieval top-k
+  -> prompt Com_RAG
+  -> modelos candidatos
+  -> respostas AV3
+  -> juiz AV3
+  -> analytics Sem_RAG vs Com_RAG
+  -> dashboard e apresentação
+```
+
+## Organização do banco
+
+O projeto mantém o PostgreSQL como fonte auditável dos dados.
+
+| Schema | Papel |
+|---|---|
+| `public` | Estrutura consolidada da AV2: datasets, perguntas, respostas Sem_RAG, modelos, prompts e avaliações de juiz. |
+| `av3` | Estruturas novas de RAG: documentos, chunks, embeddings, retrieval runs, contextos recuperados, respostas Com_RAG e avaliações AV3. |
+| `analytics` | Views comparativas para dashboard e análise: notas Sem_RAG vs Com_RAG, deltas, ganhos, perdas, ruído e correlações. |
+
+A estrutura da AV2 não deve ser reescrita. A AV3 é uma extensão controlada sobre a base existente.
+
+## Fluxo da AV3
+
+### 1. Curadoria e base RAG
+
+A equipe parte das questões e metadados já curados na AV1. Para cada questão, a base RAG usa documentos jurídicos externos associados à legislação, tema ou especialidade.
+
+Na Web UI, o botão **Gerar embeddings** materializa a base vetorial a partir da curadoria ativa quando ainda não existe uma `retrieval_run` ativa para o dataset.
+
+Durante essa etapa, o sistema:
+
+- consulta URLs de fonte cadastradas na curadoria;
+- extrai conteúdo textual quando disponível;
+- ignora fontes inacessíveis, vazias, não textuais ou acima do limite configurado;
+- gera chunks rastreáveis;
+- calcula embeddings;
+- grava o índice vetorial no PostgreSQL.
+
+### 2. Recuperação top-k
+
+Para cada pergunta, o pipeline busca os chunks mais similares no índice vetorial.
+
+A recuperação deve ser auditável: cada resposta Com_RAG precisa permitir identificar quais fragmentos foram enviados ao modelo candidato.
+
+### 3. Geração Com_RAG
+
+Os modelos candidatos são reexecutados com a pergunta original e os fragmentos recuperados pelo RAG.
+
+A regra metodológica central é preservar comparabilidade: cada candidato deve responder apenas o mesmo recorte que já era de sua responsabilidade na AV1/AV2.
+
+### 4. Avaliação pós-RAG
+
+As novas respostas são avaliadas pelo pipeline LLM-as-a-Judge adaptado da AV2.
+
+O juiz deve avaliar não apenas a resposta final, mas também se o RAG:
+
+- corrigiu erro jurídico;
+- reduziu alucinação;
+- trouxe fundamentação útil;
+- inseriu ruído;
+- confundiu o modelo;
+- melhorou ou piorou a aderência ao gabarito/rubrica.
+
+### 5. Análise Sem_RAG vs Com_RAG
+
+A análise principal compara, para a mesma pergunta e o mesmo modelo:
+
+```text
+Nota_Juiz_Sem_RAG -> Nota_Juiz_Com_RAG -> Delta
+```
+
+Os resultados devem destacar:
+
+- maiores ganhos;
+- maiores pioras;
+- estabilidade por modelo;
+- impacto por especialidade jurídica;
+- concordância entre juízes;
+- correlação e ranking antes/depois do RAG.
+
+## Estrutura do repositório
+
+```text
+src/atividade_2/        Código Python importável da AV2/AV3
+tests/                  Suíte pytest
+resources/              Entradas estáveis e fixtures
+outputs/                Artefatos locais gerados
+outputs/backup/         Backups SQL timestampados
+outputs/audit/          Logs locais de execução
+scripts/                Automações locais de banco
+backup_atividade_2.sql  Backup canônico AV2 + AV3 RAG, promovido explicitamente
+backup_atividade_2_reset.sql
+                        Backup fixo para bootstrap/reset da AV2
+```
 
 ## Requisitos
 
 - Python 3.11+
 - Docker com Docker Compose v2
 - `make`
-
-## Estrutura
-
-- `src/atividade_2/`: código Python importável.
-- `tests/`: suíte pytest.
-- `resources/`: entradas estáveis e fixtures.
-- `outputs/`: artefatos gerados localmente.
-- `outputs/backup/`: backups SQL gerados por `make db-backup`.
-- `outputs/audit/`: logs locais gerados por `run-judge`.
-- `scripts/`: automações locais de banco.
-- `backup_atividade_2_reset.sql`: backup SQL fixo usado para iniciar/resetar o banco AV2.
-- `backup_atividade_2.sql`: artefato canônico versionado para restore compartilhável de AV2 + AV3 RAG; só deve ser atualizado por promoção explícita.
 
 ## Setup Python
 
@@ -43,23 +189,15 @@ make test
 
 Os comandos Python usam explicitamente `.venv/bin/python`.
 
-## Banco Local
+## Banco local
 
-O banco local usa PostgreSQL 18 com pgvector via Docker Compose, para compatibilidade com o backup existente e com a base RAG vetorial.
+O banco local usa PostgreSQL 18 com `pgvector` via Docker Compose, para compatibilidade com o backup existente e com a base RAG vetorial.
 
-Crie o arquivo `.env` automaticamente e suba o PostgreSQL:
+Suba o PostgreSQL:
 
 ```bash
 make db-up
 ```
-
-O comando:
-
-- copia `.env.example` para `.env` se necessário;
-- baixa `pgvector/pgvector:0.8.2-pg18` se a imagem não existir localmente;
-- sobe o container `topicos-av2-postgres`;
-- valida conexão com `app_dev`;
-- cria `app_test` se ainda não existir.
 
 Conexão local padrão:
 
@@ -67,21 +205,11 @@ Conexão local padrão:
 postgresql://postgres:postgres@localhost:5432/app_dev
 ```
 
-## RAG Vetorial
-
-Na Web UI, o botão `Gerar embeddings` materializa automaticamente a base vetorial a partir da curadoria ativa quando ainda não existe uma `retrieval_run` ativa para o dataset.
-
-Durante a geração, a aplicação consulta as URLs de fonte cadastradas na curadoria e adiciona o texto recuperado como chunks extras da base vetorial. URLs inacessíveis, vazias, com conteúdo não textual ou acima de 5 MB são reportadas no status da tela e no comando CLI.
-
-## Restore Inicial
-
 Restaure o backup inicial somente quando o banco estiver vazio:
 
 ```bash
 make db-migrate-or-create
 ```
-
-Esse comando usa `backup_atividade_2_reset.sql`. Se o banco já tiver tabelas públicas, o restore é ignorado para evitar sobrescrever dados locais.
 
 Para atualizar apenas a estrutura do banco ativo e os seeds determinísticos de AV3, sem restore nem limpeza:
 
@@ -89,106 +217,15 @@ Para atualizar apenas a estrutura do banco ativo e os seeds determinísticos de 
 make db-ensure-schema
 ```
 
-Esse comando:
-
-- usa `.venv/bin/python`;
-- carrega a configuracao atual de `.env` e do ambiente;
-- conecta no `DATABASE_URL` ativo;
-- executa `JudgeRepository.ensure_schema()`;
-- executa `JudgeRepository.upsert_default_candidate_model_assignments()`;
-- preserva os dados existentes em `public` e `av3`.
-
-Use `db-migrate-or-create` apenas no bootstrap inicial de uma base vazia ou quando voce realmente quiser restaurar o baseline fixo. Use `db-ensure-schema` depois de restaurar um backup existente ou depois de atualizar a branch para aplicar evolucoes de schema com seguranca.
-
-Para forçar o restore sobre um banco já populado, limpando os schemas `public` e `av3` antes de restaurar:
-
-```bash
-make db-migrate-or-create FORCE=1
-```
-
-O script também aceita o argumento diretamente:
-
-```bash
-./scripts/db_migrate_or_create.sh --force
-```
-
-`make db-migrate-or-create --force` não é suportado pelo GNU Make local, porque `--force` é interpretado como opção do próprio `make`.
-
 Valide o restore:
 
 ```bash
 make db-restore-validate
 ```
 
-A validação confirma as tabelas centrais:
+## Web UI local
 
-- `datasets`
-- `modelos`
-- `perguntas`
-- `respostas_atividade_1`
-- `avaliacoes_juiz`
-
-## Backup
-
-Gere um backup SQL auditável do banco local:
-
-```bash
-make db-backup
-```
-
-O dump é gerado como SQL puro com:
-
-```text
-pg_dump --no-owner --no-privileges
-```
-
-O arquivo gerado segue o formato:
-
-```text
-outputs/backup/atividade_2_YYYYmmdd_HHMMSS.sql
-```
-
-Cada execução grava um arquivo timestampado em `outputs/backup/` e nunca sobrescreve `backup_atividade_2.sql`.
-
-`backup_atividade_2.sql` é o backup canônico protegido para restore compartilhável de AV2 + AV3 RAG. Atualize esse arquivo apenas com promoção explícita:
-
-```bash
-make db-backup-promote
-```
-
-Alternativamente:
-
-```bash
-PROMOTE_BACKUP=1 make db-backup
-```
-
-Antes de promover, o script valida que estas contagens sejam maiores que zero no banco atual:
-
-- `public.respostas_atividade_1`
-- `public.avaliacoes_juiz`
-- `av3.rag_chunks`
-- `av3.rag_embeddings`
-- `av3.retrieval_runs` com `ativo = TRUE`
-
-Se qualquer contagem for zero, a promoção aborta e `backup_atividade_2.sql` permanece intacto. Os arquivos timestampados mantêm o histórico local e são ignorados pelo Git. O baseline de reset fica separado em `backup_atividade_2_reset.sql` e não é sobrescrito por esse fluxo.
-
-## Running the LLM-as-a-Judge pipeline with a remote model
-
-O banco e a pipeline rodam localmente. O modelo juiz roda em um endpoint HTTP.
-
-```text
-PostgreSQL local -> Python local -> endpoint do juiz -> avaliação salva no PostgreSQL
-```
-
-O endpoint pode ser Colab, Hugging Face Inference Endpoint, vLLM, llama.cpp, LM Studio, proxy do Ollama ou qualquer servidor compatível com OpenAI.
-
-`.env` é local e não deve ser commitado. `.env.example` é só o template.
-
-## Web UI local para execução auditável
-
-Além da CLI, o projeto inclui uma console Web local para configurar, validar e acompanhar execuções do `run-judge`.
-
-Suba o PostgreSQL e a Web UI pelo Docker Compose:
+Suba PostgreSQL e Web UI pelo Docker Compose:
 
 ```bash
 make web-up
@@ -200,30 +237,14 @@ Acesse:
 http://127.0.0.1:8000
 ```
 
-A Web UI:
+A Web UI apoia:
 
-- carrega defaults do `.env`;
-- mostra configuração efetiva sem exibir API keys;
-- valida configuração por dry-run;
-- inicia execução real sem chamar a CLI por subprocesso;
-- mostra progresso percentual do batch;
-- exibe o comando CLI equivalente e o caminho do audit log;
-- inclui a aba `Prompt Juizes` para manter prompt, persona, contexto, rubrica e saida por `dataset`.
-
-Na aba `Prompt Juizes`, cada salvamento cria uma nova versao imutavel em `prompt_juizes`. A avaliacao persistida em `avaliacoes_juiz` passa a apontar para `id_prompt_juiz`, preservando qual versao exata do prompt foi usada em cada execucao. A propria UI mostra o preview com uma questao de exemplo e a lista de versoes disponiveis.
-
-#### Atualizando o prompt J1 (discursiva/peca)
-
-Mudancas no prompt default do codigo afetam apenas bases novas/restores. Para aplicar o prompt J1 recalibrado em um banco ja existente:
-
-1. Suba a Web UI: `make web-up`
-2. Abra `http://127.0.0.1:8000` e acesse a aba `Prompt Juizes`.
-3. Selecione o dataset `J1` (alias de `OAB_Bench`), ajuste `Prompt/Persona/Contexto/Rubrica/Saida` e clique em `Salvar`.
-4. Confirme que a nova versao ficou `ativa` e que o preview renderiza corretamente.
-
-Esse fluxo cria uma nova versao no Postgres sem migrations e sem alterar automaticamente versoes ativas.
-
-Por segurança, o serviço Web é publicado apenas em `127.0.0.1:${WEB_PORT:-8000}`. Se o endpoint do juiz roda no host da máquina e a Web roda em container, `localhost` dentro do container aponta para o próprio container; em macOS/Windows, use `host.docker.internal` quando precisar acessar LM Studio, llama.cpp, Ollama proxy ou serviço similar no host.
+- configuração de endpoints e modelos;
+- execução auditável de juízes;
+- visualização de progresso;
+- edição/versionamento de prompts de juiz;
+- geração de embeddings RAG;
+- dashboards AV2, AV3 e comparação Sem_RAG vs Com_RAG.
 
 Comandos úteis:
 
@@ -233,9 +254,11 @@ make web-logs
 make web-down
 ```
 
-`make web-up` libera automaticamente a porta configurada em `WEB_PORT` antes de subir a Web UI: para containers Docker que publicam essa porta, executa `docker stop`; para processos locais escutando na porta, tenta `SIGTERM` e depois `SIGKILL` se necessário.
+Por segurança, o serviço Web é publicado apenas em `127.0.0.1:${WEB_PORT:-8000}`.
 
-### Configuração rápida
+## Configuração de endpoints
+
+`.env` é local e não deve ser commitado. `.env.example` é apenas o template.
 
 Se ainda não existe `.env`:
 
@@ -243,19 +266,17 @@ Se ainda não existe `.env`:
 cp .env.example .env
 ```
 
-Se o `.env` já existe, não sobrescreva. Copie apenas as variáveis novas de `.env.example`.
+Variáveis principais para juízes remotos:
 
-#### Variáveis que você precisa configurar
-
-Estas dependem do endpoint de cada pessoa:
-
-| Variável | O que colocar |
+| Variável | Uso |
 |---|---|
-| `REMOTE_JUDGE_BASE_URL` | URL base do endpoint. Ex.: `https://.../v1`. |
-| `REMOTE_JUDGE_API_KEY` | Chave/token default do endpoint. Não commit. |
-| `REMOTE_JUDGE_MODEL` | Juiz 1. Também é usado no modo `single`. |
-| `REMOTE_SECONDARY_JUDGE_MODEL` | Juiz 2 do painel. |
-| `REMOTE_ARBITER_JUDGE_MODEL` | Juiz árbitro. |
+| `REMOTE_JUDGE_BASE_URL` | URL base do endpoint do juiz 1. |
+| `REMOTE_JUDGE_API_KEY` | Chave/token local do endpoint. |
+| `REMOTE_JUDGE_MODEL` | Modelo do juiz 1 e do modo `single`. |
+| `REMOTE_SECONDARY_JUDGE_MODEL` | Modelo do juiz 2. |
+| `REMOTE_ARBITER_JUDGE_MODEL` | Modelo árbitro. |
+| `JUDGE_PANEL_MODE` | `single`, `primary_only` ou `2plus1`. |
+| `JUDGE_EXECUTION_STRATEGY` | `sequential`, `parallel` ou `adaptive`. |
 
 Exemplo mínimo:
 
@@ -270,65 +291,9 @@ REMOTE_ARBITER_JUDGE_MODEL=m-prometheus-14b
 REMOTE_JUDGE_OPENAI_COMPATIBLE=true
 ```
 
-#### Endpoint e chave por juiz
+## Modelos juízes
 
-`REMOTE_JUDGE_BASE_URL` e `REMOTE_JUDGE_API_KEY` configuram o endpoint do juiz 1. Se cada juiz roda em um provedor diferente, defina também uma URL e uma key para os outros slots do painel.
-
-Formato:
-
-```env
-REMOTE_JUDGE_BASE_URL=https://endpoint-do-juiz-1.example.com/v1
-REMOTE_JUDGE_API_KEY=chave-do-juiz-1
-
-REMOTE_SECONDARY_JUDGE_BASE_URL=https://endpoint-do-juiz-2.example.com/v1
-REMOTE_SECONDARY_JUDGE_API_KEY=chave-do-juiz-2
-
-REMOTE_ARBITER_JUDGE_BASE_URL=https://endpoint-do-arbitro.example.com/v1
-REMOTE_ARBITER_JUDGE_API_KEY=chave-do-arbitro
-```
-
-O modo `single` usa `REMOTE_JUDGE_MODEL`, o mesmo modelo do juiz 1. Se só a URL ou só a key específica for configurada, a validação falha antes da execução. Se não houver endpoint específico para o slot, a chamada usa o endpoint global.
-
-#### Variáveis que normalmente ficam no padrão
-
-| Variável | Padrão recomendado | Quando mudar |
-|---|---|---|
-| `APP_ENV` | `dev` | Ambiente da aplicação. Não controla mais promoção de backup canônico. |
-| `BACKUP_ROOT_FILE` | `backup_atividade_2.sql` | Caminho do artefato canônico protegido, usado somente por promoção explícita. |
-| `DATABASE_URL` | `postgresql://postgres:postgres@localhost:5432/app_dev` | Se seu banco usa outra porta, usuário ou database. |
-| `JUDGE_PROVIDER` | `remote_http` | Não mude por enquanto. |
-| `JUDGE_PANEL_MODE` | `2plus1` | Use `single` para smoke test barato. |
-| `REMOTE_JUDGE_MODEL` | `gpt-oss-120b` | Juiz 1 e modelo do modo `single`. |
-| `REMOTE_SECONDARY_JUDGE_MODEL` | `llama-3.3-70b-instruct` | Juiz 2 do painel. |
-| `REMOTE_ARBITER_JUDGE_MODEL` | `m-prometheus-14b` | Juiz árbitro. |
-| `JUDGE_ARBITRATION_MIN_DELTA` | `2` | Para arbitragem mais ou menos sensível. |
-| `JUDGE_ALWAYS_RUN_ARBITER` | `false` | Use `true` só para auditoria/amostra. |
-| `JUDGE_EXECUTION_STRATEGY` | `sequential` | Use `parallel` para concorrência fixa ou `adaptive` para ajuste por endpoint/modelo. |
-| `JUDGE_BATCH_SIZE` | `10` | Quantas respostas pendentes buscar por execução incremental. |
-| `JUDGE_ADAPTIVE_INITIAL_CONCURRENCY` | `1` | Concorrência inicial por grupo no modo `adaptive`. |
-| `JUDGE_ADAPTIVE_MAX_CONCURRENCY` | `4` | Teto local de concorrência por grupo no modo `adaptive`. |
-| `JUDGE_ADAPTIVE_SUCCESS_THRESHOLD` | `5` | Sucessos consecutivos antes de aumentar concorrência em `+1`. |
-| `JUDGE_ADAPTIVE_MAX_RETRIES` | `3` | Retentativas para `429`, `5xx` e timeouts. |
-| `JUDGE_ADAPTIVE_BASE_BACKOFF_SECONDS` | `2` | Backoff inicial quando não houver `Retry-After`. |
-| `JUDGE_ADAPTIVE_MAX_BACKOFF_SECONDS` | `60` | Backoff máximo por tentativa. |
-| `REMOTE_JUDGE_TIMEOUT_SECONDS` | `180` | Para modelos lentos. |
-| `REMOTE_JUDGE_TEMPERATURE` | `0.0` | Mantenha assim para avaliação mais determinística. |
-| `REMOTE_JUDGE_MAX_TOKENS` | `4000` | Reduza só se o endpoint tiver limite baixo; Gemini truncou JSON com valores menores nos testes. |
-| `REMOTE_JUDGE_TOP_P` | `1.0` | Normalmente não precisa mudar. |
-| `REMOTE_JUDGE_OPENAI_COMPATIBLE` | `true` | Use `false` só para endpoint JSON não OpenAI. |
-| `JUDGE_SAVE_RAW_RESPONSE` | `true` | Use `false` se não quiser manter a resposta bruta no run. |
-
-Precedência:
-
-```text
-.env > ambiente do processo > default do código > erro de validação
-```
-
-Para parâmetros passados diretamente ao `run-judge`, a CLI continua tendo precedência sobre a configuração resolvida do `.env`.
-
-### Modelos juízes selecionados
-
-Aliases aceitos no `.env` e no CLI:
+Aliases aceitos no `.env` e na CLI:
 
 | Alias | Provider model id | Papel |
 |---|---|---|
@@ -336,67 +301,7 @@ Aliases aceitos no `.env` e no CLI:
 | `llama-3.3-70b-instruct` | `meta-llama/Llama-3.3-70B-Instruct` | primário |
 | `m-prometheus-14b` | `Unbabel/M-Prometheus-14B` | árbitro/calibração |
 
-Também é possível passar diretamente um provider model id. Valores sem alias são usados como informados.
-
-### Modos de execução
-
-| Modo | O que faz | Quando usar |
-|---|---|---|
-| `single` | Roda um juiz. | Smoke test, debug ou endpoint com um modelo só. |
-| `primary_only` | Roda o painel primário. | Comparar dois juízes sem árbitro. |
-| `2plus1` | Roda dois primários e chama árbitro se houver divergência. | Execução metodológica principal. |
-| `2plus1 --always-run-arbiter` | Roda os três juízes sempre. | Amostra de auditoria ou apresentação. |
-
-### Execução sequencial ou paralela
-
-Controle chamadas de API em `.env`:
-
-```env
-JUDGE_EXECUTION_STRATEGY=adaptive
-```
-
-Use `sequential` para modelo local, pouca VRAM ou endpoint frágil. Use `parallel` para endpoint remoto que aceita concorrência fixa. Use `adaptive` para deixar o executor ajustar concorrência por endpoint/modelo, reduzindo em `429` e refileirando com backoff.
-
-No modo `2plus1`, só os dois primários podem rodar em paralelo. O árbitro sempre roda depois, porque depende da diferença entre as notas.
-
-No modo `adaptive`, a prioridade é `juiz 1 -> juiz 2 -> árbitro`. O árbitro continua sendo agendado apenas depois das notas primárias e da regra de arbitragem. Para ver o plano inicial sem selecionar respostas nem avaliar modelos:
-
-```bash
-.venv/bin/python -m atividade_2.cli run-judge \
-  --panel-mode 2plus1 \
-  --dataset J2 \
-  --batch-size 10 \
-  --judge-execution-strategy adaptive \
-  --preflight-report
-```
-
-Override por execução:
-
-```bash
-.venv/bin/python -m atividade_2.cli run-judge \
-  --panel-mode primary_only \
-  --judge-model gpt-oss-120b \
-  --secondary-judge-model llama-3.3-70b-instruct \
-  --judge-execution-strategy parallel \
-  --dataset J2 \
-  --batch-size 10
-```
-
-### Execução incremental por batch
-
-Use `--batch-size` para limitar quantas respostas pendentes serão selecionadas no banco:
-
-```bash
-.venv/bin/python -m atividade_2.cli run-judge \
-  --dataset J2 \
-  --batch-size 10
-```
-
-Se `--batch-size` não for informado, a CLI usa `JUDGE_BATCH_SIZE` do `.env`; se a variável também não existir, usa `10`.
-
-A seleção é automática: a pipeline busca respostas ainda sem avaliação bem-sucedida para o modo/modelos resolvidos. Avaliações ausentes e avaliações registradas com status diferente de `success` permanecem elegíveis para uma próxima execução. Assim, repetir o mesmo comando continua a partir do estado persistido em `avaliacoes_juiz`.
-
-### Exemplos
+## Execução dos juízes
 
 Validar configuração sem chamar banco nem endpoint:
 
@@ -418,7 +323,7 @@ Smoke test real com uma questão objetiva:
   --batch-size 1
 ```
 
-Smoke test real com uma peça/discursiva:
+Smoke test real com uma questão discursiva/peça:
 
 ```bash
 .venv/bin/python -m atividade_2.cli run-judge \
@@ -427,18 +332,7 @@ Smoke test real com uma peça/discursiva:
   --batch-size 1
 ```
 
-Rodar exatamente dois juízes:
-
-```bash
-.venv/bin/python -m atividade_2.cli run-judge \
-  --panel-mode primary_only \
-  --judge-model gpt-oss-120b \
-  --secondary-judge-model llama-3.3-70b-instruct \
-  --dataset J2 \
-  --batch-size 10
-```
-
-Rodar o modo `2plus1` padrão do `.env`:
+Rodar o modo `2plus1`:
 
 ```bash
 .venv/bin/python -m atividade_2.cli run-judge \
@@ -447,123 +341,11 @@ Rodar o modo `2plus1` padrão do `.env`:
   --batch-size 10
 ```
 
-Rodar os três juízes sempre:
+## Execução dos candidatos Com_RAG
 
-```bash
-.venv/bin/python -m atividade_2.cli run-judge \
-  --panel-mode 2plus1 \
-  --always-run-arbiter \
-  --dataset J2 \
-  --batch-size 20
-```
+Os candidatos AV3 são executados com o comando `run-candidates-rag`.
 
-### Audit log
-
-Toda execução de `run-judge` grava um log detalhado em arquivo e também mostra o progresso no terminal.
-
-- Terminal: mostra cada etapa principal, com pontos dinâmicos em operações longas quando o terminal suporta animação.
-- Arquivo: grava timestamps UTC, configuração resolvida sem segredos, seleção de respostas, chamadas por resposta/modelo, parsing, persistência, skips e resumo final.
-- Resumo de execução: inclui os modelos efetivos e o host de cada endpoint resolvido.
-- Padrão: `outputs/audit/judge_run_YYYYmmdd_HHMMSS.log`.
-- Logs locais em `outputs/audit/*.log` são ignorados pelo Git.
-
-Escolha um caminho explícito:
-
-```bash
-.venv/bin/python -m atividade_2.cli run-judge \
-  --panel-mode single \
-  --judge-model m-prometheus-14b \
-  --dataset J2 \
-  --batch-size 1 \
-  --audit-log outputs/audit/smoke_j2.log
-```
-
-Desative a animação de terminal quando quiser saída estável para captura em arquivo:
-
-```bash
-.venv/bin/python -m atividade_2.cli run-judge \
-  --panel-mode single \
-  --judge-model m-prometheus-14b \
-  --dataset J2 \
-  --batch-size 1 \
-  --no-audit-animation
-```
-
-### Colab e endpoints compatíveis
-
-Para usar Colab, exponha uma URL HTTP compatível com OpenAI e configure somente no `.env`:
-
-```env
-REMOTE_JUDGE_BASE_URL=https://seu-endpoint-colab.example.com/v1
-REMOTE_JUDGE_API_KEY=sua-chave-local
-REMOTE_JUDGE_OPENAI_COMPATIBLE=true
-```
-
-O mesmo padrão vale para vLLM, llama.cpp, LM Studio ou proxy Ollama. Trocar endpoint e trocar modelos são preocupações separadas: normalmente o endpoint fica fixo em `.env`, e o modelo ou painel é selecionado por CLI.
-
-### Persistência
-
-Cada juiz executado gera uma linha individual em `avaliacoes_juiz`. O campo `chain_of_thought` é usado como justificativa auditável curta, não como raciocínio privado. A pipeline adiciona colunas opcionais de metadados de painel (`papel_juiz`, `rodada_julgamento`, `motivo_acionamento`) se o schema restaurado ainda não as tiver.
-
-O prompt instrui o juiz a retornar apenas um objeto JSON bruto, sem markdown nem texto extra. O parser aceita JSON puro, blocos cercados por crase e respostas com texto antes/depois do primeiro objeto JSON válido, mas rejeita nota fora da escala 1-5 ou justificativa ausente/vazia.
-
-### Backup e restore
-
-Antes de uma execução completa:
-
-```bash
-make db-up
-make db-migrate-or-create
-make db-restore-validate
-```
-
-Depois de uma execução relevante:
-
-```bash
-make db-backup
-```
-
-Para promover também o artefato canônico versionado da raiz:
-
-```bash
-make db-backup-promote
-```
-
-Para restaurar do zero, use o fluxo recomendado do projeto:
-
-```bash
-make db-reset
-make db-up
-make db-migrate-or-create
-make db-restore-validate
-```
-
-## AV3 local llama.cpp candidates
-
-Use local `llama.cpp` candidates only as a separate manual operation. Do not mix them into the normal OpenRouter/Featherless remote batches.
-
-Assignments:
-
-- Wagner / Jurema
-- Wagner / Curió
-- Paulo / Jurema
-
-Required env:
-
-```env
-LLAMA_CPP_URL=http://localhost:8080/v1
-LLAMA_CPP_API=
-```
-
-Operational restrictions:
-
-- local `llama.cpp` models are sequential-only;
-- do not include them in normal OpenRouter/Featherless adaptive production batches;
-- the operator must start `llama.cpp` manually with the correct GGUF model before running the CLI;
-- provider catalog validation does not validate local `llama.cpp` models;
-- run them separately with direct `run-candidates-rag` commands.
-
-Example command for Jurema (`Wagner / Jurema` or `Paulo / Jurema`):
+Exemplo para modelo local `llama.cpp` / Jurema:
 
 ```bash
 LLAMA_CPP_URL=http://localhost:8080/v1 \
@@ -578,7 +360,7 @@ LLAMA_CPP_URL=http://localhost:8080/v1 \
   --no-audit-animation
 ```
 
-Example command for Curió (`Wagner / Curió`):
+Exemplo para modelo local `llama.cpp` / Curió:
 
 ```bash
 LLAMA_CPP_URL=http://localhost:8080/v1 \
@@ -593,15 +375,107 @@ LLAMA_CPP_URL=http://localhost:8080/v1 \
   --no-audit-animation
 ```
 
-If you want to run remote-only batches across the normal hosted assignments, keep using explicit remote models and avoid the local `llama.cpp` assignment ids/models.
+Restrições operacionais para modelos locais:
 
-### Troubleshooting
+- modelos `llama.cpp` devem ser executados manualmente antes do comando;
+- execuções locais são sequenciais;
+- não misturar candidatos locais com lotes remotos OpenRouter/Featherless;
+- rodar modelos locais separadamente para reduzir risco de erro e consumo de memória.
 
-- `REMOTE_JUDGE_BASE_URL is required`: copie as variáveis novas de `.env.example` para seu `.env`.
-- `REMOTE_JUDGE_API_KEY is required`: defina uma chave local para o endpoint. Não use chave real em `.env.example`.
+## Backup
+
+Gere um backup SQL auditável do banco local:
+
+```bash
+make db-backup
+```
+
+O dump é gerado em:
+
+```text
+outputs/backup/atividade_2_YYYYmmdd_HHMMSS.sql
+```
+
+O arquivo `backup_atividade_2.sql` é o backup canônico protegido para restore compartilhável de AV2 + AV3 RAG.
+
+Promova o backup canônico apenas de forma explícita:
+
+```bash
+make db-backup-promote
+```
+
+Antes de promover, o script valida que estas contagens sejam maiores que zero no banco atual:
+
+- `public.respostas_atividade_1`
+- `public.avaliacoes_juiz`
+- `av3.rag_chunks`
+- `av3.rag_embeddings`
+- `av3.retrieval_runs` com `ativo = TRUE`
+
+## Logs e auditoria
+
+Toda execução de juiz grava log detalhado em arquivo e mostra progresso no terminal.
+
+- Logs padrão: `outputs/audit/judge_run_YYYYmmdd_HHMMSS.log`
+- Logs locais em `outputs/audit/*.log` são ignorados pelo Git.
+- O log registra configuração resolvida sem segredos, seleção de respostas, chamadas por resposta/modelo, parsing, persistência, skips e resumo final.
+
+Para saída estável em terminal:
+
+```bash
+.venv/bin/python -m atividade_2.cli run-judge \
+  --panel-mode single \
+  --dataset J2 \
+  --batch-size 1 \
+  --no-audit-animation
+```
+
+## Entregáveis da AV3
+
+A entrega final deve conter:
+
+1. **Tutorial em PDF consolidado** com arquitetura RAG, critérios de inclusão dos documentos, queries SQL e resultados estatísticos.
+2. **Pasta Atividade_3** ou documentação equivalente com scripts, prompts e artefatos novos da AV3.
+3. **Backup SQL ou dump** refletindo dados antes/depois do RAG.
+4. **Vídeo demonstrativo** de 10 a 20 minutos, com participação dos membros e execução/explicação das partes implementadas.
+5. **README atualizado** com visão geral, links e instruções de reprodução.
+
+## Critérios de avaliação da AV3
+
+| Critério | Peso | Como o projeto responde |
+|---|---:|---|
+| Arquitetura RAG e justificativa | 30% | Base vetorial com chunks, embeddings, fontes rastreáveis e recuperação top-k. |
+| Pipeline e evolução no banco | 25% | Schemas `av3` e `analytics` preservando `public` como baseline AV2. |
+| Meta-avaliação por juiz | 20% | LLM-as-a-Judge pós-RAG para medir ganho, falha ou ruído. |
+| Análise estatística e de erros | 15% | Deltas, correlações, rankings, especialidades e casos de ganho/piora. |
+| Apresentação e documentação | 10% | README, tutorial, vídeo e dashboard voltados à defesa presencial. |
+
+## Fluxo recomendado do zero
+
+```bash
+make install
+make db-up
+make db-migrate-or-create
+make db-ensure-schema
+make db-restore-validate
+make web-up
+make test
+```
+
+Depois de gerar embeddings, candidatos Com_RAG e avaliações pós-RAG:
+
+```bash
+make db-backup
+make db-backup-promote
+```
+
+## Troubleshooting
+
+- `REMOTE_JUDGE_BASE_URL is required`: copie as variáveis novas de `.env.example` para `.env`.
+- `REMOTE_JUDGE_API_KEY is required`: defina uma chave local para o endpoint. Não commite chaves reais.
 - `Remote judge response did not contain model text`: confirme se o endpoint responde no formato OpenAI `/chat/completions` ou defina `REMOTE_JUDGE_OPENAI_COMPATIBLE=false`.
-- `Judge response contains invalid JSON`: o modelo não seguiu o contrato; rode com `--batch-size 1`, ajuste o endpoint/modelo e repita.
-- Avaliações duplicadas não são regravadas para o mesmo conjunto resposta/modelo/papel/modo; use outro modelo ou limpe intencionalmente o banco se precisar reconstruir uma execução.
+- `Judge response contains invalid JSON`: o modelo não seguiu o contrato; rode com `--batch-size 1`, ajuste endpoint/modelo e repita.
+- Avaliações duplicadas não são regravadas para o mesmo conjunto resposta/modelo/papel/modo.
 - Use sempre `.venv/bin/python`, nunca `python` ou `python3`, para comandos do projeto.
 
 ## Comandos Make
@@ -627,30 +501,10 @@ make db-reset
 make clean
 ```
 
-`make db-reset` remove o volume local do PostgreSQL. Use apenas quando quiser descartar o banco local e restaurar do zero.
-`make db-migrate-or-create FORCE=1` limpa o schema `public` do banco atual e restaura `backup_atividade_2_reset.sql` sem depender de o banco estar vazio.
+## Fora de escopo nesta documentação
 
-## Fluxo Recomendado
-
-Para validar o projeto do zero:
-
-```bash
-make install
-make db-up
-make db-migrate-or-create
-make db-ensure-schema
-make db-restore-validate
-make db-backup
-make test
-make db-down
-```
-
-## Fora de Escopo Neste Estágio
-
-- ORM;
-- Alembic/migrations;
-- importadores de datasets;
-- cálculo de Spearman;
-- automação via notebook.
-
-`atividade2.ipynb` permanece como artefato separado e não é necessário para subir ou validar o ambiente local.
+- reexplicar toda a AV1;
+- substituir o tutorial em PDF exigido na entrega;
+- documentar segredos, tokens ou endpoints privados;
+- promover backup canônico sem validação explícita;
+- alterar schema, código ou dados de produção por meio deste README.
