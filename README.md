@@ -9,10 +9,10 @@ O repositório consolida duas etapas conectadas:
 
 ## Links
 
-- Aplicativo: https://topicos-av2.onrender.com/
-- Tutorial AV2: https://drive.google.com/file/d/1zn6FkIB2tEC8DrpiqqPARJn5utK5VGru/view?usp=sharing
-- Vídeo AV2: https://www.vidline.com/share/V0O6HJYW6N/baeaf4f0df82e55101bb35a1edeca104
-- Vídeo AV3: pendente de publicação pela equipe
+- Aplicativo: https://topicos-av3.onrender.com/
+- Tutorial: https://drive.google.com/file/d/1CyBay00Mu3DVn7Y7j2Ktu_-cfdgCN7Zv/view?usp=sharing
+- Vídeo: https://www.vidline.com/share/V0YOHR53DG/a836f8ed0cc2f441ec1660d932177ddf
+- Curadoria: https://atividade3-60692236585.us-west1.run.app/
 
 ## Objetivo da AV3
 
