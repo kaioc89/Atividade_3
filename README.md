@@ -430,26 +430,6 @@ Para saída estável em terminal:
   --no-audit-animation
 ```
 
-## Entregáveis da AV3
-
-A entrega final deve conter:
-
-1. **Tutorial em PDF consolidado** com arquitetura RAG, critérios de inclusão dos documentos, queries SQL e resultados estatísticos.
-2. **Pasta Atividade_3** ou documentação equivalente com scripts, prompts e artefatos novos da AV3.
-3. **Backup SQL ou dump** refletindo dados antes/depois do RAG.
-4. **Vídeo demonstrativo** de 10 a 20 minutos, com participação dos membros e execução/explicação das partes implementadas.
-5. **README atualizado** com visão geral, links e instruções de reprodução.
-
-## Critérios de avaliação da AV3
-
-| Critério | Peso | Como o projeto responde |
-|---|---:|---|
-| Arquitetura RAG e justificativa | 30% | Base vetorial com chunks, embeddings, fontes rastreáveis e recuperação top-k. |
-| Pipeline e evolução no banco | 25% | Schemas `av3` e `analytics` preservando `public` como baseline AV2. |
-| Meta-avaliação por juiz | 20% | LLM-as-a-Judge pós-RAG para medir ganho, falha ou ruído. |
-| Análise estatística e de erros | 15% | Deltas, correlações, rankings, especialidades e casos de ganho/piora. |
-| Apresentação e documentação | 10% | README, tutorial, vídeo e dashboard voltados à defesa presencial. |
-
 ## Fluxo recomendado do zero
 
 ```bash
@@ -500,11 +480,3 @@ make db-down
 make db-reset
 make clean
 ```
-
-## Fora de escopo nesta documentação
-
-- reexplicar toda a AV1;
-- substituir o tutorial em PDF exigido na entrega;
-- documentar segredos, tokens ou endpoints privados;
-- promover backup canônico sem validação explícita;
-- alterar schema, código ou dados de produção por meio deste README.
